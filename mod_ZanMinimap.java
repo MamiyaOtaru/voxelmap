@@ -244,7 +244,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						zCalc = new Thread(this);
 						zCalc.start();
 					}
-					if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiConflictWarning) && (this.game.thePlayer.dimension!=-1) && this.game.currentScreen!=null)
+					if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiConflictWarning) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
 						try {this.zCalc.notify();} catch (Exception local) {}
 				}
 				else if (!threading)
@@ -279,7 +279,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					if (!welcome) this.iMenu = 0;
 				}
 
-				if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) || (this.game.thePlayer.dimension==-1))
+				if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
 					this.enabled=false;
 				else this.enabled=true;
 
@@ -382,32 +382,30 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				return game.theWorld;
 			}
 
-/*			private final int getBlockHeight(World world, int x, int z, int starty) //useless, duplicates function in World
+			private final int getBlockHeightNether(World world, int x, int z, int starty) 
 			{
-				// return world.b(x, z).b(x & 0xf, z & 0xf);
-				Chunk chunk = world.getChunkFromBlockCoords(x, z);
 				int y = starty;
-				x &= 0xf;
-				z &= 0xf;		
-
-				while (y > 0)	
-				{
-					int id = chunk.getBlockID(x, y, z);
-					int meta = chunk.getBlockMetadata(x, y, z);
-
-					if (getBlockColor(id, meta).alpha == 0)
+				//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
+				//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
+				if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
+					while (y > 0) {
 						y--;
-					else
-						return y + 1; // what
+						if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
+							return y + 1;
+					}
+				}
+				else {
+					while ((y <= starty+10) && (y < 127)) {
+						y++;
+						if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
+							return y;
+					}
 				}
 				return -1;
+//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
 			}
 
-			private final int getBlockHeight(World world, int x, int z)
-			{
-				return getBlockHeight(world, x, z, 127);
-			} */
-			private void mapCalc() {
+			private void mapCalcNether() {
 				World data = getWorld();
 				this.lZoom = this.zoom;
 				int multi = (int)Math.pow(2, this.lZoom);
@@ -418,7 +416,89 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				startX -= 16*multi;
 				startZ += 16*multi;
 				int color24 = 0; // k
+				int height = 0;
+				boolean solidNether = false;
 
+				for (int imageY = 0; imageY < 32 * multi; imageY++) {
+					for (int imageX = 0; imageX < 32 * multi; imageX++) {
+						color24 = 0;
+						boolean check = false;
+
+						if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+						
+						height = getBlockHeightNether(data, startX + imageY, startZ - imageX, this.zCoord());		
+						if (height == -1) {
+							height = this.zCoord() + 1;
+							solidNether = true;
+						}
+						else {
+							solidNether = false;
+						}
+						if ((check) || (showmap) || (this.full)) {
+							if (this.rc) {
+								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.builtSnow)) 
+									color24 = 0xFFFFFF;
+								else if ((data.getBlockMaterial(startX + imageY, height - 1, startZ - imageX) == Material.cloth)) // || (data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX) == 35))
+									color24 = this.clothColors[data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX)];
+								else {
+									color24 = this.blockColors[data.getBlockId(startX + imageY, height - 1, startZ - imageX)];
+								}
+							} else color24 = 0xFFFFFF;
+						}
+
+						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (showmap) || (this.full))) {
+							if (heightmap) {
+								int i2 = height-this.zCoord();
+								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+								int r = color24 / 0x10000;
+								int g = (color24 - r * 0x10000)/0x100;
+								int b = (color24 - r * 0x10000-g*0x100);
+
+								if (i2>=0) {
+									r = (int)(sc * (0xff-r)) + r;
+									g = (int)(sc * (0xff-g)) + g;
+									b = (int)(sc * (0xff-b)) + b;
+								} else {
+									i2=Math.abs(i2);
+									r = r -(int)(sc * r);
+									g = g -(int)(sc * g);
+									b = b -(int)(sc * b);
+								}
+
+								color24 = r * 0x10000 + g * 0x100 + b;
+							}
+
+							int i3 = 255;
+
+							if (lightmap)
+								i3 = data.getBlockLightValue_do(startX + imageY, height, startZ - imageX, false) * 17;
+							else if (solidNether)
+								i3 = 32;
+
+							if(i3 > 255) i3 = 255;
+
+							if(i3 < 76 && !solidNether) i3 = 76;
+							else if (i3 < 32) i3 = 32;
+
+							color24 = i3 * 0x1000000 + color24 ;
+						}
+
+						this.map[this.lZoom].setRGB(imageX, imageY, color24);
+					}
+				}
+			}
+			private void mapCalcOverworld() {
+				World data = getWorld();
+				this.lZoom = this.zoom;
+				int multi = (int)Math.pow(2, this.lZoom);
+				int startX  = this.xCoord(); // 1
+				int startZ = this.yCoord(); // j
+				this.lastX = startX;
+				this.lastZ = startZ;
+				startX -= 16*multi;
+				startZ += 16*multi;
+				int color24 = 0; // k
+				int height = 0;
 				for (int imageY = 0; imageY < 32 * multi; imageY++) {
 					for (int imageX = 0; imageX < 32 * multi; imageX++) {
 						color24 = 0;
@@ -431,7 +511,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
 						//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
 						//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-						int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+						//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+						height = data.getHeightValue(startX + imageY, startZ - imageX);
 
 						if ((check) || (showmap) || (this.full)) {
 							if (this.rc) {
@@ -483,6 +564,13 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					}
 				}
 			}
+			private void mapCalc() {
+				if (this.game.thePlayer.dimension!=-1)
+					mapCalcOverworld();
+				else
+					mapCalcNether();
+			}
+			
 			public void run() {
 				if (this.game == null)
 					return;
@@ -490,7 +578,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					if(this.threading)
 					{
 						this.active = true;
-						while(this.game.thePlayer!=null && this.game.thePlayer.dimension!=-1 && active) {
+						while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
 						  if (this.enabled && !this.hide)
 							  if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.yCoord()) || (this.timer>300)))
 								  try {this.mapCalc(); this.timer = 1;} catch (Exception local) {}
@@ -876,8 +964,16 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
-						int wayX = this.xCoord() - pt.x;
-						int wayY = this.yCoord() - pt.z;
+						int wayX = 0;
+						int wayY = 0;
+						if (this.game.thePlayer.dimension!=-1) {
+							wayX = this.xCoord() - pt.x;
+							wayY = this.yCoord() - pt.z;
+						}
+						else {
+							wayX = this.xCoord() - (pt.x / 8);
+							wayY = this.yCoord() - (pt.z / 8);
+						}
 						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
 
@@ -899,21 +995,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glPopMatrix();
 							}
 						}
-					}
-				}
-
-
-				for(Waypoint pt:wayPts) 
-				{
-					if(pt.enabled) 
-					{
-						int wayX = this.xCoord() - pt.x;
-						int wayY = this.yCoord() - pt.z;
-						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
-
-						if ( hypot < 31.0D) 
-						{
+						else {
 							try 
 							{
 								GL11.glPushMatrix();
@@ -939,6 +1021,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 					}
 				}
+
 			}
 		}
 	}
@@ -1133,7 +1216,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						else if(this.iMenu == 5) {
 							this.next = 6;
 							this.way = this.inStr;
-							this.inStr = Integer.toString(this.xCoord());
+							if (this.game.thePlayer.dimension!=-1)
+								this.inStr = Integer.toString(this.xCoord());
+							else
+								this.inStr = Integer.toString(this.xCoord()*8);
 						} else if (this.iMenu==6) {
 							this.next = 7;
 
@@ -1142,8 +1228,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							} catch (Exception localException) {
 								this.next=3;
 							}
-
-							this.inStr = Integer.toString(this.yCoord());
+							if (this.game.thePlayer.dimension!=-1)
+								this.inStr = Integer.toString(this.yCoord());
+							else
+								this.inStr = Integer.toString(this.yCoord()*8);
 						} else {
 							this.next = 3;
 
@@ -1220,7 +1308,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		if(!this.hide) {
 			GL11.glPushMatrix();
 			GL11.glScalef(0.5f, 0.5f, 1.0f);
-			String xy = this.dCoord(xCoord()) + ", " + this.dCoord(yCoord());
+			String xy ="";
+			if (this.game.thePlayer.dimension!=-1)
+				xy = this.dCoord(xCoord()) + ", " + this.dCoord(yCoord());
+			else
+				xy = this.dCoord(xCoord()*8) + ", " + this.dCoord(yCoord()*8);
 			int m = this.chkLen(xy)/2;
 			this.write(xy, scWidth*2-32*2-m, 146, 0xffffff);
 			xy = Integer.toString(this.zCoord());
