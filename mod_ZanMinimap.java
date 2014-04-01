@@ -5,6 +5,8 @@
 package net.minecraft.src;
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.net.Socket;
+
 import javax.imageio.ImageIO;
 import net.minecraft.client.Minecraft;
 import java.util.ArrayList;
@@ -82,7 +84,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private String error = "";
 
 	/*Strings to show for menu*/
-	private String[][] sMenu = new String[2][12];
+	private String[][] sMenu = new String[2][13]; // bump up options here
 
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
@@ -145,7 +147,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private int menuKey = Keyboard.KEY_M;
 
 	/*Square map toggle*/
-	private boolean showmap = false;
+	private boolean squareMap = false;
+	
+	/*Old north toggle*/
+	public boolean oldNorth = false;
+	
+	private int northRotate = 0;
 
 	/*Show coordinates toggle*/
 	private boolean coords = false;
@@ -189,41 +196,17 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			}
 
 			public void chatInfo(String s) {
-				game.ingameGUI.addChatMessage(s);
+				game.thePlayer.addChatMessage(s);
 			}
 			public String getMapName()
 			{
-				return game.theWorld.worldInfo.getWorldName();
+				//return game.theWorld.worldInfo.getWorldName();
+				return game.getIntegratedServer().getWorldName();
 			}
 			public String getServerName()
 			{
 				//return game.gameSettings.lastServer; // old and busted since the server list
-
-				Object netClientHandler = game.getSendQueue(); // NetClientHandler
-				if (netClientHandler == null)
-					return "unknown1";
-
-				Object networkManager = getPrivateField(netClientHandler, "g" /*"netManager"*/); // NetworkManager - fieldname needs to be obfuscated name
-				if (networkManager == null)
-					return "unknown2";
-
-				Object oSocket = getPrivateField(networkManager, "h" /*"networkSocket"*/); // Socket - fieldname needs to be obfuscated name
-				if (oSocket == null || !(oSocket instanceof java.net.Socket))
-					return "unknown3";
-				java.net.Socket sock = (java.net.Socket) oSocket;
-				String serverName = sock.getInetAddress().getHostName();
-				//int serverPort = sock.getPort();
-	
-				
-				// below doesn't work, figure out some time
-//				Object serverNameObject = getPrivateField(game, "af" /*"serverName"*/); // String - fieldname needs to be obfuscated
-//				if (serverNameObject == null)
-//					return "unknown1";
-//				if (!(serverNameObject instanceof String))
-//					return "unknown2";
-//				String serverName = (String)serverNameObject;
-				
-				return serverName;
+				return ((TcpConnection)(game.getSendQueue().getNetManager())).getSocket().getInetAddress().getHostName();
 			}
 			public Object getPrivateField (Object o, String fieldName) {   
 
@@ -299,6 +282,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			//@Override
 			public void OnTickInGame(Minecraft mc)
 			{
+				northRotate = oldNorth ? 0 : 90;
 				if(game==null) game = mc;
   				//mc.s.a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
   				//mc.entityRenderer.func_21152_a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
@@ -315,7 +299,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						zCalc = new Thread(this);
 						zCalc.start();
 					}
-					if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiConflictWarning) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
+					if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
 						try {this.zCalc.notify();} catch (Exception local) {}
 				}
 				else if (!threading)
@@ -423,7 +407,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			}
 
 			private void write(String paramStr, int paramInt1, int paramInt2, int paramInt3) {
-				this.lang.drawStringWithShadow(paramStr, paramInt1, paramInt2, paramInt3);
+				this.lang.drawString(paramStr, paramInt1, paramInt2, paramInt3);
+//				this.lang.drawStringWithShadow(paramStr, paramInt1, paramInt2, paramInt3); // dead.  replaced by 50103?
 			}
 
 			private int xCoord() {
@@ -518,7 +503,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						else {
 							solidNether = false;
 						}
-						if ((check) || (showmap) || (this.full)) {
+						if ((check) || (squareMap) || (this.full)) {
 							if (this.rc) {
 								if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
@@ -528,7 +513,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							} else color24 = 0xFFFFFF;
 						}
 
-						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (showmap) || (this.full))) {
+						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
 							if (heightmap) {
 								int i2 = height-this.yCoord();
 								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
@@ -598,7 +583,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
 						height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
 
-						if ((check) || (showmap) || (this.full)) {
+						if ((check) || (squareMap) || (this.full)) {
 							if (this.rc) {
 								if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
@@ -608,7 +593,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							} else color24 = 0xFFFFFF;
 						}
 
-						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (showmap) || (this.full))) {
+						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
 							if (heightmap) {
 								int i2 = height-this.yCoord();
 								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
@@ -746,7 +731,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.map[3] = new BufferedImage(256,256,2);
 
 		for (int m = 0; m<2; m++)
-			for(int n = 0; n<12; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
+			for(int n = 0; n<13; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
 				this.sMenu[m][n] = "";
 
 		this.sMenu[0][0] = "§4Zan's§F Mod! " + this.zmodver;
@@ -761,9 +746,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.sMenu[1][5] = "Dynamic Lighting:";
 		this.sMenu[1][6] = "Terrain Depth:";
 		this.sMenu[1][7] = "Square Map:";
-		this.sMenu[1][8] = "Welcome Screen:";
-		this.sMenu[1][9] = "Threading:";
-		if (motionTrackerExists) this.sMenu[1][10] = "Radar Mode:";
+		this.sMenu[1][8] = "Old North:";
+		this.sMenu[1][9] = "Welcome Screen:";
+		this.sMenu[1][10] = "Threading:";
+		if (motionTrackerExists) this.sMenu[1][11] = "Radar Mode:";
 		
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
 
@@ -776,7 +762,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					String[] curLine = sCurrentLine.split(":");
 					
 					if(curLine[0].equals("Show Minimap"))
-						showmap = Boolean.parseBoolean(curLine[1]);
+						squareMap = Boolean.parseBoolean(curLine[1]);
+					if(curLine[0].equals("Old North"))
+						oldNorth = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Show Map in Nether"))
 						showNether = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Enable Cave Mode"))
@@ -1055,7 +1043,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 		try {
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
-			out.println("Show Minimap:" + Boolean.toString(showmap));
+			out.println("Show Minimap:" + Boolean.toString(squareMap));
+			out.println("Old North:" + Boolean.toString(oldNorth));
 			out.println("Show Map in Nether:" + Boolean.toString(showNether));
 			out.println("Enable Cave Mode:" + Boolean.toString(showCaves));
 			out.println("Show Coordinates:" + Boolean.toString(coords));
@@ -1090,14 +1079,16 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	private void loadWaypoints() {
 		String j;
-		String mapName = getMapName();
-		if(mapName.equals("MpServer")) {
+		String mapName;
+		if (game.isIntegratedServerRunning())
+			mapName = this.getMapName();
+		else {
 			String[] i = getServerName().toLowerCase().split(":");
-			j = i[0];
-		} else j = mapName;
+			mapName = i[0];
+		} 
 
-		if(!world.equals(j)) {
-			world = j;
+		if(!world.equals(mapName)) {
+			world = mapName;
 			iMenu = 1;
 			wayPts = new ArrayList<Waypoint>();
 			settingsFile = new File(getAppDir("minecraft"), world + ".points");
@@ -1132,17 +1123,24 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		if (!this.hide && !this.full) {
 			if (this.q != 0) glah(this.q);
 
-			if (showmap) { // square map
+			if (squareMap) { // square map
 				if (this.zoom == 3) {
 					GL11.glPushMatrix();
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
 					this.q = this.tex(this.map[this.zoom]);
 					GL11.glPopMatrix();
 				} else this.q = this.tex(this.map[this.zoom]);
-
+				// from here
+				GL11.glPushMatrix();
+				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+				GL11.glRotatef(90.0F - northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
+				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+				// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
 				drawPre();
 				this.setMap(scWidth);
 				drawPost();
+				
+				GL11.glPopMatrix();
 
 				try {
 					this.disp(this.img("/minimap.png"));
@@ -1155,8 +1153,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				try {
 					GL11.glPushMatrix();
 					this.disp(this.img("/mmarrow.png"));
-					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-					GL11.glRotatef(-this.direction -180.0F, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
+					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); // TODO
+					GL11.glRotatef(-this.direction -90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 					drawPre();
 					this.setMap(scWidth);
@@ -1179,8 +1177,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							wayX = this.xCoord() - (pt.x / 8);
 							wayY = this.zCoord() - (pt.z / 8);
 						}
-
-						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 31 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 32) {
+						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 31 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 31) {
 							float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 							double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY));
 							hypot = hypot / Math.max(Math.abs(wayX), Math.abs(wayY)) * 34;
@@ -1189,7 +1186,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-locate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
+								GL11.glRotatef(-locate + 90 - northRotate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
 								drawPre();
@@ -1202,12 +1199,23 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							}
 						}
 						else {
+							float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+							double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
 							try 
 							{
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/waypoint.png"));
-								GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
+								//GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
+								// from here
+								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+								GL11.glRotatef(-locate + 90.0F - northRotate, 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+								GL11.glTranslated(0.0D,-hypot,0.0D);
+								GL11.glRotatef(-(-locate + 90.0F - northRotate), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+								GL11.glTranslated(0.0D,hypot,0.0D);
+								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+								GL11.glTranslated(0.0D,-hypot,0.0D);
+								// to here only necessary with variable north, and no if/else statements in mapcalc.  otherwise uncomment the translated above this block
 								drawPre();
 								this.setMap(scWidth);
 								drawPost();
@@ -1232,7 +1240,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} else this.q = this.tex(this.map[this.zoom]);
 
 				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-				GL11.glRotatef(this.direction + 180.0F, 0.0F, 0.0F, 1.0F); // +90 west at top.  +180 north at top
+				GL11.glRotatef(this.direction + 180.0F, 0.0F, 0.0F, 1.0F); 
 				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 
 				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
@@ -1317,18 +1325,26 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			return;
 		}
 		this.q = this.tex(this.map[this.zoom]);
+
+		// from here
+		GL11.glPushMatrix();
+		GL11.glTranslatef((scWidth + 5) / 2.0F, ((scHeight + 5) / 2.0F), 0.0F);
+		GL11.glRotatef(90.0F - northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
+		GL11.glTranslatef(-((scWidth + 5) / 2.0F), -((scHeight + 5) / 2.0F), 0.0F);
+		// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
 		drawPre();
 		ldrawone((scWidth+5)/2-128, (scHeight+5)/2+128, 1.0D, 0.0D, 1.0D);
 		ldrawone((scWidth+5)/2+128, (scHeight+5)/2+128, 1.0D, 1.0D, 1.0D);
 		ldrawone((scWidth+5)/2+128, (scHeight+5)/2-128, 1.0D, 1.0D, 0.0D);
 		ldrawone((scWidth+5)/2-128, (scHeight+5)/2-128, 1.0D, 0.0D, 0.0D);
 		drawPost();
-
+		GL11.glPopMatrix();
+		
 		try {
 			GL11.glPushMatrix();
 			this.disp(this.img("/mmarrow.png"));
 			GL11.glTranslatef((scWidth+5)/2, (scHeight+5)/2, 0.0F);
-			GL11.glRotatef(-this.direction - 180.0F, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
+			GL11.glRotatef(-this.direction - 90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 			GL11.glTranslatef(-((scWidth+5)/2), -((scHeight+5)/2), 0.0F);
 			drawPre();
 			ldrawone((scWidth+5)/2-32, (scHeight+5)/2+32, 1.0D, 0.0D, 1.0D);
@@ -1733,8 +1749,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			leftCl = rightCl - 9;
 		} else {
 			min = 0;
-			if (motionTrackerExists) max = 10;
-			else max = 9; // number of menu options, only affects if they can be clicked
+			if (motionTrackerExists) max = 11;
+			else max = 10; // number of menu options, only affects if they can be clicked
 		}
 
 		for(int i = min; i<max; i++) {
@@ -1871,10 +1887,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (i==3) return this.showCaves;
 		else if (i==4) return lightmap;
 		else if (i==5) return heightmap;
-		else if (i==6) return showmap;
-		else if (i==7) return welcome;
-		else if (i==8) return threading;
-		else if (i==9 && motionTrackerExists) return false;
+		else if (i==6) return squareMap;
+		else if (i==7) return oldNorth;
+		else if (i==8) return welcome;
+		else if (i==9) return threading;
+		else if (i==10 && motionTrackerExists) return false;
 		throw new IllegalArgumentException("bad option number "+i);
 	}
 
@@ -1885,10 +1902,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (i==3) this.showCaves = !this.showCaves;
 		else if (i==4) lightmap = !lightmap;
 		else if (i==5) heightmap = !heightmap;
-		else if (i==6) showmap = !showmap;
-		else if (i==7) welcome = !welcome;
-		else if (i==8) threading = !threading;
-		else if (i==9 && motionTrackerExists) motionTracker.activated = true;
+		else if (i==6) squareMap = !squareMap;
+		else if (i==7) oldNorth = !oldNorth;
+		else if (i==8) welcome = !welcome;
+		else if (i==9) threading = !threading;
+		else if (i==10 && motionTrackerExists) motionTracker.activated = true;
 		else throw new IllegalArgumentException("bad option number "+i);
 		this.saveAll();
 		this.timer=500;
@@ -1936,22 +1954,22 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction - 90.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction - 90.0D + northRotate)))),0.0D); // direction -90 w top.  0 n top.  in all cases n top means 90 more (or w top means 90 less)
 		this.write("N", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction + northRotate)))),0.0D);
 		this.write("E", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction + 90.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction + 90.0D + northRotate)))),0.0D);
 		this.write("S", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction + 180.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction + 180.0D + northRotate)))),0.0D);
 		this.write("W", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 	}
