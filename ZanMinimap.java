@@ -19,6 +19,7 @@ import net.minecraft.src.mamiyaotaru.CommandServerZanTp;
 import net.minecraft.src.mamiyaotaru.EntityWaypoint;
 import net.minecraft.src.mamiyaotaru.EnumOptionsHelperMinimap;
 import net.minecraft.src.mamiyaotaru.EnumOptionsMinimap;
+import net.minecraft.src.mamiyaotaru.GLBufferedImage;
 import net.minecraft.src.mamiyaotaru.GuiMinimap;
 import net.minecraft.src.mamiyaotaru.GuiScreenAddWaypoint;
 import net.minecraft.src.mamiyaotaru.GuiWaypoints;
@@ -68,7 +69,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public Boolean cavesAllowed = true;
 	
 	/*Textures for each zoom level*/
-	private BufferedImage[] map = new BufferedImage[4];
+	private GLBufferedImage[] map = new GLBufferedImage[4];
 	
 	/* has the image changed - if not we don't need to delete GLtex and allocate a new one */
 	private boolean imageChanged = true;
@@ -289,11 +290,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		this.keyBindings = new KeyBinding[] {this.keyBindZoom, this.keyBindMenu, this.keyBindWaypoint, this.keyBindMobToggle}; 
 
 		zCalc.start();
-		this.map[0] = new BufferedImage(32,32,2);
-		this.map[1] = new BufferedImage(64,64,2);
-		this.map[2] = new BufferedImage(128,128,2);
-		this.map[3] = new BufferedImage(256,256,2);
-
+		this.map[0] = new GLBufferedImage(32,32,BufferedImage.TYPE_4BYTE_ABGR);
+		this.map[1] = new GLBufferedImage(64,64,BufferedImage.TYPE_4BYTE_ABGR);
+		this.map[2] = new GLBufferedImage(128,128,BufferedImage.TYPE_4BYTE_ABGR);
+		this.map[3] = new GLBufferedImage(256,256,BufferedImage.TYPE_4BYTE_ABGR);
+		
 		this.sMenu[0] = "§4Zan's§F Mod! " + this.zmodver + " Maintained by MamiyaOtaru";
 		this.sMenu[1] = "Welcome to Zan's Minimap, there are a";
 		this.sMenu[2] = "number of features and commands available to you.";
@@ -547,7 +548,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		if(fontRenderer==null) fontRenderer = this.game.fontRenderer;
 
-		if(renderEngine==null) renderEngine = this.game.renderEngine;
+		if(renderEngine==null) { 
+			renderEngine = this.game.renderEngine;
+			//this.map[0].index = this.tex(this.map[0]);
+			//this.map[1].index = this.tex(this.map[1]);
+			//this.map[2].index = this.tex(this.map[2]);
+			//this.map[3].index = this.tex(this.map[3]);
+		}
 
 		//ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
 		//int scWidth = scSize.getScaledWidth();
@@ -1022,7 +1029,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		startX -= 16*multi;
 		startZ -= 16*multi; // + west at top, - north at top
 		int color24 = 0; // k
-
 		// do a full render sometimes (to catch changes), or on heightmap with significantly changed height
 		if (full || (heightmap && Math.abs(offsetY) > 5)) { 
 			for (int imageY = (32 * multi)-1; imageY >= 0; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
@@ -1042,31 +1048,20 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		// flat map or bump map.  or heightmap with no changed height.  No logarithmic height shading, so we can get away with only drawing the edges
 		// render edges, if moved.  This is the norm for flat or bump.  Also hit if heightmap and height hasn't changed
 		else { 
-			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
-			try {
-				BufferedImage snip = this.map[this.lZoom].getSubimage(java.lang.Math.max(0,offsetX), java.lang.Math.max(0, offsetZ), this.map[this.lZoom].getWidth()-java.lang.Math.abs(offsetX) , this.map[this.lZoom].getHeight()-java.lang.Math.abs(offsetZ));
-				java.awt.Graphics gfx = comp.getGraphics ();
-				gfx.drawImage (snip, java.lang.Math.max(0, -offsetX), java.lang.Math.max(0, -offsetZ), null);
-				gfx.dispose ();
-			}
-			catch (java.awt.image.RasterFormatException e) {
-				return; // bail
-			}
+			this.map[this.lZoom].moveY(offsetZ);
 			for (int imageY = ((offsetZ>0)?32 * multi - offsetZ:0); imageY < ((offsetZ>0)?32 * multi:-offsetZ); imageY++) {			
 				for (int imageX = 0; imageX < 32 * multi; imageX++) {
 					color24 = getPixelColor(full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-					comp.setRGB(imageX, imageY, color24);
-					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
+					this.map[this.lZoom].setRGB(imageX, imageY, color24);
 				}
 			}
+			this.map[this.lZoom].moveX(offsetX);
 			for (int imageY = 0; imageY < 32 * multi; imageY++) {			
 				for (int imageX = ((offsetX>0)?32 * multi - offsetX:0); imageX < ((offsetX>0)?32 * multi:-offsetX); imageX++) {
 					color24 = getPixelColor(full, netherPlayerInOpen, caves, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-					comp.setRGB(imageX, imageY, color24);
-					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
+					this.map[this.lZoom].setRGB(imageX, imageY, color24);
 				}
 			}
-			this.map[this.lZoom] = comp;
 		}
 		//System.out.println("time: " + (System.nanoTime()-startTime));
 	}
@@ -2468,21 +2463,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glPushMatrix();
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
 					if (imageChanged) {
-						if (this.q != 0) glah(this.q);
-						this.q = this.tex(this.map[this.zoom]);
+						this.map[this.lZoom].write();
 						imageChanged = false;
 					}
-					else if (this.q != 0)
-						this.disp(q);
+					this.disp(this.map[this.lZoom].index); 
 					GL11.glPopMatrix();
 				} else {
 					if (imageChanged) {	
-						if (this.q != 0) glah(this.q);
-						this.q = this.tex(this.map[this.zoom]);
+						this.map[this.lZoom].write();
 						imageChanged = false;
 					}
-					else if (this.q != 0)
-						this.disp(q);
+					this.disp(this.map[this.lZoom].index);
 				}
 				if (filtering) {
 					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
@@ -2701,26 +2692,22 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					ldrawthree(0, 0, 1.0D, 0.0D, 1.0D);
 					drawPost();
 
-					GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ZERO); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)         
+					GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ZERO); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
 					if (this.zoom == 3) {
 						GL11.glPushMatrix();
 						GL11.glScalef(0.5f, 0.5f, 1.0f);
 						if (imageChanged) {
-							if (this.q != 0) glah(this.q);
-							this.q = this.tex(this.map[this.zoom]);
+							this.map[this.lZoom].write();
 							imageChanged = false;
 						}
-						else if (this.q != 0)
-							this.disp(q);
+						this.disp(this.map[this.lZoom].index); 
 						GL11.glPopMatrix();
 					} else {
 						if (imageChanged) {	
-							if (this.q != 0) glah(this.q);
-							this.q = this.tex(this.map[this.zoom]);
+							this.map[this.lZoom].write();
 							imageChanged = false;
 						}
-						else if (this.q != 0)
-							this.disp(q);
+						this.disp(this.map[this.lZoom].index);
 					}
 					if (filtering) {
 						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
@@ -2782,21 +2769,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						GL11.glPushMatrix();
 						GL11.glScalef(0.5f, 0.5f, 1.0f);
 						if (imageChanged) {
-							if (this.q != 0) glah(this.q);
-							this.q = this.tex(this.map[this.zoom]);
+							this.map[this.lZoom].write();
 							imageChanged = false;
 						}
-						else if (this.q != 0)
-							this.disp(q);
+						this.disp(this.map[this.lZoom].index); 
 						GL11.glPopMatrix();
 					} else {
 						if (imageChanged) {	
-							if (this.q != 0) glah(this.q);
-							this.q = this.tex(this.map[this.zoom]);
+							this.map[this.lZoom].write();
 							imageChanged = false;
 						}
-						else if (this.q != 0)
-							this.disp(q);
+						this.disp(this.map[this.lZoom].index);
 					}
 					if (filtering) {
 						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
@@ -2911,13 +2894,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	private void renderMapFull (int scWidth, int scHeight) {
-		if (imageChanged) {
-			if (this.q != 0) glah(this.q);
-			this.q = this.tex(this.map[this.zoom]);
+		if (imageChanged) {	
+			this.map[this.lZoom].write();
 			imageChanged = false;
 		}
-		else if (this.q != 0)
-			this.disp(this.q);
+		this.disp(this.map[this.lZoom].index);
 		if (filtering) {
 			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
 			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
