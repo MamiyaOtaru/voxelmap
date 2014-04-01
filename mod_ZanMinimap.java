@@ -39,6 +39,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Hide just the minimap*/
 	private boolean hide = false;
 
+	/*Show the minimap when in the Nether*/
+	private boolean showNether = false;
+
+	/*Experimental cave mode (only applicable to overworld)*/
+	private boolean showCaves = false;
+
 	/*Was mouse down last render?*/
 	private boolean lfclick = false;
 
@@ -73,7 +79,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private String error = "";
 
 	/*Strings to show for menu*/
-	private String[][] sMenu = new String[2][10];
+	private String[][] sMenu = new String[2][11];
 
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
@@ -269,7 +275,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					this.game.displayGuiScreen(new GuiScreen());
 				}
 
-				if (Keyboard.isKeyDown(zoomKey) && this.game.currentScreen ==null) {
+				if (Keyboard.isKeyDown(zoomKey) && this.game.currentScreen == null && (this.showNether || this.game.thePlayer.dimension!=-1)) {
 					this.SetZoom();
 				}
 
@@ -313,10 +319,17 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 
 				if (this.enabled) {
-					renderMap(scWidth);
 
-					if(this.full) renderMapFull(scWidth,scHeight);
-
+					GL11.glDisable(2929 /*GL_DEPTH_TEST*/);
+					GL11.glEnable(3042 /*GL_BLEND*/);
+					GL11.glDepthMask(false);
+					GL11.glBlendFunc(770, 0);
+					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+					if (this.showNether || this.game.thePlayer.dimension!=-1) {
+						if(this.full) renderMapFull(scWidth,scHeight);
+						else renderMap(scWidth);
+					}					
+					
 					if (ztimer > 0)
 						this.write(this.error, 20, 20, 0xffffff);
 
@@ -327,7 +340,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glEnable(2929 /*GL_DEPTH_TEST*/);
 					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 
-					if(coords) showCoords(scWidth, scHeight);
+					if (this.showNether || this.game.thePlayer.dimension!=-1)
+						if(coords) showCoords(scWidth, scHeight);
 				}
 
 				//while (active) try {
@@ -565,10 +579,26 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				}
 			}
 			private void mapCalc() {
+
+				if (this.game.thePlayer.dimension!=-1)
+					if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0)
+						mapCalcNether();
+					else
+						mapCalcOverworld();
+				else if (showNether)
+					mapCalcNether();
+
+/*
 				if (this.game.thePlayer.dimension!=-1)
 					mapCalcOverworld();
 				else
 					mapCalcNether();
+
+				if (getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) > 0)
+					mapCalcOverworld();
+				else
+					mapCalcNether();
+*/
 			}
 			
 			public void run() {
@@ -615,7 +645,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.map[3] = new BufferedImage(256,256,2);
 
 		for (int m = 0; m<2; m++)
-			for(int n = 0; n<10; n++)
+			for(int n = 0; n<11; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
 				this.sMenu[m][n] = "";
 
 		this.sMenu[0][0] = "§4Zan's§F Mod! " + this.zmodver;
@@ -625,11 +655,13 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.sMenu[1][0] = "Options";
 		this.sMenu[1][1] = "Display Coordinates:";
 		this.sMenu[1][2] = "Hide Minimap:";
-		this.sMenu[1][3] = "Dynamic Lighting:";
-		this.sMenu[1][4] = "Terrain Depth:";
-		this.sMenu[1][5] = "Square Map:";
-		this.sMenu[1][6] = "Welcome Screen:";
-		this.sMenu[1][7] = "Threading:";
+		this.sMenu[1][3] = "Function in Nether:";
+		this.sMenu[1][4] = "Enable Cave Mode:";
+		this.sMenu[1][5] = "Dynamic Lighting:";
+		this.sMenu[1][6] = "Terrain Depth:";
+		this.sMenu[1][7] = "Square Map:";
+		this.sMenu[1][8] = "Welcome Screen:";
+		this.sMenu[1][9] = "Threading:";
 		
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
 
@@ -643,6 +675,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					
 					if(curLine[0].equals("Show Minimap"))
 						showmap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Show Map in Nether"))
+						showNether = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Enable Cave Mode"))
+						showCaves = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Show Coordinates"))
 						coords = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Dynamic Lighting"))
@@ -819,6 +855,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		try {
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
 			out.println("Show Minimap:" + Boolean.toString(showmap));
+			out.println("Show Map in Nether:" + Boolean.toString(showNether));
+			out.println("Enable Cave Mode:" + Boolean.toString(showCaves));
 			out.println("Show Coordinates:" + Boolean.toString(coords));
 			out.println("Dynamic Lighting:" + Boolean.toString(lightmap));
 			out.println("Terrain Depth:" + Boolean.toString(heightmap));
@@ -890,16 +928,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	
 
 	private void renderMap (int scWidth) {
-		GL11.glDisable(2929 /*GL_DEPTH_TEST*/);
-		GL11.glEnable(3042 /*GL_BLEND*/);
-		GL11.glDepthMask(false);
-		GL11.glBlendFunc(770, 0);
-		GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-
 		if (!this.hide && !this.full) {
 			if (this.q != 0) glah(this.q);
 
-			if (showmap) {
+			if (showmap) { // square map
 				if (this.zoom == 3) {
 					GL11.glPushMatrix();
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
@@ -919,7 +951,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} catch (Exception localException) {
 					this.error = "error: minimap overlay not found!";
 				}
-
 				try {
 					GL11.glPushMatrix();
 					this.disp(this.img("/mmarrow.png"));
@@ -934,6 +965,61 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} finally {
 					GL11.glPopMatrix();
 				}
+
+				for(Waypoint pt:wayPts) {
+					if(pt.enabled) {
+						int wayX = 0;
+						int wayY = 0;
+						if (this.game.thePlayer.dimension!=-1) {
+							wayX = this.xCoord() - pt.x;
+							wayY = this.yCoord() - pt.z;
+						}
+						else {
+							wayX = this.xCoord() - (pt.x / 8);
+							wayY = this.yCoord() - (pt.z / 8);
+						}
+
+						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 31 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 32) {
+							float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+							double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY));
+							hypot = hypot / Math.max(Math.abs(wayX), Math.abs(wayY)) * 34;
+							try {
+								GL11.glPushMatrix();
+								GL11.glColor3f(pt.red, pt.green, pt.blue);
+								this.disp(this.img("/marker.png"));
+								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+								GL11.glRotatef(-locate - 90 + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
+								drawPre();
+								this.setMap(scWidth);
+								drawPost();
+							} catch (Exception localException) {
+								this.error = "Error: marker overlay not found!";
+							} finally {
+								GL11.glPopMatrix();
+							}
+						}
+						else {
+							try 
+							{
+								GL11.glPushMatrix();
+								GL11.glColor3f(pt.red, pt.green, pt.blue);
+								this.disp(this.img("/waypoint.png"));
+								GL11.glTranslated(wayY/(Math.pow(2,this.zoom)/2),-wayX/(Math.pow(2,this.zoom)/2),0.0D);
+								drawPre();
+								this.setMap(scWidth);
+								drawPost();
+							} catch (Exception localException) 
+							{
+								this.error = "Error: waypoint overlay not found!";
+							} finally 
+							{
+								GL11.glPopMatrix();
+							}
+						}
+					} // end if pt enabled
+				} // end for waypoints
 			} else {
 				GL11.glPushMatrix();
 
@@ -1054,7 +1140,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 	}
 
-	private void showMenu (int scWidth, int scHeight) {
+	private void showMenu (int scWidth, int scHeight) { 
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 		int height;
 		int maxSize = 0;
@@ -1075,7 +1161,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		String opt1 = "Exit Menu";
 		String opt2 = "Waypoints";
 		String opt3 = "Remove";
-
+// BAD BELOW HERE
 		if(this.iMenu<3) {
 			head = this.sMenu[this.iMenu-1][0];
 
@@ -1093,7 +1179,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				if(chkLen((i+1) + ") " + wayPts.get(i).name)>maxSize)
 					maxSize = chkLen((i+1) + ") " + wayPts.get(i).name) + 32;
 
-			height = 10;
+			height = 10; 
 		}
 
 		int title = this.chkLen(head);
@@ -1108,7 +1194,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		double topY = centerY - (height-1)/2.0D*10.0D - border - 20.0D;
 		double botY = centerY - (height-1)/2.0D*10.0D + border - 10.0D;
 		this.drawBox(leftX, rightX, topY, botY);
-
+// BAD ABOVE  HERE
 		if(this.iMenu==1) {
 			leftX = centerX - maxSize/2.0D - border;
 			rightX = centerX + maxSize/2.0D + border;
@@ -1319,7 +1405,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			m = this.chkLen(xy)/2;
 			this.write(xy, scWidth*2-32*2-m, 156, 0xffffff);
 			GL11.glPopMatrix();
-		} else this.write("(" + this.dCoord(xCoord()) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+		} else if (this.showNether) this.write("(" + this.dCoord(xCoord()) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
 	}
 
 	private void drawRound(int paramInt1) {
@@ -1440,13 +1526,13 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			leftCl = rightCl - 9;
 		} else {
 			min = 0;
-			max = 7;
+			max = 9; // number of menu options, only affects if they can be clicked
 		}
 
 		for(int i = min; i<max; i++) {
 			if(i>min) topY += 10;
 
-			botY = topY + 9;
+			botY = topY + 9; 
 
 			if (MouseX>leftX && MouseX<rightX && MouseY>topY && MouseY<botY && this.iMenu < 5)
 				if (set || click) {
@@ -1573,22 +1659,26 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private boolean chkOptions(int i) {
 		if (i==0) return coords;
 		else if (i==1) return this.hide;
-		else if (i==2) return lightmap;
-		else if (i==3) return heightmap;
-		else if (i==4) return showmap;
-		else if (i==5) return welcome;
-		else if (i==6) return threading;
+		else if (i==2) return this.showNether;
+		else if (i==3) return this.showCaves;
+		else if (i==4) return lightmap;
+		else if (i==5) return heightmap;
+		else if (i==6) return showmap;
+		else if (i==7) return welcome;
+		else if (i==8) return threading;
 		throw new IllegalArgumentException("bad option number "+i);
 	}
 
 	private void setOptions(int i) {
 		if (i==0) coords = !coords;
 		else if (i==1) this.hide = !this.hide;
-		else if (i==2) lightmap = !lightmap;
-		else if (i==3) heightmap = !heightmap;
-		else if (i==4) showmap = !showmap;
-		else if (i==5) welcome = !welcome;
-		else if (i==6) threading = !threading;
+		else if (i==2) this.showNether = !this.showNether;
+		else if (i==3) this.showCaves = !this.showCaves;
+		else if (i==4) lightmap = !lightmap;
+		else if (i==5) heightmap = !heightmap;
+		else if (i==6) showmap = !showmap;
+		else if (i==7) welcome = !welcome;
+		else if (i==8) threading = !threading;
 		else throw new IllegalArgumentException("bad option number "+i);
 		this.saveAll();
 		this.timer=500;
