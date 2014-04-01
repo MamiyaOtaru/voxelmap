@@ -20,13 +20,17 @@ import net.minecraft.src.mamiyaotaru.EntityWaypoint;
 import net.minecraft.src.mamiyaotaru.EnumOptionsHelperMinimap;
 import net.minecraft.src.mamiyaotaru.EnumOptionsMinimap;
 import net.minecraft.src.mamiyaotaru.GuiMinimap;
+import net.minecraft.src.mamiyaotaru.GuiScreenAddWaypoint;
+import net.minecraft.src.mamiyaotaru.GuiWaypoints;
 import net.minecraft.src.mamiyaotaru.RenderWaypoint;
 import net.minecraft.src.mamiyaotaru.Waypoint;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 
 import org.lwjgl.BufferUtils;
@@ -71,7 +75,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private int[] blockColors = new int[4096];
 
 	private int q = 0;
-	private Random generator = new Random();
+	public Random generator = new Random();
 	/*Current Menu Loaded*/
 	public int iMenu = 1;
 	
@@ -96,9 +100,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Current build version*/
 	public String zmodver = "v2.0";
 
-	/*Menu input string*/
-	private String inStr = "";
-
 	/*Waypoint name temporary input*/
 	private String way = "";
 
@@ -115,7 +116,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private String error = "";
 
 	/*Strings to show for menu*/
-	private String[] sMenu = new String[5]; // bump up options here
+	private String[] sMenu = new String[7]; // bump up options here
 
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
@@ -144,15 +145,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Last zoom level rendered at*/
 	public int lZoom = 0;
 
-	/*Menu level for next render*/
-	private int next = 0;
-
-	/*Cursor blink interval*/
-	private int blink = 0;
-
-	/*Last key down on previous render*/
-	private int lastKey= 0;
-
 	/*Direction you're facing*/
 	private float direction = 0.0f;
 
@@ -167,27 +159,12 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/*Current Texture Pack*/
 	private ITexturePack pack = null;
-
-	/*Is the scrollbar being dragged?*/
-	private boolean scrClick = false;
-
-	/*Scrollbar drag start position*/
-	private int scrStart = 0;
-
-	/*Scrollbar offset*/
-	private int sMin = 0;
-
-	/*Scrollbar size*/
-	private int sMax = 67;
-
-	/*1st waypoint entry shown*/
-	private int min = 0;
-
-	/*Zoom key index*/
-	private int zoomKey = Keyboard.KEY_Z;
-
-	/*Menu key index*/
-	private int menuKey = Keyboard.KEY_M;
+	
+    public KeyBinding keyBindZoom = new KeyBinding("Zoom", Keyboard.KEY_Z);
+    public KeyBinding keyBindMenu = new KeyBinding("Menu", Keyboard.KEY_M);
+    public KeyBinding keyBindWaypoint = new KeyBinding("Waypoint Hotkey", Keyboard.KEY_N);
+    public KeyBinding keyBindMobToggle = new KeyBinding("Toggle Mobs", Keyboard.KEY_NONE);
+    public KeyBinding[] keyBindings;
 	
 	/*Hide just the minimap*/
 	public boolean hide = false;
@@ -221,7 +198,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Waypoint in world beacon toggle*/
 	public boolean showBeacons = true;
 	
-	/*Waypoint in world beacon toggle*/
+	/*Waypoint in world waypoint sign toggle*/
 	public boolean showWaypoints = false;
 
 	/*Show welcome message toggle*/
@@ -329,7 +306,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	public void setMenuNull()
 	{
-		game.currentScreen =null;
+		game.currentScreen = null;
 	}
 	public Object getMenu()
 	{
@@ -351,21 +328,90 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		if(renderEngine==null) renderEngine = this.game.renderEngine;
 
-		ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
-		int scWidth = scSize.getScaledWidth();
-		int scHeight = scSize.getScaledHeight();
-		int scScale = scSize.getScaleFactor();
+		//ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
+		//int scWidth = scSize.getScaledWidth();
+		//int scHeight = scSize.getScaledHeight();
+		//int scScale = scSize.getScaleFactor(); // do below to ignore gui scale;
+		
+		int scScale = 1;
+        while (game.displayWidth / (scScale + 1) >= 320 && game.displayHeight / (scScale + 1) >= 240)
+        {
+            ++scScale;
+        }
+        
+        double scaledWidthD = (double)game.displayWidth / (double)scScale;
+        double scaledHeightD = (double)game.displayHeight / (double)scScale;
+        int scWidth = MathHelper.ceiling_double_int(scaledWidthD);
+        int scHeight = MathHelper.ceiling_double_int(scaledHeightD);
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0D, scaledWidthD, scaledHeightD, 0.0D, 1000.0D, 3000.0D);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glLoadIdentity();
+        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
 
-		if (Keyboard.isKeyDown(menuKey) && this.game.currentScreen ==null) {
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMenu.keyCode)) {
 			//this.iMenu = 2;
 			//this.game.displayGuiScreen(new GuiScreen());
 			this.iMenu = 0; // close welcome message
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
 			this.game.displayGuiScreen(new GuiMinimap(this));
 			//ModLoader.openGUI(this.game.thePlayer, new GuiMinimap(this));
-			// TODO leverage internal gui code for more complex menu (and one I understand haha).  done, except for waypoints
+			// TODO leverage internal gui code for more complex menu (and one I understand haha).  done, except for waypoints.  And done
+		}
+		
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindWaypoint.keyCode)) {
+			//this.iMenu = 2;
+			//this.game.displayGuiScreen(new GuiScreen());
+			this.iMenu = 0; // close welcome message
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			Keyboard.next();
+			float r, g, b;
+			if (this.wayPts.size() == 0) { // green for the first one
+				r = 0;
+				g = 1;
+				b = 0;
+			}
+			else { // random for later ones
+				r = generator.nextFloat();
+				g = generator.nextFloat();
+				b = generator.nextFloat();
+			}
+            Waypoint newWaypoint = new Waypoint("", (this.game.thePlayer.dimension != -1)?this.xCoord():this.xCoord()*8, (this.game.thePlayer.dimension != -1)?this.zCoord():this.zCoord()*8, this.yCoord()-1, true, r, g, b, "");
+            
+            // clunky way to do it calling through waypoint list gui.  Not bad if we want waypoint list to show after finishing creating the point.  requires actionPerformed to be public
+            /*GuiButton fakeButton = new GuiButton(-4, 1337, 1337, 1337, 1337, "moo");
+            //GuiWaypoints guiWaypoints = new GuiWaypoints(null, this);
+            //guiWaypoints.actionPerformed(fakeButton);
+            //guiWaypoints.addClicked = true;*/
+            
+            // works without GuiWaypoints in the middle.  Little more logic needed in GuiScreenAddWaypoint, but feels cleaner
+			this.game.displayGuiScreen(new GuiScreenAddWaypoint(null, newWaypoint));
+		}
+		
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMobToggle.keyCode)) {
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			if (this.fudge <= 0) {
+				this.radar.setOptionValue(EnumOptionsMinimap.HIDERADAR, 0);
+				saveAll();
+				this.fudge = 20;
+			}
 		}
 
-		if (Keyboard.isKeyDown(zoomKey) && this.game.currentScreen == null && (this.showNether || this.game.thePlayer.dimension!=-1)) {
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindZoom.keyCode) && (this.showNether || this.game.thePlayer.dimension!=-1)) {
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
 			this.SetZoom();
 		}
 
@@ -374,6 +420,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			//tamis doid
 			handleDeath();
 		}
+		
+		//final long startTime = System.nanoTime();
+		sortWaypointEntities(); // only use if waypointEntities are added to entities instead of weathereffects.  This keeps them at the back.  
+								// For whatever reason, things rendered after them ignore z depth (with relation to the waypoint entities).
+								// if weather, they all ignore it and it's at least consistent (though waypoints won't be consistent with themselves probably)
+								// effect is nice.  Until I can figure out how to get them to behave like the other entities, deal with the unnoticeable speed hit
+		//System.out.println(System.nanoTime()-startTime);
 
         this.guiScreen = this.game.currentScreen;
 
@@ -401,9 +454,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
 			this.enabled=false;
 		else this.enabled=true;
-
-		if (this.game.currentScreen==null && this.iMenu > 1) 
-			this.iMenu = 0;
 
 		scWidth -= 5;
 		scHeight -= 5;
@@ -435,7 +485,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 		
 		if (this.enabled) {
-
+			
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
 			GL11.glEnable(GL11.GL_BLEND);
 			GL11.glDepthMask(false);
@@ -458,11 +508,12 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 			if (this.showNether || this.game.thePlayer.dimension!=-1) {
 				if(coords) showCoords(scWidth, scHeight);
-				if (radar != null && this.radarAllowed)
-					radar.OnTickInGame(mc);
+				//if (radar != null && this.radarAllowed) // moved to middle of drawing map so arrow shows on top of mobs.  need to know which way I am facing in squaremap mode!
+				//	radar.OnTickInGame(mc);
 			}
 		}
-		
+        this.game.entityRenderer.setupOverlayRendering(); // set viewport back to GuiScale heeding version
+
 		if (this.timer == 200 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
 			if (old2dWayPts.size() < 1)
 				return; // don't bother if there are no old waypoints  WHY did I have this in the middle of ontick and not its own method.  This skipped rendering the map when I had this above the map rendering block haha D:
@@ -501,11 +552,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
         }
 */
 		//this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(), -88, 64, 275));
-		
 	}
 
 	private void checkForChanges() {
-		String j;
 		String mapName;
 		if (game.isIntegratedServerRunning())
 			mapName = this.getMapName();
@@ -539,7 +588,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				}
 				else {
 					//Object chatList = getPrivateFieldByName(guiNewChat, "c"); // "ChatLines"); // fieldname needs to be obfuscated name
-					Object chatList = getPrivateFieldByType(guiNewChat, java.util.List.class, 1); // "ChatLines"); // fieldname needs to be obfuscated name
+					Object chatList = getPrivateFieldByType(guiNewChat, java.util.List.class, 1); // or do it this way :D
 					if (chatList == null) {
 						System.out.println("could not get chatlist");
 					}
@@ -548,7 +597,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						System.out.println("chatlist size: " + ((java.util.List)chatList).size());
 						for (int t = 0; t < ((java.util.List)chatList).size(); t++) {
 							String msg = ((ChatLine)((java.util.List)chatList).get(t)).getChatLineString();
-							System.out.println("message: " + msg);
+							//System.out.println("message: " + msg);
 							if(msg.contains("§3 §6 §3 §6 §3 §6 §e")) { 
 								killRadar = true;
 							//	System.out.println("no radar");
@@ -603,7 +652,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (toDel != -1)
 			this.deleteWaypoint(toDel); // remove previous
 		
-		addWaypoint("Latest Death", this.xCoord(), this.zCoord(), this.yCoord(), true, 1, 1, 1, "skull");
+		addWaypoint("Latest Death", this.xCoord(), this.zCoord(), this.yCoord()-1, true, 1, 1, 1, "skull"); // -1 cause height in zan's is head height.  If I change that, undo these magic ones :(
 		
 		this.hide = currentlyHiding;
 	}
@@ -714,7 +763,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				double sc = 0;
 				if (heightmap) {
 					diff = height-this.yCoord();
-					//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+					//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D; // old way with 128 total height worlds
 					sc = Math.log10(Math.abs(diff)/8.0D+1.0D)/1.8D;
 				}
 				else if (slopemap) {
@@ -758,10 +807,14 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			if(i3 > 255) i3 = 255;
 
 			if (nether) {
-				if (!solid)
-					if(i3 < 76) i3 = 76; // nether/cave shows some light even in the dark so you can see caves/nether surface that isn't lit.  If it's solid though leave it black
-					else
-						if(i3<0) i3 = 0; // solid is black
+				if (!solid) {
+					if(i3 < 76) 
+						i3 = 76; // nether/cave shows some light even in the dark so you can see caves/nether surface that isn't lit.  If it's solid though leave it black
+				}
+				else {
+					if(i3<0) 
+						i3 = 0; // solid is black
+				}
 			}
 			else { // overworld
 				if(i3 < 32) i3 = 32; // overworld lowest black is lower for some reason.  not as black as solid though
@@ -804,7 +857,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (this.game.thePlayer.dimension!=-1)
 			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
 			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
-			if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, this.yCoord(), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+			if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
 				nether = true;
 			else
 				nether = false;
@@ -878,7 +931,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				this.active = true;
 				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
 					if (this.enabled && !this.hide)
-						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
+						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300))) // logically the same as the check at the beginning of mapcalc that returns if these aren't met. duplicate.  delete?
 							try {this.mapCalc((timer>300)?true:false);} catch (Exception local) {}
 					this.timer=(this.timer>300)?0:this.timer+1;
 					this.active = false;
@@ -903,14 +956,16 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		//ModLoader.setInGameHook(this, true, false);
 
 		instance=this;
-	/*	if (classExists("mod_MotionTracker")) {
+		/*	if (classExists("mod_MotionTracker")) {
 			motionTracker = new mod_MotionTracker();		
 			motionTrackerExists = true;
 		}*/
 
-//		if (classExists("ZanRadar")) { // change to mod_ZanRadar if this ever becomes independent and modloader enabled
+		//		if (classExists("ZanRadar")) { // change to mod_ZanRadar if this ever becomes independent and modloader enabled
 			radar = new ZanRadar(this);		
-//		}
+		//		}
+
+		this.keyBindings = new KeyBinding[] {this.keyBindZoom, this.keyBindMenu, this.keyBindWaypoint, this.keyBindMobToggle}; 
 
 		zCalc.start();
 		this.map[0] = new BufferedImage(32,32,2);
@@ -918,11 +973,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		this.map[2] = new BufferedImage(128,128,2);
 		this.map[3] = new BufferedImage(256,256,2);
 
-		this.sMenu[0] = "§4Zan's§F Mod! " + this.zmodver + " Maintaned by MamiyaOtaru";
+		this.sMenu[0] = "§4Zan's§F Mod! " + this.zmodver + " Maintained by MamiyaOtaru";
 		this.sMenu[1] = "Welcome to Zan's Minimap, there are a";
 		this.sMenu[2] = "number of features and commands available to you.";
-		this.sMenu[3] = "- Press §B" + Keyboard.getKeyName(zoomKey) + " §Fto zoom in/out, or §B"+ Keyboard.getKeyName(menuKey) + "§F for options.";
-		this.sMenu[4] = "§7Press §F" + Keyboard.getKeyName(zoomKey) + "§7 to hide.";
+		this.sMenu[3] = "- Press §B" + getKeyDisplayString(keyBindZoom.keyCode) + " §Fto zoom in/out, or §B"+ getKeyDisplayString(keyBindMenu.keyCode) + "§F for options.";
+		this.sMenu[4] = "- Press §B" + getKeyDisplayString(keyBindWaypoint.keyCode) + " §Fto quickly add a waypoint without going through the menu.";
+		this.sMenu[5] = "- Press §B" + getKeyDisplayString(keyBindMobToggle.keyCode) + " §Fto quickly toggle mob icons on and off.";
+		this.sMenu[6] = "§7Press §F" + getKeyDisplayString(keyBindZoom.keyCode) + "§7 to hide.";
 		
 		if (fboEnabled)
 			setupFBO(); // setup our framebuffer object
@@ -959,9 +1016,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					else if(curLine[0].equals("Welcome Message"))
 						welcome = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Zoom Key"))
-						zoomKey = Keyboard.getKeyIndex(curLine[1]);
+						keyBindZoom.keyCode = Keyboard.getKeyIndex(curLine[1]);
 					else if(curLine[0].equals("Menu Key"))
-						menuKey = Keyboard.getKeyIndex(curLine[1]);
+						keyBindMenu.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					else if(curLine[0].equals("Waypoint Key"))
+						keyBindWaypoint.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					else if(curLine[0].equals("Mob Key"))
+						keyBindMobToggle.keyCode = Keyboard.getKeyIndex(curLine[1]);
 					else if(curLine[0].equals("Threading"))
 						threading=Boolean.parseBoolean(curLine[1]);
 					// radar
@@ -1136,6 +1197,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		blockColors[blockColorID(22, 0)] = 0xd2eb2;
 		blockColors[blockColorID(23, 0)] = 0x747474;
 		blockColors[blockColorID(24, 0)] = 0xc6bd6d; // sandstone
+		blockColors[blockColorID(24, 1)] = 0xc6bd6d;
+		blockColors[blockColorID(24, 2)] = 0xc6bd6d;
 		blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
 		blockColors[blockColorID(30, 0)] = 0xf4f4f4; // cobweb
 		blockColors[blockColorID(35, 0)] = 0xf4f4f4;
@@ -1357,8 +1420,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			out.println("Waypoint Signs:" + Boolean.toString(showWaypoints));
 			out.println("Welcome Message:" + Boolean.toString(welcome));
 			out.println("Threading:" + Boolean.toString(threading));
-			out.println("Zoom Key:" + Keyboard.getKeyName(zoomKey));
-			out.println("Menu Key:" + Keyboard.getKeyName(menuKey));
+			out.println("Zoom Key:" + getKeyDisplayString(keyBindZoom.keyCode));
+			out.println("Menu Key:" + getKeyDisplayString(keyBindMenu.keyCode));
+			out.println("Waypoint Key:" + getKeyDisplayString(keyBindWaypoint.keyCode));
+			out.println("Mob Key:" + getKeyDisplayString(keyBindMobToggle.keyCode));
 			if (radar != null)
 				radar.saveAll(out);
 			out.close();
@@ -1368,10 +1433,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	public void saveWaypoints() {
-		String[] worldNameParts = worldName.split(":");
-		String worldNameSave = worldNameParts[0];
-		if (worldNameParts.length != 1)
-			worldNameSave = worldNameSave + "~colon~" + worldNameParts[1];
+		String worldNameSave = scrubFileName(worldName);
 
 		settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameSave + ".points");
 
@@ -1379,7 +1441,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
 
 			for(Waypoint pt:wayPts) {
-				if(!pt.name.startsWith("^"))
+				if(!pt.name.startsWith("^")) 
 					out.println(pt.name + ":" + pt.x + ":" + pt.z + ":" + pt.y + ":" + Boolean.toString(pt.enabled) + ":" + pt.red + ":" + pt.green + ":" + pt.blue + ":" + pt.imageSuffix);
 			}
 
@@ -1388,13 +1450,30 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			chatInfo("§EError Saving Waypoints");
 		}
 	}
+	
+	private String scrubFileName(String input) {
+		// illegal characters:   < > : " / \ | ? *
+		// colon is problematic.  let's jsut hope no one ever uses that.  Supposed to be to separate ports.
+		input = input.replace("<", "~less~");
+		input = input.replace(">", "~greater~");
+		input = input.replace(":", "~colon~");
+		input = input.replace("\"", "~quote~");
+		input = input.replace("/", "~slash~");
+		input = input.replace("\\", "~backslash~"); 
+		input = input.replace("|", "~pipe~");
+		input = input.replace("?", "~question~");
+		input = input.replace("*", "~star~");
+		return input;
+	}
 
 	private void loadWaypoints() {
-		String[] worldNameParts = worldName.toLowerCase().split(":");
-		String worldNameWithoutPort = worldNameParts[0];
-		String worldNameWithPort = worldNameParts[0];
-		if (worldNameParts.length != 1)
-			worldNameWithPort = worldNameWithPort + "~colon~" + worldNameParts[1];
+		String worldNameWithPort = scrubFileName(worldName);
+
+		String worldNameWithoutPort = worldName;
+	    int portSepLoc = worldName.lastIndexOf(":");
+	    if(portSepLoc != -1)  
+	    	worldNameWithoutPort = worldNameWithoutPort.substring(0, portSepLoc);
+	    worldNameWithoutPort = scrubFileName(worldNameWithoutPort);
 		
 		wayPts = new ArrayList<Waypoint>();
 		settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameWithPort + ".points");
@@ -1455,7 +1534,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				}
 								
 				in.close();
-				chatInfo("§EWaypoints loaded for " + worldNameWithoutPort);
+				chatInfo("§EWaypoints loaded for " + worldName);
 			} else chatInfo("§EError: No waypoints exist for this world/server.");
 		} catch (Exception local) {
 			chatInfo("§EError Loading Waypoints");
@@ -1506,14 +1585,16 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
 		wayPts.add(newWaypoint);
 		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
-		this.getWorld().addWeatherEffect(ewpt);
+		//newWaypoint.entity = ewpt;
+		this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
 		this.saveWaypoints();
 	}
 	
 	public void addWaypoint(Waypoint newWaypoint) {
 		wayPts.add(newWaypoint);
 		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
-		this.getWorld().addWeatherEffect(ewpt);
+		//newWaypoint.entity = ewpt;
+		this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
 		this.saveWaypoints();
 	}
 	
@@ -1521,10 +1602,83 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (!(this.game.thePlayer.dimension==-1) || this.showNether) { // check if nether
 			for(Waypoint wpt:wayPts) {
 				EntityWaypoint ewpt = new EntityWaypoint(world, wpt, (this.game.thePlayer.dimension==-1));
-				this.world.addWeatherEffect(ewpt);
+				//wpt.entity = ewpt;
+				this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
 			}
 		}
 	}
+	
+	private void sortWaypointEntities() {
+		java.util.List entities = this.game.theWorld.getLoadedEntityList();
+		synchronized (entities) {
+			int moved = 0;
+			for(int j = 0; j < (entities.size() - this.wayPts.size()); j++) { // find waypoint entities that aren't at the end and put them there
+				Entity entity = (Entity)entities.get(j);
+				if (entity instanceof EntityWaypoint) {
+					moved++;
+					java.util.Collections.swap(entities, j, nextNonWaypoint(entities));
+					//System.out.println("swapped " + j + ", total moved " + moved);
+				}
+			}
+			if (moved > 0) {// only need to sort if waypoint(s) got dumped at the end.  Otherwise all is as it was before, namely sorted
+				try {
+					Collections.sort(entities.subList(entities.size()-wayPts.size(), entities.size())); // sort waypoint entities so ones behind do not show through (actually reversed.. closest ones drawn first)
+				}
+				catch (ClassCastException e) {
+					//System.out.println(e.getLocalizedMessage());
+				} // just in case.  I don't run into this anymore, but I'd rather it not happen to someone else
+			}
+/*			String errorM = "";
+			for(int j = (entities.size() - this.wayPts.size()); j < entities.size(); j++) { // find waypoint entities that aren't at the end and put them there
+				Entity entity = (Entity)entities.get(j);
+				if (!(entity instanceof EntityWaypoint)) {
+					errorM += "np: " + j + " ";
+				}
+			}
+			if (!errorM.equals("")) {
+				for(Waypoint wpt:wayPts) {
+					EntityWaypoint ewpt = wpt.entity;
+					errorM += wpt.name.substring(0,2) + entities.indexOf(ewpt) + " ";
+				}
+				this.chatInfo(errorM);
+				System.out.println(errorM);
+			}*/
+		}
+			
+	}
+	
+	public int nextNonWaypoint(List<Entity> entities) {
+		for(int j = entities.size()-1; j >= (entities.size() - this.wayPts.size()); j--) { // find waypoint entities that aren't at the end and put them there
+			if (!(entities.get(j) instanceof EntityWaypoint)) {
+				return j;
+			}
+		}
+		//this.chatInfo("no dest");
+		//System.out.println("no dest");
+		return entities.size()-1;
+	}
+		
+	
+	// the same, done differently.  Requires each waypoint to have a handle to its entity.
+	/* private void sortWaypointEntities() {
+		java.util.List entities = this.game.theWorld.getLoadedEntityList();
+		int moved = 0;
+		for(int j = 0; j < wayPts.size(); j++) { // check that all waypoints are at the end
+			Entity entity = (Entity)(wayPts.get(j).entity);
+			int loc = entities.indexOf(entity);
+			if (loc < entities.size()-wayPts.size()) {
+				moved++;
+				java.util.Collections.swap(entities, loc, entities.size()-moved);
+				//System.out.println("swapped " + loc + " to " + (entities.size()-moved) + ", total moved " + moved);
+			}
+		}
+		if (moved > 0) {// only need to sort if waypoint(s) got dumped at the end.  Otherwise all is as it was before, namely sorted
+			try {
+				Collections.sort(entities.subList(entities.size()-wayPts.size(), entities.size())); // sort waypoint entities so ones behind do not show through (actually reversed.. closest ones drawn first)
+			}
+			catch (ClassCastException e) {} // just in case.  I don't run into this anymore, but I'd rather it not happen to someone else
+		}
+	} */
 		
 	private void loadColorPicker() {
 		try {
@@ -1588,7 +1742,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		 		    
 			blockColors[blockColorID(1, 0)] = getColor(terrainBuff, 1);
 //			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
-			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7,  0.7)) & 0x00FFFFFF;
+			int grassColor = ColorizerGrass.getGrassColor(0.7,  0.8);
+			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
 			blockColors[blockColorID(3, 0)] = getColor(terrainBuff, 2); 
 			blockColors[blockColorID(4, 0)] = getColor(terrainBuff, 16);
 			blockColors[blockColorID(5, 0)] = getColor(terrainBuff, 4); // planks
@@ -1641,7 +1796,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			//blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
 			//blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 53);
 			//blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 196);
-			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColor(0.7,  0.7)) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
 			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 133), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
 			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
 			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 196), ColorizerFoliage.getFoliageColorBasic()) & 0x00FFFFFF;
@@ -1650,7 +1805,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(21, 0)] = getColor(terrainBuff, 160);
 			blockColors[blockColorID(22, 0)] = getColor(terrainBuff, 144);
 			blockColors[blockColorID(23, 0)] = getColor(terrainBuff, 62);
-			blockColors[blockColorID(24, 0)] = getColor(terrainBuff, 176); // sandstone.  could differentiate
+			blockColors[blockColorID(24, 0)] = getColor(terrainBuff, 176); // sandstone.  
+			blockColors[blockColorID(24, 1)] = getColor(terrainBuff, 176);
+			blockColors[blockColorID(24, 2)] = getColor(terrainBuff, 176);
 			blockColors[blockColorID(25, 0)] = getColor(terrainBuff, 74); // note block
 			blockColors[blockColorID(30, 0)] = getColor(terrainBuffTrans, 11); // cobweb
 			blockColors[blockColorID(35, 0)] = getColor(terrainBuff, 64);
@@ -1850,11 +2007,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(136, 3)] = getColor(terrainBuff, 199);
 			blockColors[blockColorID(137, 0)] = getColor(terrainBuff, 184); // command block
 			blockColors[blockColorID(138, 0)] = getColor(terrainBuff, 41); // beacon block
+			getCTMcolors();
 
 		    this.timer = 300; // force rerender with texture pack colors now that they are loaded
 		}
 		catch (Exception e) {
 			System.out.println("ERRRORRR " + e.getLocalizedMessage());
+			e.printStackTrace();
 		}
 		
 	}
@@ -1972,6 +2131,155 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(9, 0)] = 0xecad41;
     	}
     }
+    
+    private void getCTMcolors() {
+    	for (String s : listResources("/ctm", ".properties")) {
+    		loadCTM(s);
+    	}
+    }
+    
+    private void loadCTM(String filePath) {
+        if (filePath == null) {
+            return;
+        }
+        java.util.Properties properties = new java.util.Properties();
+        InputStream input = pack.getResourceAsStream(filePath);
+        try {
+        	if (input != null) {
+        		properties.load(input);
+                input.close();
+        	}
+        } 
+        catch (IOException e) {
+        	return;
+        }
+        
+        filePath = filePath.toLowerCase();
+        String blockNum = filePath.substring(filePath.lastIndexOf("block")+5, filePath.lastIndexOf(".properties"));
+        int blockID = -1;
+        try {
+        	blockID = Integer.parseInt(blockNum);
+        }
+        catch (NumberFormatException e) {
+            return;
+        }
+
+        String method = properties.getProperty("method", "").trim().toLowerCase();
+        String faces = properties.getProperty("faces", "").trim().toLowerCase();
+        String filename = properties.getProperty("source", "").trim().toLowerCase();
+        String metadata = properties.getProperty("metadata", "0").trim().toLowerCase();
+        String tiles = properties.getProperty("tiles", "").trim().toLowerCase();
+
+        int metadataInt = Integer.parseInt( metadata);
+
+        int[] tilesInts = parseIntegerList(tiles, 0, 255);
+        int tilesInt = 0;
+        if (tilesInts.length > 0) {
+        	tilesInt = tilesInts[0];
+        }
+        System.out.println("block: " + blockNum + ", metadata: " + metadata + ", tile: " + tilesInt);
+
+
+        if (method.equals("sandstone") || method.equals("top") || faces.contains("top")) {
+        	try {
+        		InputStream is = pack.getResourceAsStream(filename);
+        		java.awt.Image top = ImageIO.read(is);
+        		is.close();
+        		top = top.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
+        		BufferedImage topBuff = new BufferedImage(top.getWidth(null), top.getHeight(null), BufferedImage.TYPE_INT_RGB);
+        		java.awt.Graphics gfx = topBuff.createGraphics();
+        		// Paint the image onto the buffered image
+        		gfx.drawImage(top, 0, 0, null);
+        		gfx.dispose();
+        		int topRGB = getColor(topBuff, tilesInt);
+        		blockColors[blockColorID(blockID, metadataInt)] = topRGB;
+        	}
+        	catch (IOException e) {
+        	}
+        }
+    }
+    
+    private int[] parseIntegerList(String list, int minValue, int maxValue) {
+        ArrayList<Integer> tmpList = new ArrayList<Integer>();
+        for (String token : list.replace(',', ' ').split("\\s+")) {
+            token = token.trim();
+            try {
+                if (token.matches("^\\d+$")) {
+                    tmpList.add(Integer.parseInt(token));
+                } else if (token.matches("^\\d+-\\d+$")) {
+                    String[] t = token.split("-");
+                    int min = Integer.parseInt(t[0]);
+                    int max = Integer.parseInt(t[1]);
+                    for (int i = min; i <= max; i++) {
+                        tmpList.add(i);
+                    }
+                }
+            } catch (NumberFormatException e) {
+            }
+        }
+        if (minValue <= maxValue) {
+            for (int i = 0; i < tmpList.size(); ) {
+                if (tmpList.get(i) < minValue || tmpList.get(i) > maxValue) {
+                    tmpList.remove(i);
+                } else {
+                    i++;
+                }
+            }
+        }
+        int[] a = new int[tmpList.size()];
+        for (int i = 0; i < a.length; i++) {
+            a[i] = tmpList.get(i);
+        }
+        return a;
+    }
+    
+    private String[] listResources(String directory, String suffix) {
+        if (directory == null) {
+            directory = "";
+        }
+        if (directory.startsWith("/")) {
+            directory = directory.substring(1);
+        }
+        if (suffix == null) {
+            suffix = "";
+        }
+
+        ArrayList<String> resources = new ArrayList<String>();
+        if (pack instanceof TexturePackDefault) {
+            // nothing
+        } else if (pack instanceof TexturePackCustom) {
+        	try {
+        		java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(((TexturePackCustom) pack).texturePackFile);
+        		if (zipFile != null) {
+        			for (java.util.zip.ZipEntry entry : Collections.list(zipFile.entries())) {
+        				final String name = entry.getName();
+        				if (name.startsWith(directory) && name.endsWith(suffix)) {
+        					resources.add("/" + name);
+        				}
+        			}
+        		}
+        	}
+        	catch (java.util.zip.ZipException e) {
+        	}
+        	catch (IOException e) {
+        	}
+        } else if (pack instanceof TexturePackFolder) {
+            File folder = ((TexturePackFolder) pack).texturePackFile;
+            if (folder != null && folder.isDirectory()) {
+                String[] list = new File(folder, directory).list();
+                if (list != null) {
+                    for (String s : list) {
+                        if (s.endsWith(suffix)) {
+                            resources.add("/" + new File(new File(directory), s).getPath().replace('\\', '/'));
+                        }
+                    }
+                }
+            }
+        }
+
+        Collections.sort(resources);
+        return resources.toArray(new String[resources.size()]);
+    }
 	
 	
 	private void renderMap (int scWidth, int scScale) {
@@ -2011,20 +2319,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				} catch (Exception localException) {
 					this.error = "error: minimap overlay not found!";
 				}
-				try {
-					GL11.glPushMatrix();
-					this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow2x.png"):this.img("/mamiyaotaru/mmarrow.png"));
-					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); 
-					GL11.glRotatef(-this.direction -90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
-					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
-					drawPre();
-					this.setMap(scWidth, 16);
-					drawPost();
-				} catch (Exception localException) {
-					this.error = "Error: minimap arrow not found!";
-				} finally {
-					GL11.glPopMatrix();
-				}
+				this.drawDirections(scWidth);
 
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
@@ -2092,6 +2387,24 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						} // end waypoint is on current map
 					} // end if pt enabled
 				} // end for waypoints
+				if (radar != null && this.radarAllowed) // after map drawn, before arrow so they aren't on top of that stuff.  After waypoitns though don't want a creeper under a waypoint symbol
+					radar.OnTickInGame(game);
+				try { // draw arrow last.  Always want to see it above things so we know which direction we are facing on the map
+					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+					GL11.glPushMatrix();
+					this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow2x.png"):this.img("/mamiyaotaru/mmarrow.png"));
+					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); 
+					GL11.glRotatef(-this.direction -90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
+					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+					drawPre();
+					this.setMap(scWidth, 16);
+					drawPost();
+				} catch (Exception localException) {
+					this.error = "Error: minimap arrow not found!";
+				} finally {
+					GL11.glPopMatrix();
+				}
 			} // end if squaremap
 			else { // else roundmap
 			//	final long startTime = System.nanoTime();
@@ -2342,7 +2655,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 							}
 						}
 					}
-				}
+				} // end for waypoints
+				if (radar != null && this.radarAllowed)
+					radar.OnTickInGame(game);
 			} // end roundmap
 		}
 	}
@@ -2401,8 +2716,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	     ByteBuffer byteBuffer = BufferUtils.createByteBuffer(4 * width * height);
 
 	     GL11.glBindTexture(GL11.GL_TEXTURE_2D, fboTextureID); // Bind the colorbuffer texture
-	    // GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
-	    // GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
+	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, 10496 );
+	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, 10496 );
 	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
 	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST); 
 	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); // TODO
@@ -2467,11 +2782,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		for(int n=1; n<height; n++)
 			this.write(this.sMenu[n], centerX - maxSize/2, ((centerY - (height-1)*10/2) + (n * 10))-9, 0xffffff);
 		this.write(hide, centerX - footer/2, ((scHeight+5)/2 + (height-1)*10/2 + 11), 0xffffff);
-
-		if(this.next!=0) {
-			this.iMenu = this.next;
-			this.next = 0;
-		}
 	}
 
 	private void showCoords (int scWidth, int scHeight) {
@@ -2514,74 +2824,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		ldrawtwo(rightX, topY, 0.0D);
 		ldrawtwo(leftX, topY, 0.0D);
 		drawPost();
-	}
-
-	private int drawFooter(int centerX,int centerY,int m, String opt1, String opt2, String opt3, int border,int MouseX,int MouseY,boolean set,boolean click) {
-		int footer = this.chkLen(opt1);
-
-		if (this.chkLen(opt2) > footer) footer = this.chkLen(opt2);
-
-		double leftX = centerX - footer - border*2 - 5;
-		double rightX = centerX - 5;
-		double topY = centerY + (m-1)/2.0D*10.0D - border + 10.0D;
-		double botY = centerY + (m-1)/2.0D*10.0D + border + 20.0D;
-
-		if (this.chkLen(opt3) > footer) footer = this.chkLen(opt3);
-
-		leftX = centerX - border*3 - footer*1.5 - 5;
-		rightX = centerX - footer/2 - border - 5;
-
-		if (MouseX>leftX && MouseX<rightX && MouseY>topY && MouseY<botY && this.iMenu < 4) // if on main menu or waypoint menu
-			if (set || click) {
-				if(set) {
-					// new GuiMinimap since we are only using this legacy for waypoints
-					this.iMenu = 0; // disable built in menu
-					this.game.displayGuiScreen(new GuiMinimap(this)); // display new minecraft style main menu
-					//if (this.iMenu==2) 
-					//	setMenuNull(); // if on main menu, exit menu system when clicked
-					//else 
-					//	this.next=2; // else go back to main menu
-				}
-
-				GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-			} else GL11.glColor4f(0.5f, 0.5f, 0.5f, 0.7f);
-		else GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
-
-		if (this.iMenu!=4)this.drawBox(leftX, rightX, topY, botY);
-
-		leftX = centerX - footer/2 - border;
-		rightX = centerX + footer/2 + border;
-
-		if (MouseX>leftX && MouseX<rightX && MouseY>topY && MouseY<botY && this.iMenu < 5)
-			if (set || click) {
-				if(set) {
-					if (this.iMenu==2 || this.iMenu==4) this.next=3;
-					else {
-						this.next = 5;
-						this.inStr = "";
-					}
-				}
-
-				GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-			} else GL11.glColor4f(0.5f, 0.5f, 0.5f, 0.7f);
-		else GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
-
-		this.drawBox(leftX, rightX, topY, botY);
-
-		rightX = centerX + border*3 + footer*1.5 + 5;
-		leftX = centerX + footer/2 + border + 5;
-
-		if (MouseX>leftX && MouseX<rightX && MouseY>topY && MouseY<botY && this.iMenu < 4)
-			if (set || click) {
-				if(set) this.next = 4;
-
-				GL11.glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
-			} else GL11.glColor4f(0.5f, 0.5f, 0.5f, 0.7f);
-		else GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
-
-		if (this.iMenu!=4) this.drawBox(leftX, rightX, topY, botY);
-
-		return footer/2;
 	}
 
 	private void setMap(int paramInt1) {
@@ -2631,25 +2873,35 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			{
 				GL11.glPopMatrix();
 			}*/
+		float rotate;
+		float distance;
+		if (this.squareMap) {
+			rotate = -90;
+			distance = 58;
+		}
+		else {
+			rotate = this.direction + northRotate;
+			distance = 64;
+		}
 
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction - 90.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction - 90.0D + northRotate)))),0.0D); // direction -90 w top.  0 n top.  in all cases n top means 90 more (or w top means 90 less)
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate - 90.0D)))),(distance * Math.cos(Math.toRadians(-(rotate - 90.0D)))),0.0D); // direction -90 w top.  0 n top.  in all cases n top means 90 more (or w top means 90 less)
 		this.write("N", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction + northRotate)))),0.0D);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate)))),(distance * Math.cos(Math.toRadians(-(rotate)))),0.0D);
 		this.write("E", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction + 90.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction + 90.0D + northRotate)))),0.0D);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate + 90.0D)))),(distance * Math.cos(Math.toRadians(-(rotate + 90.0D)))),0.0D);
 		this.write("S", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction + 180.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction + 180.0D + northRotate)))),0.0D);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate + 180.0D)))),(distance * Math.cos(Math.toRadians(-(rotate + 180.0D)))),0.0D);
 		this.write("W", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 	}
@@ -2905,5 +3157,39 @@ public class ZanMinimap implements Runnable { // implements Runnable
         }
 		this.timer=500; // re-render immediately for new options
 	}
+	
+	// controls menu from here
+    public String getKeyBindingDescription(int par1)
+    {
+        StringTranslate var2 = StringTranslate.getInstance();
+        return var2.translateKey(this.keyBindings[par1].keyDescription);
+    }
+
+    /**
+     * The string that appears inside the button/slider in the options menu.
+     */
+    public String getOptionDisplayString(int par1)
+    {
+        int var2 = this.keyBindings[par1].keyCode;
+        return getKeyDisplayString(var2);
+    }
+
+    /**
+     * Represents a key or mouse button as a string. Args: key
+     */
+    public static String getKeyDisplayString(int par0)
+    {
+        return par0 < 0 ? StatCollector.translateToLocalFormatted("key.mouseButton", new Object[] {Integer.valueOf(par0 + 101)}): Keyboard.getKeyName(par0);
+    }
+
+    /**
+     * Sets a key binding.
+     */
+    public void setKeyBinding(int par1, int par2)
+    {
+        this.keyBindings[par1].keyCode = par2;
+        this.saveAll();
+    }
+    
 	
 }
