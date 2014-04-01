@@ -407,12 +407,110 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			if (this.showNether || this.game.thePlayer.dimension!=-1)
 				if(coords) showCoords(scWidth, scHeight);
 		}
+		
+
+	/*	try {
+		RenderManager.instance.renderEntity(new EntityLightningBolt(this.getWorld(),10,75,280),0);
+		}
+		catch (Exception e){
+			System.out.println(e.getMessage());
+		}*/
+	//	this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(),-3,75,280));
+
+		float par3 = .01F;//0.9813967F;
+	    this.game.entityRenderer.setupCameraTransform(par3, 0); // or 1
+	    int x = this.xCoord();
+	    int y = this.yCoord();
+	    int z = this.zCoord();
+		for(Waypoint pt:wayPts) {
+			if(pt.enabled) {
+				renderBeacon(pt.x - x, this.getBlockHeight(false, this.getWorld(), pt.x, pt.z, y) - y - 1, pt.z - z, pt.red, pt.green, pt.blue);
+			}
+		}
+
+		
 
 		//while (active) try {
 		//		Thread.currentThread().sleep(1);
 		//	} catch (Exception local) {}
 		//TODO: what the fuck is this for? :P
 	}
+	
+	private void renderBeacon(double baseX, double baseY, double baseZ, float r, float g, float b)
+    {
+        Tessellator tesselator = Tessellator.instance;
+        GL11.glDisable(GL11.GL_TEXTURE_2D);
+        GL11.glDisable(GL11.GL_LIGHTING);
+        GL11.glEnable(GL11.GL_BLEND);
+        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
+        int height = 128;
+        double topWidthFactor = 1.0D;
+        double bottomWidthFactor = 1.0D;
+     
+
+
+
+        for (int width = 0; width < 4; ++width)
+        {
+         
+              
+
+
+                    tesselator.startDrawing(5);
+                    float brightness = 0.5F;
+                    tesselator.setColorRGBA_F(r * 0.9F * brightness, g * 0.9F * brightness, b * 1.0F * brightness, 0.3F);
+                    double var32 = 0.1D + (double)width * 0.2D;
+
+                        var32 *= topWidthFactor;
+
+
+                    double var34 = 0.1D + (double)width * 0.2D;
+
+
+                        var34 *= bottomWidthFactor;
+ 
+
+                    for (int side = 0; side < 5; ++side)
+                    {
+                        double vertX2 = baseX /*+ 0.5D*/ - var32;
+                        double vertZ2 = baseZ /*+ 0.5D*/ - var32;
+
+                        if (side == 1 || side == 2)
+                        {
+                            vertX2 += var32 * 2.0D;
+                        }
+
+                        if (side == 2 || side == 3)
+                        {
+                            vertZ2 += var32 * 2.0D;
+                        }
+
+                        double vertX1 = baseX /*+ 0.5D*/ - var34;
+                        double vertZ1 = baseZ /*+ 0.5D*/ - var34;
+
+                        if (side == 1 || side == 2)
+                        {
+                            vertX1 += var34 * 2.0D;
+                        }
+
+                        if (side == 2 || side == 3)
+                        {
+                            vertZ1 += var34 * 2.0D;
+                        }
+
+                        tesselator.addVertex(vertX1, baseY + (double)(0), vertZ1);
+                        tesselator.addVertex(vertX2, baseY + (double)(height), vertZ2);
+                    }
+
+                    tesselator.draw();
+             
+           // }
+        }
+
+        GL11.glDisable(GL11.GL_BLEND);
+        GL11.glEnable(GL11.GL_LIGHTING);
+        GL11.glEnable(GL11.GL_TEXTURE_2D);
+    }
 
 	private void checkForChanges() {
 		String j;
