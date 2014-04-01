@@ -9,6 +9,9 @@ import java.net.Socket;
 
 import javax.imageio.ImageIO;
 import net.minecraft.client.Minecraft;
+import net.minecraft.src.mamiyaotaru.EntityWaypoint;
+import net.minecraft.src.mamiyaotaru.RenderWaypoint;
+import net.minecraft.src.mamiyaotaru.Waypoint;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -167,10 +170,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Dynamic lighting toggle*/
 	private boolean lightmap = true;
 
-	/*Terrain depth toggle*/
+	/*Terrain bump toggle*/
 	private boolean heightmap = false;
 	
-	/*Terrain bump toggle*/
+	/*Terrain depth toggle*/
 	private boolean slopemap = true;
 
 	/*Square map toggle*/
@@ -298,6 +301,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
 		int scWidth = scSize.getScaledWidth();
 		int scHeight = scSize.getScaledHeight();
+		int scScale = scSize.getScaleFactor();
 
 		if (Keyboard.isKeyDown(menuKey) && this.game.currentScreen ==null) {
 			this.iMenu = 2;
@@ -372,11 +376,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
 			GL11.glEnable(GL11.GL_BLEND);
 			GL11.glDepthMask(false);
-			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);
+			//GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 			if (this.showNether || this.game.thePlayer.dimension!=-1) {
 				if(this.full) renderMapFull(scWidth,scHeight);
-				else renderMap(scWidth);
+				else renderMap(scWidth, scScale);
 			}					
 
 			if (ztimer > 0)
@@ -996,6 +1001,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		blockColors[blockColorID(23, 0)] = 0x747474;
 		blockColors[blockColorID(24, 0)] = 0xc6bd6d; // sandstone
 		blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
+		blockColors[blockColorID(30, 0)] = 0xf4f4f4; // cobweb
 		blockColors[blockColorID(35, 0)] = 0xf4f4f4;
 		blockColors[blockColorID(35, 1)] = 0xeb843e;
 		blockColors[blockColorID(35, 2)] = 0xc55ccf;
@@ -1312,12 +1318,28 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			is.close();
 			//System.out.println("WIDTH: " + terrain.getWidth(null));
 			terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
+			
 			BufferedImage terrainBuff = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_INT_RGB);
 			java.awt.Graphics gfx = terrainBuff.createGraphics();
-
-		    // Paint the image onto the buffered image
+		    //Paint the image onto the buffered image
 		    gfx.drawImage(terrain, 0, 0, null);
 		    gfx.dispose();
+			
+		    /**taking into account transparency in the bufferedimage makes stuff like the cobwebs look right.
+		     * downside is it gets the actual RGB of water, which can be very bright.
+		     * we sort of expect it to be darker (ocean deep, seeing the bottom through it etc)
+		     * having non transparent bufferedimage bakes the transparency in, darkening the RGB  
+		     * baking it in on cobweb makes it way too dark.  We want the actual pixel color there.
+		     * experiment with leaves and ice - I think both look better with transparency baked in there too..
+		     * shadows in leaves, stuff under the ice, etc.  So basically on the transparent blocks only cobwebs need real RGB 
+		     */
+		    BufferedImage terrainBuffTrans = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
+			gfx = terrainBuffTrans.createGraphics();
+		    //Paint the image onto the buffered image
+		    gfx.drawImage(terrain, 0, 0, null);
+		    gfx.dispose();
+
+
 		 		    
 			blockColors[blockColorID(1, 0)] = getColor(terrainBuff, 1);
 //			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
@@ -1385,6 +1407,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(23, 0)] = getColor(terrainBuff, 62);
 			blockColors[blockColorID(24, 0)] = getColor(terrainBuff, 176); // sandstone.  could differentiate
 			blockColors[blockColorID(25, 0)] = getColor(terrainBuff, 74); // note block
+			blockColors[blockColorID(30, 0)] = getColor(terrainBuffTrans, 11); // cobweb
 			blockColors[blockColorID(35, 0)] = getColor(terrainBuff, 64);
 			blockColors[blockColorID(35, 1)] = getColor(terrainBuff, 210);
 			blockColors[blockColorID(35, 2)] = getColor(terrainBuff, 194);
@@ -1476,7 +1499,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(79, 0)] = getColor(terrainBuff, 67); // ice
 			blockColors[blockColorID(80, 0)] = getColor(terrainBuff, 66); // snow block
 			blockColors[blockColorID(81, 0)] = getColor(terrainBuff, 69); // cactus
-			blockColors[blockColorID(82, 0)] = getColor(terrainBuff, 77); // clay
+			blockColors[blockColorID(82, 0)] = getColor(terrainBuff, 72); // clay
 			blockColors[blockColorID(83, 0)] = getColor(terrainBuff, 73); // sugar cane
 			blockColors[blockColorID(84, 0)] = getColor(terrainBuff, 75); // jukebox
 			blockColors[blockColorID(85, 0)] = getColor(terrainBuff, 4); // fence
@@ -1496,8 +1519,28 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(98, 1)] = getColor(terrainBuff, 100);
 			blockColors[blockColorID(98, 2)] = getColor(terrainBuff, 101);
 			blockColors[blockColorID(98, 3)] = getColor(terrainBuff, 213);
-			blockColors[blockColorID(99, 0)] = getColor(terrainBuff, 126); // huge brown shroom
-			blockColors[blockColorID(100, 0)] = getColor(terrainBuff, 125); // huge red shroom
+			blockColors[blockColorID(99, 0)] = getColor(terrainBuff, 142); // huge brown shroom pores
+			blockColors[blockColorID(99, 1)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 2)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 3)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 4)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 5)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 6)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 7)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 8)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 9)] = getColor(terrainBuff, 126); // huge brown shroom cap
+			blockColors[blockColorID(99, 10)] = getColor(terrainBuff, 126); // huge brown shroom stem, pores on top
+			blockColors[blockColorID(100, 0)] = getColor(terrainBuff, 142); // huge red shroom pores
+			blockColors[blockColorID(100, 1)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 2)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 3)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 4)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 5)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 6)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 7)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 8)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 9)] = getColor(terrainBuff, 125); // huge red shroom cap
+			blockColors[blockColorID(100, 10)] = getColor(terrainBuff, 142); // huge red shroom stem, pores on top
 			blockColors[blockColorID(101, 0)] = getColor(terrainBuff, 85); // iron bars
 			blockColors[blockColorID(102, 0)] = getColor(terrainBuff, 49); // glass pane
 			blockColors[blockColorID(103, 0)] = getColor(terrainBuff, 137); // melon
@@ -1556,7 +1599,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(136, 1)] = getColor(terrainBuff, 199);
 			blockColors[blockColorID(136, 2)] = getColor(terrainBuff, 199);
 			blockColors[blockColorID(136, 3)] = getColor(terrainBuff, 199);
-
 		    
 		}
 		catch (Exception e) {
@@ -1564,6 +1606,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 		
 	}
+
 	
 	private int getColor(BufferedImage image, int textureID) {
 //		int texX = (textureID & 15) << 4; // 0 based horizontal offset in pixels from left of terrain.png (assumes each block is 16px)
@@ -1680,7 +1723,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
     }
 	
 	
-	private void renderMap (int scWidth) {
+	private void renderMap (int scWidth, int scScale) {
 		if (!this.hide && !this.full) {
 			if (this.q != 0) glah(this.q);
 
@@ -1704,7 +1747,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				GL11.glPopMatrix();
 
 				try {
-					this.disp(this.img("/minimap.png"));
+					this.disp(this.img("/mamiyaotaru/minimap.png"));
 					drawPre();
 					this.setMap(scWidth);
 					drawPost();
@@ -1713,12 +1756,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				}
 				try {
 					GL11.glPushMatrix();
-					this.disp(this.img("/mmarrow.png"));
+					this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow2x.png"):this.img("/mamiyaotaru/mmarrow.png"));
 					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); 
 					GL11.glRotatef(-this.direction -90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 					drawPre();
-					this.setMap(scWidth);
+					this.setMap(scWidth, 16);
 					drawPost();
 				} catch (Exception localException) {
 					this.error = "Error: minimap arrow not found!";
@@ -1728,8 +1771,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
-						int wayX = 0;
-						int wayY = 0;
+						double wayX = 0;
+						double wayY = 0;
 						if (this.game.thePlayer.dimension!=-1) {
 							wayX = this.xCoord() - pt.x;
 							wayY = this.zCoord() - pt.z;
@@ -1745,13 +1788,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							try {
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								this.disp(this.img("/marker.png"));
+								//this.disp(this.img("/marker.png"));
+								this.disp(scScale>=3?this.img("/mamiyaotaru/marker2x.png"):this.img("/mamiyaotaru/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 								GL11.glRotatef(-locate + 90 - northRotate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
 								drawPre();
-								this.setMap(scWidth);
+								this.setMap(scWidth, 16);
 								drawPost();
 							} catch (Exception localException) {
 								this.error = "Error: marker overlay not found!";
@@ -1766,8 +1810,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							{
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								this.disp(this.img("/waypoint.png"));
-								//GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
+								//this.disp(this.img("/mamiyaotaru/waypoint.png"));
+								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint2x.png"):this.img("/mamiyaotaru/waypoint.png"));
+							//	GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
 								// from here
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 								GL11.glRotatef(-locate + 90.0F - northRotate, 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
@@ -1778,7 +1823,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glTranslated(0.0D,-hypot,0.0D);
 								// to here only necessary with variable north, and no if/else statements in mapcalc.  otherwise uncomment the translated above this block
 								drawPre();
-								this.setMap(scWidth);
+								System.out.println("x mult : " + Math.pow(2,this.zoom) + " " + Math.pow(2,this.zoom+1));
+								this.setMap(scWidth, 16);
 								drawPost();
 							} catch (Exception localException) 
 							{
@@ -1813,8 +1859,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				
 				// do with opengl.  Faster.  Uses alpha channel, have to set lighting in actual RGB instead of alpha.
 				GL11.glColorMask(false,false,false,true); // draw to alpha (from circle.png) - used to make square map round with GL
-				if (this.game.gameSettings.showDebugInfo) {
-					// clear alpha before drawing circle to it to get rid of the alpha the f3 text put in.  fixes f3, breaks chat
+				if (this.game.gameSettings.showDebugInfo) { // only do f3 fix (that makes map invisible) if f3 text is up.  Still issues if f3 AND chat, oh well
+					// clear alpha before drawing circle to it to get rid of the alpha the f3 text put in
 					GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
 					GL11.glBlendFunc(GL11.GL_ZERO, GL11.GL_ZERO);
 					GL11.glColor3f(0, 0, 255);
@@ -1827,8 +1873,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glEnd();
 					GL11.glColor4f(1, 1, 1, 1);
 				}
+				
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-				this.disp(this.img("/circle.png")); // does weird things to f3 text.  deal with it!  Also fux dynamic lighting.  Deal with it :(  (can do if we don't usee alpha channel for lighting info, just darken actual RGB
+				this.disp(this.img("/mamiyaotaru/circle.png")); // does weird things to f3 text.  deal with it!  Also fux dynamic lighting.  Deal with it :(  (can do if we don't usee alpha channel for lighting info, just darken actual RGB
 				drawPre();
 				this.setMap(scWidth);
 				drawPost();
@@ -1858,7 +1905,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
 				GL11.glColor3f(1.0F, 1.0F, 1.0F);
-				this.drawRound(scWidth);
+				this.drawRound(scWidth, scScale);
 				this.drawDirections(scWidth);
 
 				for(Waypoint pt:wayPts) {
@@ -1880,13 +1927,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							try {
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								this.disp(this.img("/marker.png"));
+								//this.disp(this.img("/marker.png"));
+								this.disp(scScale>=3?this.img("/mamiyaotaru/marker2x.png"):this.img("/mamiyaotaru/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,-34.0D,0.0D);
 								drawPre();
-								this.setMap(scWidth);
+								this.setMap(scWidth, 16);
 								drawPost();
 							} catch (Exception localException) {
 								this.error = "Error: marker overlay not found!";
@@ -1899,7 +1947,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							{
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								this.disp(this.img("/waypoint.png"));
+								//this.disp(this.img("/waypoint.png"));
+								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint2x.png"):this.img("/mamiyaotaru/waypoint.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
@@ -1908,7 +1957,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
 								drawPre();
-								this.setMap(scWidth);
+								this.setMap(scWidth, 16);
 								drawPost();
 							} catch (Exception localException) 
 							{
@@ -1923,6 +1972,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			} // end roundmap
 		}
 	}
+
 
 	private void renderMapFull (int scWidth, int scHeight) {
 		if (this.game.thePlayer.username.equals("lzztopz")) {
@@ -1947,15 +1997,16 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 		try {
 			GL11.glPushMatrix();
-			this.disp(this.img("/mmarrow.png"));
+			this.disp(this.img("/mamiyaotaru/mmarrow2x.png"));
 			GL11.glTranslatef((scWidth+5)/2, (scHeight+5)/2, 0.0F);
 			GL11.glRotatef(-this.direction - 90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 			GL11.glTranslatef(-((scWidth+5)/2), -((scHeight+5)/2), 0.0F);
 			drawPre();
-			ldrawone((scWidth+5)/2-32, (scHeight+5)/2+32, 1.0D, 0.0D, 1.0D);
-			ldrawone((scWidth+5)/2+32, (scHeight+5)/2+32, 1.0D, 1.0D, 1.0D);
-			ldrawone((scWidth+5)/2+32, (scHeight+5)/2-32, 1.0D, 1.0D, 0.0D);
-			ldrawone((scWidth+5)/2-32, (scHeight+5)/2-32, 1.0D, 0.0D, 0.0D);
+			//ldrawone((scWidth+5)/2-32, (scHeight+5)/2+32, 1.0D, 0.0D, 1.0D); // the old, 128-ified arrow
+			ldrawone((scWidth+5)/2-4, (scHeight+5)/2+4, 1.0D, 0.0D, 1.0D);
+			ldrawone((scWidth+5)/2+4, (scHeight+5)/2+4, 1.0D, 1.0D, 1.0D);
+			ldrawone((scWidth+5)/2+4, (scHeight+5)/2-4, 1.0D, 1.0D, 0.0D);
+			ldrawone((scWidth+5)/2-4, (scHeight+5)/2-4, 1.0D, 0.0D, 0.0D);
 			drawPost();
 		} catch (Exception localException) {
 			this.error = "Error: minimap arrow not found!";
@@ -2271,9 +2322,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 	}
 
-	private void drawRound(int paramInt1) {
+	private void drawRound(int paramInt1, int scScale) {
 		try {
-			this.disp(this.img("/roundmap.png"));
+			this.disp(scScale>=3?this.img("/mamiyaotaru/roundmap2x.png"):this.img("/mamiyaotaru/roundmap.png"));
 			drawPre();
 			this.setMap(paramInt1);
 			drawPost();
@@ -2588,10 +2639,19 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	private void setMap(int paramInt1) {
-		ldrawthree(paramInt1 - 64.0D, 64.0D + 5.0D, 1.0D, 0.0D, 1.0D);
-		ldrawthree(paramInt1, 64.0D + 5.0D, 1.0D, 1.0D, 1.0D);
-		ldrawthree(paramInt1, 5.0D, 1.0D, 1.0D, 0.0D);
-		ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.0D, 0.0D);
+	//	ldrawthree(paramInt1 - 64.0D, 64.0D + 5.0D, 1.0D, 0.0D, 1.0D);
+	//	ldrawthree(paramInt1, 64.0D + 5.0D, 1.0D, 1.0D, 1.0D);
+	//	ldrawthree(paramInt1, 5.0D, 1.0D, 1.0D, 0.0D);
+	//	ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.0D, 0.0D);
+		setMap(paramInt1, 128); // do this with default image size of 128 (that everything was before I decided to stop padding 16px and 8px images out to 128)
+	}
+	
+	private void setMap(int paramInt1, int imageSize) {
+		int scale = imageSize/4;
+		ldrawthree(paramInt1-32.0D-scale, 37.0D+scale, 1.0D, 0.0D, 1.0D);
+		ldrawthree(paramInt1-32.0D+scale, 37.0D+scale, 1.0D, 1.0D, 1.0D);
+		ldrawthree(paramInt1-32.0D+scale, 37.0D-scale, 1.0D, 1.0D, 0.0D);
+		ldrawthree(paramInt1-32.0D-scale, 37.0D-scale, 1.0D, 0.0D, 0.0D);
 	}
 
 	private void drawDirections(int scWidth) {

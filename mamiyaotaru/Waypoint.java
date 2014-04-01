@@ -1,4 +1,4 @@
-package net.minecraft.src;
+package net.minecraft.src.mamiyaotaru;
 public class Waypoint {
     public String name;
     public int x;
