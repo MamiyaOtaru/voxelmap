@@ -93,7 +93,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Minimap update interval*/
 	private int timer = 0;
 
-	/*Key entry interval*/
+	/*Key entry interval (ie, can only zoom once every 20 ticks)*/
 	private int fudge = 0;
 
 	/*Last X coordinate rendered*/
@@ -101,6 +101,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Last Z coordinate rendered*/
 	private int lastZ = 0;
+	
+	/*Array of blockHeights*/
+	private int[][] heightArray = new int[256][256];
 
 	/*Last zoom level rendered at*/
 	private int lZoom = 0;
@@ -117,14 +120,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Direction you're facing*/
 	private float direction = 0.0f;
 
-	/*Last direction you were facing*/
-	private float oldDir = 0.0f;
-
 	/*Setting file access*/
 	private File settingsFile;
 
-	/*World currently loaded*/
-	private String world = "";
+	/*Name of World currently loaded*/
+	private String worldName = "";
 	
 	/*Current Texture Pack*/
 	private TexturePackBase pack = null;
@@ -166,7 +166,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Terrain depth toggle*/
 	private boolean heightmap = true;
-
 
 	/*Show welcome message toggle*/
 	private boolean welcome = true;
@@ -321,10 +320,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (!threading)
 		{
 			if (this.enabled && !this.hide)
-				if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300))) {
-					timer=1;
-					mapCalc();
-				}
+				mapCalc((timer>300)?true:false);
+			timer=(timer>300)?0:timer;
 			timer++;
 		}
 
@@ -435,10 +432,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			}
 		} 
 
-		if(!world.equals(mapName) && (mapName != null)) {
-			world = mapName;
+		if(!worldName.equals(mapName) && (mapName != null)) {
+			worldName = mapName;
 			iMenu = 1;
 			loadWaypoints();
+			timer=500; // fullrender for new world
 		}
 		
 		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
@@ -490,245 +488,193 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private void disp(int paramInt) { 
 		this.renderEngine.bindTexture(paramInt); // this func glBindTexture's GL_TEXTURE_2D, int paramInt
 	}
+	
 	public World getWorld()
 	{
 		return game.theWorld;
 	}
 
-	private final int getBlockHeightNether(World world, int x, int z, int starty) 
+	private final int getBlockHeight(boolean nether, World world, int x, int z, int starty) 
 	{
-		int y = starty;
-		//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
-		//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
-		if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
-			while (y > 0) {
-				y--;
-				if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
-					return y + 1;
-			}
+		if (!nether) {
+			//int height = getBlockHeight(data, x, z); // newZan
+			//int height = data.getChunkFromBlockCoords(x, z).getHeightValue(x & 0xf, z & 0xf); // replicate old way
+			//int height = data.getHeightValue(x, z); // new method in world that easily replicates old way
+			return world.getHeightValue(x, z);
 		}
 		else {
-			while ((y <= starty+10) && (y < 127)) {
-				y++;
-				if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
-					return y;
+			int y = starty;
+			//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
+			//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
+			if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
+				while (y > 0) {
+					y--;
+					if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
+						return y + 1;
+				}
 			}
+			else {
+				while ((y <= starty+10) && (y < 127)) {
+					y++;
+					if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
+						return y;
+				}
+			}
+			return -1;
+			//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
 		}
-		return -1;
-		//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
 	}
-
-	private void mapCalcNether() {
-		World data = getWorld();
-		int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
-		this.lZoom = this.zoom;
-		int multi = (int)Math.pow(2, this.lZoom);
-		int startX = this.xCoord(); // 1
-		int startZ = this.zCoord(); // j
-		this.lastX = startX;
-		this.lastZ = startZ;
-		startX -= 16*multi;
-		startZ -= 16*multi;
-		int color24 = 0; // k
+	
+	private int getPixelColor(boolean full, boolean nether, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY) {
+		int color24 = 0;
 		int height = 0;
-		boolean solidNether = false;
+		int heightComp = 0;
+		boolean solid = false;
+		height = getBlockHeight(nether, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
+		if (full)
+			heightArray[imageX][imageY]=height; // store heights so we don't get height twice for every pixel on full runs
+		if (height == -1) {
+			height = this.yCoord() + 1;
+			solid = true;
+		}
+		if (this.rc) {
+			if ((world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+				color24 = getBlockColor(80,0); // snow
+			else {
+				color24 = getBlockColor(world.getBlockId(startX + imageX, height - 1, startZ + imageY), world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+			}
+		} else color24 = 0xFFFFFF;
 
-		for (int imageY = 0; imageY < 32 * multi; imageY++) {
-			for (int imageX = 0; imageX < 32 * multi; imageX++) {
-				color24 = 0;
-				boolean check = false;
+		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
+			if (heightmap && !solid) {
+				if (full && ((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi-1) // old north reverses X- to X+
+					heightComp = heightArray[imageX-((oldNorth)?-1:1)][imageY+1]; // on full run, get stored height for neighboring pixels (if it exists)
+				else
+					heightComp = getBlockHeight(nether, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, this.yCoord());
+				if (heightComp == -1) // if compared area is solid, don't bump the stuff next to it
+					heightComp = height;
+				int diff = heightComp-height;
+				if (diff!=0){
+					double sc =(diff>0)?1:(diff<0)?-1:0;
+					sc = sc/8;
 
-				if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+					int r = color24 / 0x10000;
+					int g = (color24 - r * 0x10000)/0x100;
+					int b = (color24 - r * 0x10000-g*0x100);
 
-				height = getBlockHeightNether(data, startX + imageX, startZ + imageY, this.yCoord());		
-				if (height == -1) {
-					height = this.yCoord() + 1;
-					solidNether = true;
-				}
-				else {
-					solidNether = false;
-				}
-				if ((check) || (squareMap) || (this.full)) {
-					if (this.rc) {
-						if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-							color24 = 0xFFFFFF;
-						else {
-							color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-						}
-					} else color24 = 0xFFFFFF;
-				}
-
-				if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-					if (heightmap) {
-						int i2 = height-this.yCoord();
-						double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-						int r = color24 / 0x10000;
-						int g = (color24 - r * 0x10000)/0x100;
-						int b = (color24 - r * 0x10000-g*0x100);
-
-						if (i2>=0) {
-							r = (int)(sc * (0xff-r)) + r;
-							g = (int)(sc * (0xff-g)) + g;
-							b = (int)(sc * (0xff-b)) + b;
-						} else {
-							i2=Math.abs(i2);
-							r = r -(int)(sc * r);
-							g = g -(int)(sc * g);
-							b = b -(int)(sc * b);
-						}
-
-						color24 = r * 0x10000 + g * 0x100 + b;
+					if (sc>=0) {
+						r = (int)(sc * (0xff-r)) + r;
+						g = (int)(sc * (0xff-g)) + g;
+						b = (int)(sc * (0xff-b)) + b;
+					} else {
+						sc=Math.abs(sc);
+						r = r -(int)(sc * r);
+						g = g -(int)(sc * g);
+						b = b -(int)(sc * b);
 					}
 
-					int i3 = 255;
-
-					if (lightmap)
-						//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-						i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-					else if (solidNether)
-						i3 = 32;
-
-					if(i3 > 255) i3 = 255;
-
-					if(i3 < 76 && !solidNether) i3 = 76;
-					else if (i3 < 32) i3 = 32;
-
-					color24 = i3 * 0x1000000 + color24 ;
+					color24 = r * 0x10000 + g * 0x100 + b;
 				}
-
-				this.map[this.lZoom].setRGB(imageX, imageY, color24);
 			}
+			int i3 = 255;
+
+			if (lightmap)
+				//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+				i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+			else if (solid) 
+				i3 = 32;
+			if(i3 > 255) i3 = 255;
+
+			if (nether && !solid)
+				if(i3 < 76) i3 = 76; // nether/cave shows some light even in the dark so you can see caves/nether surface that isn't lit.  If it's solid though leave it black
+			if(i3 < 32) i3 = 32; // overworld lowest black is lower for some reason 
+
+			color24 = i3 * 0x1000000 + color24 ;
 		}
+		return color24;
 	}
-	private void mapCalcOverworld() {
-		World data = getWorld();
-		int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
-		this.lZoom = this.zoom;
-		int multi = (int)Math.pow(2, this.lZoom);
+	
+	private int calcLightSMPtoo(World world, int x, int y, int z, int skylightsubtract) {
+		//				return getWorld().getBlockLightValue_do(x, z, y, false);
+		Chunk chunk = world.getChunkFromChunkCoords(x >> 4, z >> 4);
+		return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); // call calculate since the var calc sets can't be counted on to be set in SMP.  ie it isn't
+		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
+	}
+
+	private void mapCalc(boolean full) {
+		//final long startTime = System.nanoTime();
 		int startX = this.xCoord(); // 1
 		int startZ = this.zCoord(); // j
+		int offsetX = startX - lastX;
+		int offsetZ = startZ - lastZ;
+		if (!full && offsetX == 0 && offsetZ == 0) 
+			return;
+		boolean nether = false;
+		if (this.game.thePlayer.dimension==0)
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
+			if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, this.yCoord(), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+				nether = true;
+			else
+				nether = false;
+		else if (showNether)
+			nether = true;
+		else
+			return; // if we are nether and nether mapping is not on, just exit;
+		World world=this.getWorld();
 		this.lastX = startX;
 		this.lastZ = startZ;
+		int skylightsubtract = getWorld().calculateSkylightSubtracted(1.0F);
+		this.lZoom = this.zoom;
+		int multi = (int)Math.pow(2, this.lZoom);
 		startX -= 16*multi;
 		startZ -= 16*multi; // + west at top, - north at top
 		int color24 = 0; // k
 		int height = 0;
-		for (int imageY = 0; imageY < 32 * multi; imageY++) {
-			for (int imageX = 0; imageX < 32 * multi; imageX++) {
-				color24 = 0;
-				boolean check = false;
-
-				if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-
-				//int i1 ~ height
-				//int height = data.f(i + m, startZ - imageX); // notch
-				//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
-				//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
-				//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-				//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-				height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
-
-				if ((check) || (squareMap) || (this.full)) {
-					if (this.rc) {
-						if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-							color24 = 0xFFFFFF;
-						else {
-							color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-						}
-					} else color24 = 0xFFFFFF;
-				}
-
-				if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-					if (heightmap) {
-						int i2 = height-this.yCoord();
-						//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-						double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
-						//double sc = Math.abs(i2)/340.0D;
-
-						int r = color24 / 0x10000;
-						int g = (color24 - r * 0x10000)/0x100;
-						int b = (color24 - r * 0x10000-g*0x100);
-
-						if (i2>=0) {
-							r = (int)(sc * (0xff-r)) + r;
-							g = (int)(sc * (0xff-g)) + g;
-							b = (int)(sc * (0xff-b)) + b;
-						} else {
-							i2=Math.abs(i2);
-							r = r -(int)(sc * r);
-							g = g -(int)(sc * g);
-							b = b -(int)(sc * b);
-						}
-
-						color24 = r * 0x10000 + g * 0x100 + b;
+		int heightComp = 0;
+		if (full) {
+			for (int imageY = (32 * multi)-1; imageY >= 0; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
+				if (oldNorth) // old north reverses X-1 to X+1
+					for (int imageX = (32 * multi)-1; imageX >= 0; imageX--) {
+						color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+						this.map[this.lZoom].setRGB(imageX, imageY, color24);
 					}
-
-					int i3 = 255;
-
-					if (lightmap)
-						//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-						i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-
-					if(i3 > 255) i3 = 255;
-
-					if(i3 < 32) i3 = 32;
-
-					color24 = i3 * 0x1000000 + color24 ;
+				else {
+					for (int imageX = 0; imageX < 32 * multi; imageX++) {
+						color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+						this.map[this.lZoom].setRGB(imageX, imageY, color24);
+					}
 				}
-
-				this.map[this.lZoom].setRGB(imageX, imageY, color24);
 			}
 		}
-	}
-	
-	private void mapCalc() {
-
-		if (this.game.thePlayer.dimension!=-1)
-			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
-			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
-			if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, this.yCoord(), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
-				mapCalcNether();
-			else
-				mapCalcOverworld();
-		/*					if (showCaves) {
-						Chunk chunk = getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord());
-						ExtendedBlockStorage[] extendedblockstoragearray = chunk.func_48495_i();
-						ExtendedBlockStorage extendedblockstorage = extendedblockstoragearray[this.zCoord() >> 4];
-						int level = 0;
-						if (extendedblockstorage == null) 
-							level = EnumSkyBlock.Sky.defaultLightValue;
-						else
-							level = extendedblockstorage.func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf);
-						if (level <= 0)
-							mapCalcNether();
-						else
-							mapCalcOverworld();
-					}
-					else
-						mapCalcOverworld();
-		 */
-		else if (showNether)
-			mapCalcNether();
-
-		/*
-				if (this.game.thePlayer.dimension!=-1)
-					mapCalcOverworld();
-				else
-					mapCalcNether();
-
-				if (getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) > 0)
-					mapCalcOverworld();
-				else
-					mapCalcNether();
-		 */
-	}
-
-	private int calcLightSMPtoo(int x, int y, int z, int skylightsubtract) {
-		//				return getWorld().getBlockLightValue_do(x, z, y, false);
-		World data = getWorld();
-		Chunk chunk = data.getChunkFromChunkCoords(x >> 4, z >> 4);
-		return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); // call calculate since the var calc sets can't be counted on to be set in SMP.  ie it isn't
-		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
+		else { // render edges, if moved
+			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
+			try {
+				BufferedImage snip = this.map[this.lZoom].getSubimage(java.lang.Math.max(0,offsetX), java.lang.Math.max(0, offsetZ), this.map[this.lZoom].getWidth()-java.lang.Math.abs(offsetX) , this.map[this.lZoom].getHeight()-java.lang.Math.abs(offsetZ));
+				java.awt.Graphics gfx = comp.getGraphics ();
+				gfx.drawImage (snip, java.lang.Math.max(0, -offsetX), java.lang.Math.max(0, -offsetZ), null);
+				gfx.dispose ();
+			}
+			catch (java.awt.image.RasterFormatException e) {
+				return; // bail
+			}
+			for (int imageY = ((offsetZ>0)?32 * multi - offsetZ:0); imageY < ((offsetZ>0)?32 * multi:-offsetZ); imageY++) {			
+				for (int imageX = 0; imageX < 32 * multi; imageX++) {
+					color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					comp.setRGB(imageX, imageY, color24);
+					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
+				}
+			}
+			for (int imageY = 0; imageY < 32 * multi; imageY++) {			
+				for (int imageX = ((offsetX>0)?32 * multi - offsetX:0); imageX < ((offsetX>0)?32 * multi:-offsetX); imageX++) {
+					color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					comp.setRGB(imageX, imageY, color24);
+					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
+				}
+			}
+			this.map[this.lZoom] = comp;
+		}
+		//System.out.println("time: " + (System.nanoTime()-startTime));
 	}
 
 	public void run() {
@@ -741,7 +687,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
 					if (this.enabled && !this.hide)
 						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
-							try {this.mapCalc(); this.timer = 1;} catch (Exception local) {}
+							try {this.mapCalc((timer>300)?true:false);} catch (Exception local) {}
+					this.timer=(this.timer>300)?0:this.timer;
 					this.timer++;
 					this.active = false;
 				}
@@ -1103,7 +1050,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				}
 			out.close();
 		} catch (Exception e) {e.printStackTrace();}
-
 	}
 
 	private final int blockColorID(int blockid, int meta) {
@@ -1163,7 +1109,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	private void saveWaypoints() {
-		settingsFile = new File(getAppDir("minecraft"), world + ".points");
+		settingsFile = new File(getAppDir("minecraft"), worldName + ".points");
 
 		try {
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
@@ -1181,7 +1127,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	private void loadWaypoints() {
 		wayPts = new ArrayList<Waypoint>();
-		settingsFile = new File(getAppDir("minecraft"), world + ".points");
+		settingsFile = new File(getAppDir("minecraft"), worldName + ".points");
 
 		try {
 			if(settingsFile.exists()) {
@@ -1199,7 +1145,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				}
 
 				in.close();
-				chatInfo("§EWaypoints loaded for " + world);
+				chatInfo("§EWaypoints loaded for " + worldName);
 			} else chatInfo("§EError: No waypoints exist for this world/server.");
 		} catch (Exception local) {
 			chatInfo("§EError Loading Waypoints");
@@ -1651,14 +1597,49 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					} // end if pt enabled
 				} // end for waypoints
 			} else { // else roundmap
+				/*
+		int w = imageBG.getWidth();
+        int h = imageBG.getHeight();
+        Ellipse2D.Double ellipse1 = new Ellipse2D.Double(
+                w/16,h/16,7*w/8,7*h/8); 
+        Ellipse2D.Double ellipse2 = new Ellipse2D.Double(
+                w/4,h/4,w/2,h/2);
+        Area circle = new Area(ellipse1);
+        circle.subtract(new Area(ellipse2));
+
+        Graphics2D g = imageBG.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_ENABLE);
+        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setClip(circle);
+        g.drawImage(imageFG, 0, 0, null);
+        g.setClip(null);
+        Stroke s = new BasicStroke(2);
+        g.setStroke(s);
+        g.setColor(Color.BLACK);
+        g.draw(circle);
+        g.dispose();
+				 */
+				int diameter = this.map[this.zoom].getWidth();
+				BufferedImage roundImage = new BufferedImage(diameter, diameter,this.map[this.lZoom].getType());
+				//java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(lZoom,lZoom,diameter-lZoom*2,diameter-lZoom*2);
+				java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(0,0,diameter,diameter);
+				java.awt.Graphics2D gfx = roundImage.createGraphics();
+			    java.awt.geom.Area circle = new java.awt.geom.Area(ellipse);
+			    gfx.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+				gfx.setClip(circle);
+				gfx.drawImage(this.map[this.zoom],0,0,null);
+				gfx.dispose();
+			    
 				GL11.glPushMatrix();
 
 				if (this.zoom == 3) {
 					GL11.glPushMatrix();
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
-					this.q = this.tex(this.map[this.zoom]);
+					this.q = this.tex(roundImage);
 					GL11.glPopMatrix();
-				} else this.q = this.tex(this.map[this.zoom]);
+				} else this.q = this.tex(roundImage);
 
 				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 				GL11.glRotatef(this.direction + 180.0F, 0.0F, 0.0F, 1.0F); 
