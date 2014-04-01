@@ -114,6 +114,25 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Last direction you were facing*/
 	private float oldDir = 0.0f;
 
+	/*list of moving contacts*/
+	private ArrayList<Float> contactsAngle = new ArrayList(40);
+	private ArrayList<Double> contactsDistance = new ArrayList(40);
+
+	/*number of contacts*/
+	private int count = 0;
+
+	/*minimum distancec to contact*/
+	private int minDistance = 40;
+
+	/*pitches by which to adjust beep.  31 is current mindistance+1*/
+	private float[] pitch = new float[31];
+
+	/*kludge to ensure update only once every 1/15th second*/
+	private boolean OKtoUpdate = false;
+
+	/*kludge to ensure ping sound only once every 1/15th second, different second than the update*/
+	private boolean OKtoPing = false;
+
 	/*Setting file access*/
 	private File settingsFile;
 
@@ -152,6 +171,15 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Terrain depth toggle*/
 	private boolean heightmap = true;
+
+	/*Show hostiles toggle*/
+	private boolean showHostiles = true;
+
+	/*Show players toggle*/
+	private boolean showPlayers = false;
+
+	/*Show neutrals toggle*/
+	private boolean showNeutrals = true;
 
 	/*Show welcome message toggle*/
 	private boolean welcome = true;
@@ -303,7 +331,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				}
 */
 				
-				this.direction = this.radius();
+				this.direction = -this.radius();
 
 				if (this.direction >= 360.0f)
 					while (this.direction >= 360.0f)
@@ -389,12 +417,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				return this.renderEngine.allocateAndSetupTexture(paramImg);
 			}
 
-			private int img(String paramStr) {
+			private int img(String paramStr) { // returns index of texturemap(name) aka glBoundTexture.  If there isn't one, it glBindTexture's it in setupTexture
 				return this.renderEngine.getTexture(paramStr);
 			}
 
-			private void disp(int paramInt) {
-				this.renderEngine.bindTexture(paramInt);
+			private void disp(int paramInt) { 
+				this.renderEngine.bindTexture(paramInt); // this func glBindTexture's GL_TEXTURE_2D, int paramInt
 			}
 			public World getWorld()
 			{
@@ -852,6 +880,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					out.println("Cloth:"+i+":"+Integer.toHexString(clothColors[i]));
 			out.close();
 		} catch (Exception e) {e.printStackTrace();}
+
+		for (int t = 0; t <= 30; t++) {
+			pitch[t] = (float)(Math.pow(1.0188, (30 -t )));
+		}
 	}
 	
 	private void saveAll() {
@@ -933,10 +965,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	
 
 	private void renderMap (int scWidth) {
-		if (this.game.thePlayer.username.equals("lzztopz")) {
-			this.error = "no map for you, Doubting Thomas";
-			return;
-		}
 		if (!this.hide && !this.full) {
 			if (this.q != 0) glah(this.q);
 
@@ -946,16 +974,16 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
 					this.q = this.tex(this.map[this.zoom]);
 					GL11.glPopMatrix();
-				} else this.q = this.tex(this.map[this.zoom]); // q = renderEngine.allocateAndSetupTexture(paramImg); (q is a reference to image to be deleted later
+				} else this.q = this.tex(this.map[this.zoom]);
 
 				drawPre();
-				this.setMap(scWidth); // setmap draws a quad with previously chosen texture (map we assembled earlier)
+				this.setMap(scWidth);
 				drawPost();
 
 				try {
-					this.disp(this.img("/minimap.png")); // disp: renderEngine.bindTexture(paramInt); , img: this.renderEngine.getTexture(paramStr);
+					this.disp(this.img("/minimap.png"));
 					drawPre();
-					this.setMap(scWidth); // setmap, draw quad with previously chosen texture (bound from file)
+					this.setMap(scWidth);
 					drawPost();
 				} catch (Exception localException) {
 					this.error = "error: minimap overlay not found!";
@@ -964,7 +992,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glPushMatrix();
 					this.disp(this.img("/mmarrow.png"));
 					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-					GL11.glRotatef(this.direction - 90.0F, 0.0F, 0.0F, 1.0F);
+					GL11.glRotatef(-this.direction - 90.0F, 0.0F, 0.0F, 1.0F);
 					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 					drawPre();
 					this.setMap(scWidth);
@@ -997,7 +1025,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-locate + 90.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-locate - 90 + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
 								drawPre();
@@ -1040,23 +1068,21 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} else this.q = this.tex(this.map[this.zoom]);
 
 				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-				GL11.glRotatef(-this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
+				GL11.glRotatef(this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
 				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 
 				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
 				else GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
-
 				drawPre();
 				this.setMap(scWidth);
 				drawPost();
 				GL11.glPopMatrix();
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 
-
 				GL11.glColor3f(1.0F, 1.0F, 1.0F);
 				this.drawRound(scWidth);
 				this.drawDirections(scWidth);
-
+				
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
 						int wayX = 0;
@@ -1078,7 +1104,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-(this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,-34.0D,0.0D);
 								drawPre();
@@ -1097,9 +1123,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/waypoint.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-(this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
-								GL11.glRotatef((this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,hypot,0.0D);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
@@ -1116,6 +1142,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 					}
 				}
+
 			}
 		}
 	}
@@ -1153,81 +1180,138 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	private void renderMapMobs (int scWidth) {
-		if (!this.hide && !this.full) {
-			if (this.q != 0) glah(this.q);
+		if (!this.hide && !this.full) { 
+//			if (this.q != 0) glah(this.q);
+//			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+//			GL11.glColor3f(1.0F, 1.0F, 1.0F);
+			this.drawTracker(scWidth);
+			
+			double brightness = 256;
+			double tickerFade = ((double)(System.currentTimeMillis()/10))%150;
+			int ticker = ((int)tickerFade/10);			
+			//if (tickerFade >= 120) 
+			//	brightness = 1 - ((tickerFade-120) * .011F);
+			//else 
+			//	brightness = 1 - ((tickerFade+30) * .011F);  
+ 			// above good if we want the ping to be at some point other than when the wave finishes its sweep (at mod 0)
+			brightness = 1 - (tickerFade * .011F);
 
-			GL11.glPushMatrix();
+			if (ticker != 11)
+				OKtoPing = true;
+			if (ticker == 11 && OKtoPing) {
+				OKtoPing = false;
+				game.sndManager.playSoundFX("tracker.MTpingFree", 0.7F, 1.0F); // path, volume, pitch
+			}
 
-			if (this.zoom == 3) {
-				GL11.glPushMatrix();
-				GL11.glScalef(0.5f, 0.5f, 1.0f);
-				this.q = this.tex(this.map[this.zoom]);
-				GL11.glPopMatrix();
-			} else this.q = this.tex(this.map[this.zoom]);
-				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-			GL11.glRotatef(-this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
-			GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
-				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
-			else GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
-				drawPre();
-			this.setMap(scWidth);
-			drawPost();
-			GL11.glPopMatrix();
-			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-
-			GL11.glColor3f(1.0F, 1.0F, 1.0F);
-			this.drawRound(scWidth);
-			this.drawDirections(scWidth);
+			if (ticker != 0) 
+				OKtoUpdate = true;
+			if (ticker == 0 && OKtoUpdate) {
+				OKtoUpdate = false;
+				contactsAngle.clear();
+				contactsDistance.clear();
 				java.util.List entities = this.game.theWorld.getLoadedEntityList();
-			for(int j = 0; j < entities.size(); j++) {
-				Entity entity = (Entity)entities.get(j);
-				Class entityClass = entity.getClass();
-//				try {
-//					if(EntityMob.class.isAssignableFrom(entity.getClass())) { // catches classes that might be descended through a couple generations ie mob->spider->greenSpider
-//																								// also messes up the intdentations
+				minDistance = 40;
+				count = 0;
+				oldDir = this.direction;
+				for(int j = 0; j < entities.size(); j++) {
+					Entity entity = (Entity)entities.get(j);
+					Class entityClass = entity.getClass();
+//					try {
+//						if(EntityMob.class.isAssignableFrom(entity.getClass())) { // catches classes that might be descended through a couple generations.  Possible problem: picks up pig zombies (mob->zombie->pigzombie)
+//						}
+//					} catch (Exception ClassNotFoundException) {
+//						this.error = "class not found";
 //					}
-//				} catch (Exception ClassNotFoundException) {
-//					this.error = "class not found";
-//				}
 
-				if(entityClass.getSuperclass().equals(EntityMob.class)) { // only works if mob is immediate subclass of entityMob
-					this.error = "mob detected: " + entityClass.getName();
-					int wayX = this.xCoord() - (int)(entity.posX);
-					int wayY = this.yCoord() - (int)(entity.posZ);
-					float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-					float differenceDegrees = locate + this.direction;
-					if (differenceDegrees < -180)
-				  		differenceDegrees += 360;
-					else if (differenceDegrees > 180)
-			   		differenceDegrees -= 360;
-					double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
-					if (hypot < 31.0D && Math.abs(this.zCoord() - (int)(entity.posY)) < 12 && Math.abs(differenceDegrees) > 90 ) {
-						try {
-							GL11.glPushMatrix();
-							GL11.glColor3f(128, 0, 128);
-							this.disp(this.img("/waypoint.png"));
-							GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-							GL11.glRotatef(-(this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
-							GL11.glTranslated(0.0D,-hypot,0.0D);
-							GL11.glRotatef((this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
-							GL11.glTranslated(0.0D,hypot,0.0D);
-							GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
-							GL11.glTranslated(0.0D,-hypot,0.0D);
-							drawPre();
-							this.setMap(scWidth);
-							drawPost();
-						} catch (Exception localException) 
-						{
-							this.error = "Error: waypoint overlay not found!";
-						} finally 
-						{
-							GL11.glPopMatrix();
-						}
-					} // end if in range
-				} // end if mob
-			} // end for
+					if(entityClass.getSuperclass().equals(EntityMob.class)) { // only works if mob is immediate subclass of entityMob
+																								// misses ghasts (sub of entityFlying - doesn't descent from entityMob at all, but implements IMob)
+																								// ghasts might need public Class[] getInterfaces()[0].  Or just test if is ghast
+																								// or public boolean isAnnotationPresent(Class<? extends Annotation> annotationClass)
+						int wayX = this.xCoord() - (int)(entity.posX);
+						int wayY = this.yCoord() - (int)(entity.posZ);
+						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+						float differenceDegrees = locate - this.direction;
+						if (differenceDegrees < -180)
+					  		differenceDegrees += 360;
+						else if (differenceDegrees > 180)
+				   		differenceDegrees -= 360;
+						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,2)/2);
+						if (hypot < 31.0D && Math.abs(this.zCoord() - (int)(entity.posY)) < 12 && Math.abs(differenceDegrees) > 90 ) {					
+							contactsAngle.add(locate);
+							contactsDistance.add(hypot);
+							count++;
+							if (hypot < minDistance)
+								minDistance = (int)hypot;
+						} // end if valid contact
+					} // end if hostile
+				} // end for loop contacts
+
+            //worldObj.playSoundAtEntity(this, getDeathSound(), getSoundVolume(), (rand.nextFloat() - rand.nextFloat()) * 0.2F + 1.0F); // pig dies
+            //((IWorldAccess)worldAccesses.get(i)).playSound(s, entity.posX, entity.posY - (double)entity.yOffset, entity.posZ, f, f1); // what pig dies calls
+				//mc.sndManager.playSound(block.stepSound.func_1145_d(), (float)i + 0.5F, (float)j + 0.5F, (float)k + 0.5F, (block.stepSound.getVolume() + 1.0F) / 8F, block.stepSound.getPitch() * 0.5F); //player footstep
+				//													aka stepSoundDir() returns step.sand, playSound adds random number to that and gets ogg
+				//game.sndManager.playSound("tracker.MTpingFree", this.xCoord(), this.zCoord(), this.yCoord(), 0.4F, 1.0F);
+				if (count > 0) {
+					//float pitch = 1.0F + ((30.0F-minDistance) / 40.0F);
+					//float pitch = (float)(Math.pow(1.0188, (30.0F-minDistance)));
+					//this.error = "" + pitch;
+					//made array, precalculated to avoid expensive Math.pow calls
+					game.sndManager.playSoundFX("tracker.MTpongFree", 1.1F, pitch[minDistance]); // path, volume, pitch
+				}
+			} // end if recalculate contacts 
+
+			for(int j = 0; j < contactsAngle.size(); j++) {
+				float locate = (Float)(contactsAngle.get(j)).floatValue();
+				float differenceDegrees = locate - this.direction;
+				if (differenceDegrees < -180)
+			  		differenceDegrees += 360;
+				else if (differenceDegrees > 180)
+		   		differenceDegrees -= 360;
+				if (Math.abs(differenceDegrees) > 90 ) {					
+				double hypot = (Double)(contactsDistance.get(j)).doubleValue();
+				try {
+					GL11.glPushMatrix();
+					GL11.glColor4f(256.0F, 256.0F, 256.0F, (float)brightness);
+					this.disp(this.img("/contact.png"));
+					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+					GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F); // this.direction to OldDir if dots don't rotate
+					GL11.glTranslated(0.0D,-hypot,0.0D);
+					GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
+					GL11.glTranslated(0.0D,hypot,0.0D);
+					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+					GL11.glTranslated(0.0D,-hypot,0.0D);
+					drawPre();
+					this.setMap(scWidth);
+					drawPost();
+				} catch (Exception localException) 
+				{
+					this.error = "Error: waypoint overlay not found!";
+				} finally 
+				{
+					GL11.glPopMatrix();
+				}
+				}
+			} // end for contacts
+
+//				GL11.glPushMatrix();
+//				GL11.glTranslated(32,42,0.0D);
+//				this.write(" " + minDistance, scWidth*2-66, 70, 0xffffff);
+//				GL11.glPopMatrix();
+			GL11.glPushMatrix();
+			GL11.glScalef(0.5f, 0.5f, 1.0f);
+			String distanceString = "";
+			if (count > 0) 
+				distanceString += minDistance;
+			else
+				distanceString += "00";
+			if (minDistance < 10)
+				distanceString = "0" + distanceString;
+			this.write(distanceString , scWidth*2-39*2, 75, 0xff0000);  //-32*2
+			GL11.glPopMatrix(); 
 		} // end if not hidden
 	} // end method rendermapMobs
+
+
 
 	private void showMenu (int scWidth, int scHeight) { 
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -1250,7 +1334,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		String opt1 = "Exit Menu";
 		String opt2 = "Waypoints";
 		String opt3 = "Remove";
-// BAD BELOW HERE
+
 		if(this.iMenu<3) {
 			head = this.sMenu[this.iMenu-1][0];
 
@@ -1283,7 +1367,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		double topY = centerY - (height-1)/2.0D*10.0D - border - 20.0D;
 		double botY = centerY - (height-1)/2.0D*10.0D + border - 10.0D;
 		this.drawBox(leftX, rightX, topY, botY);
-// BAD ABOVE  HERE
+
 		if(this.iMenu==1) {
 			leftX = centerX - maxSize/2.0D - border;
 			rightX = centerX + maxSize/2.0D + border;
@@ -1494,7 +1578,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			m = this.chkLen(xy)/2;
 			this.write(xy, scWidth*2-32*2-m, 156, 0xffffff);
 			GL11.glPopMatrix();
-		} else if (this.showNether) this.write("(" + this.dCoord(xCoord()) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+		} else {
+			if (this.game.thePlayer.dimension!=-1) this.write("(" + this.dCoord(xCoord()) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+			else this.write("(" + this.dCoord(xCoord()*8) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()*8) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+		}
 	}
 
 	private void drawRound(int paramInt1) {
@@ -1502,6 +1589,72 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			this.disp(this.img("/roundmap.png"));
 			drawPre();
 			this.setMap(paramInt1);
+			drawPost();
+		} catch (Exception localException) {
+			this.error = "Error: minimap overlay not found!";
+		}
+	}
+
+	private void drawTracker(int paramInt1) {
+		String imageName = "";
+		if (((int)(System.currentTimeMillis()/100))%15 >= 14)
+			imageName="/trackerSweep6.png";
+		else if (((int)(System.currentTimeMillis()/100))%15 >= 14)
+			imageName="/trackerSweep5.png";
+		else if (((int)(System.currentTimeMillis()/100))%15 >= 13)
+			imageName="/trackerSweep4.png";
+		else if (((int)(System.currentTimeMillis()/100))%15 >= 12)
+			imageName="/trackerSweep3.png";
+		else if (((int)(System.currentTimeMillis()/100))%15 >= 11)
+			imageName="/trackerSweep2.png";
+		else if (((int)(System.currentTimeMillis()/100))%15 >= 10)
+			imageName="/trackerSweep1.png"; 
+		try {
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			GL11.glMatrixMode(GL11.GL_TEXTURE);
+			GL11.glPushMatrix();
+			this.disp(this.img("/trackerBG.png"));
+			GL11.glTranslatef(0.5F, 0.5F, 0.0F);
+			GL11.glRotatef(-this.direction, 0.0F, 0.0F, 1.0F);
+			GL11.glTranslatef(-0.5F, -0.5F, 0.0F);
+			drawPre();
+			//this.setMap(paramInt1);
+			{ 
+				ldrawthree(paramInt1 - 64.0D, 32.0D + 5.0D, 1.0D, 0.25D, 0.5D);
+				ldrawthree(paramInt1, 32.0D + 5.0D, 1.0D, 0.75D, 0.5D);
+				ldrawthree(paramInt1, 5.0D, 1.0D, 0.75D, 0.25D);
+				ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.25D, 0.25D);
+			}
+		
+			drawPost();
+
+			if (!imageName.equals("")) {
+				this.disp(this.img(imageName));
+				drawPre();
+				//this.setMap(paramInt1);
+				{ 
+					ldrawthree(paramInt1 - 64.0D, 32.0D + 5.0D, 1.0D, 0.25D, 0.5D);
+					ldrawthree(paramInt1, 32.0D + 5.0D, 1.0D, 0.75D, 0.5D);
+					ldrawthree(paramInt1, 5.0D, 1.0D, 0.75D, 0.25D);
+					ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.25D, 0.25D);
+				}
+				drawPost();
+			}
+			GL11.glPopMatrix();
+		} catch (Exception localException) {
+			this.error = "Error: minimap overlay not found!";
+		}
+		try {
+			GL11.glMatrixMode(GL11.GL_MODELVIEW);
+			this.disp(this.img("/trackerFG.png"));
+			drawPre();
+			//this.setMap(paramInt1);
+			{ 
+				ldrawthree(paramInt1 - 64.0D, 64.0D + 5.0D, 1.0D, 0.25D, 0.75D);
+				ldrawthree(paramInt1, 64.0D + 5.0D, 1.0D, 0.75D, 0.75D);
+				ldrawthree(paramInt1, 5.0D, 1.0D, 0.75D, 0.25D);
+				ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.25D, 0.25D);
+			}
 			drawPost();
 		} catch (Exception localException) {
 			this.error = "Error: minimap overlay not found!";
@@ -1815,22 +1968,22 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians((this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
 		this.write("N", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
 		this.write("E", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians((this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
 		this.write("S", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians((this.direction-180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
 		this.write("W", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 	}
