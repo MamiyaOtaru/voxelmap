@@ -10,6 +10,7 @@ import java.net.Socket;
 import javax.imageio.ImageIO;
 import net.minecraft.client.Minecraft;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 
 import org.lwjgl.input.Keyboard;
@@ -45,10 +46,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private boolean hide = false;
 
 	/*Show the minimap when in the Nether*/
-	private boolean showNether = false;
+	private boolean showNether = true;
 
 	/*Experimental cave mode (only applicable to overworld)*/
-	private boolean showCaves = false;
+	private boolean showCaves = true;
 
 	/*Was mouse down last render?*/
 	private boolean lfclick = false;
@@ -124,6 +125,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*World currently loaded*/
 	private String world = "";
+	
+	/*Current Texture Pack*/
+	private TexturePackBase pack = null;
 
 	/*Is the scrollbar being dragged?*/
 	private boolean scrClick = false;
@@ -148,14 +152,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Square map toggle*/
 	private boolean squareMap = false;
-	
+
 	/*Old north toggle*/
 	public boolean oldNorth = false;
-	
+
 	private int northRotate = 0;
 
 	/*Show coordinates toggle*/
-	private boolean coords = false;
+	private boolean coords = true;
 
 	/*Dynamic lighting toggle*/
 	private boolean lightmap = true;
@@ -172,43 +176,55 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Map calculation thread*/
 	public Thread zCalc = new Thread(this);
-	
+
 	//should we be running the calc thread?
-	public static boolean threading;
+	public static boolean threading = true;
 
 	private boolean haveLoadedBefore;
-	
+
 	//TODO: update
-			/*Polygon creation class*/
-			//private lj lDraw = lj.a;
-			private Tessellator lDraw = Tessellator.instance;
+	/*Polygon creation class*/
+	//private lj lDraw = lj.a;
+	private Tessellator lDraw = Tessellator.instance;
+
+	/*Font rendering class*/
+	private FontRenderer lang;
+
+	/*Render texture*/
+	private RenderEngine renderEngine;
+
+
+	public static File getAppDir(String app)
+	{
+		return Minecraft.getAppDir(app);
+	}
+
+	public void chatInfo(String s) {
+		game.thePlayer.addChatMessage(s);
+	}
+	public String getMapName()
+	{
+		//return game.theWorld.worldInfo.getWorldName();
+		return game.getIntegratedServer().getWorldName();
+	}
+	public String getServerName()
+	{
+		//return game.gameSettings.lastServer; // old and busted since the server list
+		try {
+			return ((TcpConnection)(game.getSendQueue().getNetManager())).getSocket().getInetAddress().getHostName();
+		}
+		catch (Exception e) {
+			return null;
+		}
+		/*NetClientHandler nh = game.getSendQueue();
+		TcpConnection tcp = (TcpConnection)nh.getNetManager();
+		Socket sock = tcp.getSocket();
+		java.net.InetAddress address = sock.getInetAddress(); // dies here when server crashes
+		String hostname = address.getHostName();
+		return hostname;*/
 		
-			/*Font rendering class*/
-			private FontRenderer lang;
-		
-			/*Render texture*/
-			private RenderEngine renderEngine;
-
-
-			public static File getAppDir(String app)
-			{
-				return Minecraft.getAppDir(app);
-			}
-
-			public void chatInfo(String s) {
-				game.thePlayer.addChatMessage(s);
-			}
-			public String getMapName()
-			{
-				//return game.theWorld.worldInfo.getWorldName();
-				return game.getIntegratedServer().getWorldName();
-			}
-			public String getServerName()
-			{
-				//return game.gameSettings.lastServer; // old and busted since the server list
-				return ((TcpConnection)(game.getSendQueue().getNetManager())).getSocket().getInetAddress().getHostName();
-			}
-			public Object getPrivateField (Object o, String fieldName) {   
+	}
+	/*public Object getPrivateField (Object o, String fieldName) {   
 
 				// Go and find the private field... 
 				final java.lang.reflect.Field fields[] = o.getClass().getDeclaredFields();
@@ -226,422 +242,795 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				//Assert.fail ("Field '" + fieldName +"' not found");
 				return null;
 
-				/*java.lang.reflect.Field privateField = null;
-				  try {
-					  privateField = o.getClass().getDeclaredField(fieldName);
-				  }
-				  catch (NoSuchFieldException e){}
-				  privateField.setAccessible(true);
-				  Object obj = null;
-				  try {
-					  obj = privateField.get(o);
-				  }
-				  catch (IllegalAccessException e){}
-				  return obj;*/
-			}
-			public void drawPre()
-			{
-				lDraw.startDrawingQuads();
-			}
-			public void drawPost()
-			{
-				lDraw.draw();
-			}
-			public void glah(int g)
-			{
-				renderEngine.deleteTexture(g);
-			}
-			public void ldrawone(int a, int b, double c, double d, double e)
-			{
-				lDraw.addVertexWithUV(a, b, c, d, e);
-			}
-			public void ldrawtwo(double a, double b, double c)
-			{
-				lDraw.addVertex(a, b, c);
-			}
-			public void ldrawthree(double a, double b, double c, double d, double e)
-			{
-				lDraw.addVertexWithUV(a, b, c, d, e);
-			}
-			public int getMouseX(int scWidth)
-			{
-				return Mouse.getX()*(scWidth+5)/game.displayWidth;
-			}
-			public int getMouseY(int scHeight)
-			{
-				return (scHeight+5) - Mouse.getY() * (scHeight+5) / this.game.displayHeight - 1;
-			}
-			public void setMenuNull()
-			{
-				game.currentScreen =null;
-			}
-			public Object getMenu()
-			{
-				return game.currentScreen;
-			}
-			//@Override
-			public void OnTickInGame(Minecraft mc)
-			{
-				northRotate = oldNorth ? 0 : 90;
-				if(game==null) game = mc;
-  				//mc.s.a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
-  				//mc.entityRenderer.func_21152_a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
+				//java.lang.reflect.Field privateField = null;
+				//  try {
+				//	  privateField = o.getClass().getDeclaredField(fieldName);
+				//  }
+				//  catch (NoSuchFieldException e){}
+				//  privateField.setAccessible(true);
+				//  Object obj = null;
+				//  try {
+				//	  obj = privateField.get(o);
+				//  }
+				//  catch (IllegalAccessException e){}
+				//  return obj;
+			}*/
+	public void drawPre()
+	{
+		lDraw.startDrawingQuads();
+	}
+	public void drawPost()
+	{
+		lDraw.draw();
+	}
+	public void glah(int g)
+	{
+		renderEngine.deleteTexture(g);
+	}
+	public void ldrawone(int a, int b, double c, double d, double e)
+	{
+		lDraw.addVertexWithUV(a, b, c, d, e);
+	}
+	public void ldrawtwo(double a, double b, double c)
+	{
+		lDraw.addVertex(a, b, c);
+	}
+	public void ldrawthree(double a, double b, double c, double d, double e)
+	{
+		lDraw.addVertexWithUV(a, b, c, d, e);
+	}
+	public int getMouseX(int scWidth)
+	{
+		return Mouse.getX()*(scWidth+5)/game.displayWidth;
+	}
+	public int getMouseY(int scHeight)
+	{
+		return (scHeight+5) - Mouse.getY() * (scHeight+5) / this.game.displayHeight - 1;
+	}
+	public void setMenuNull()
+	{
+		game.currentScreen =null;
+	}
+	public Object getMenu()
+	{
+		return game.currentScreen;
+	}
+	//@Override
+	public void OnTickInGame(Minecraft mc)
+	{
+		northRotate = oldNorth ? 0 : 90;
+		if(game==null) game = mc;
+		//mc.s.a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
+		//mc.entityRenderer.func_21152_a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
 
-				if (motionTrackerExists && motionTracker.activated) {
-					motionTracker.OnTickInGame(mc);
-					return;
+		if (motionTrackerExists && motionTracker.activated) {
+			motionTracker.OnTickInGame(mc);
+			return;
+		}
+
+		if (threading)
+		{
+
+			if (!zCalc.isAlive() && threading) {
+				zCalc = new Thread(this);
+				zCalc.start();
+			}
+			if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
+				try {this.zCalc.notify();} catch (Exception local) {}
+		}
+		else if (!threading)
+		{
+			if (this.enabled && !this.hide)
+				if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300))) {
+					timer=1;
+					mapCalc();
 				}
-	
-				if (threading)
-				{
-					
-					if (!zCalc.isAlive() && threading) {
-						zCalc = new Thread(this);
-						zCalc.start();
-					}
-					if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
-						try {this.zCalc.notify();} catch (Exception local) {}
-				}
-				else if (!threading)
-				{
-					if (this.enabled && !this.hide)
-						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
-							mapCalc();
-				}
-		
-				
+			timer++;
+		}
 
-				if(lang==null) lang = this.game.fontRenderer;
 
-				if(renderEngine==null) renderEngine = this.game.renderEngine;
 
-				ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
-				int scWidth = scSize.getScaledWidth();
-				int scHeight = scSize.getScaledHeight();
+		if(lang==null) lang = this.game.fontRenderer;
 
-				if (Keyboard.isKeyDown(menuKey) && this.game.currentScreen ==null) {
-					this.iMenu = 2;
-					this.game.displayGuiScreen(new GuiScreen());
-				}
+		if(renderEngine==null) renderEngine = this.game.renderEngine;
 
-				if (Keyboard.isKeyDown(zoomKey) && this.game.currentScreen == null && (this.showNether || this.game.thePlayer.dimension!=-1)) {
-					this.SetZoom();
-				}
+		ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
+		int scWidth = scSize.getScaledWidth();
+		int scHeight = scSize.getScaledHeight();
 
-				loadWaypoints();
+		if (Keyboard.isKeyDown(menuKey) && this.game.currentScreen ==null) {
+			this.iMenu = 2;
+			this.game.displayGuiScreen(new GuiScreen());
+		}
 
-				if (this.iMenu==1) {
-					if (!welcome) this.iMenu = 0;
-				}
+		if (Keyboard.isKeyDown(zoomKey) && this.game.currentScreen == null && (this.showNether || this.game.thePlayer.dimension!=-1)) {
+			this.SetZoom();
+		}
 
-				if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
-					this.enabled=false;
-				else this.enabled=true;
+		checkForChanges();
 
-				//if(this.game.currentScreen == null && this.iMenu > 1)
-				if (this.game.currentScreen==null && this.iMenu>1) // ** jay was this.game.q
-					this.iMenu = 0;
+		if (this.iMenu==1) {
+			if (!welcome) this.iMenu = 0;
+		}
 
-				scWidth -= 5;
-				scHeight -= 5;
+		if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
+			this.enabled=false;
+		else this.enabled=true;
 
-/* // wut why not just get it
+		//if(this.game.currentScreen == null && this.iMenu > 1)
+		if (this.game.currentScreen==null && this.iMenu>1) // ** jay was this.game.q
+			this.iMenu = 0;
+
+		scWidth -= 5;
+		scHeight -= 5;
+
+		/* // wut why not just get it
 				if (this.oldDir != this.radius()) {
 					this.direction += this.oldDir - this.radius(); 
 					this.oldDir = this.radius();
 				}
-*/
-				
-				this.direction = -this.radius();
+		 */
 
-				if (this.direction >= 360.0f)
-					while (this.direction >= 360.0f)
-						this.direction -= 360.0f;
+		this.direction = -this.radius();
 
-				if (this.direction < 0.0f) {
-					while (this.direction < 0.0f)
-						this.direction += 360.0f;
-				}
+		if (this.direction >= 360.0f)
+			while (this.direction >= 360.0f)
+				this.direction -= 360.0f;
 
-				if ((!this.error.equals("")) && (this.ztimer == 0)) this.ztimer = 500;
+		if (this.direction < 0.0f) {
+			while (this.direction < 0.0f)
+				this.direction += 360.0f;
+		}
 
-				if (this.ztimer > 0) this.ztimer -= 1;
+		if ((!this.error.equals("")) && (this.ztimer == 0)) this.ztimer = 500;
 
-				if (this.fudge > 0) this.fudge -= 1;
+		if (this.ztimer > 0) this.ztimer -= 1;
 
-				if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
+		if (this.fudge > 0) this.fudge -= 1;
 
-				if (this.enabled) {
+		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 
-					GL11.glDisable(2929 /*GL_DEPTH_TEST*/);
-					GL11.glEnable(3042 /*GL_BLEND*/);
-					GL11.glDepthMask(false);
-					GL11.glBlendFunc(770, 0);
-					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-					if (this.showNether || this.game.thePlayer.dimension!=-1) {
-						if(this.full) renderMapFull(scWidth,scHeight);
-						else renderMap(scWidth);
-					}					
-					
-					if (ztimer > 0)
-						this.write(this.error, 20, 20, 0xffffff);
+		if (this.enabled) {
 
-					if (this.iMenu>0) showMenu(scWidth, scHeight);
+			GL11.glDisable(2929 /*GL_DEPTH_TEST*/);
+			GL11.glEnable(3042 /*GL_BLEND*/);
+			GL11.glDepthMask(false);
+			GL11.glBlendFunc(770, 0);
+			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+			if (this.showNether || this.game.thePlayer.dimension!=-1) {
+				if(this.full) renderMapFull(scWidth,scHeight);
+				else renderMap(scWidth);
+			}					
 
-					GL11.glDepthMask(true);
-					GL11.glDisable(3042 /*GL_BLEND*/);
-					GL11.glEnable(2929 /*GL_DEPTH_TEST*/);
-					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+			if (ztimer > 0)
+				this.write(this.error, 20, 20, 0xffffff);
 
-					if (this.showNether || this.game.thePlayer.dimension!=-1)
-						if(coords) showCoords(scWidth, scHeight);
-				}
+			if (this.iMenu>0) showMenu(scWidth, scHeight);
 
-				//while (active) try {
-				//		Thread.currentThread().sleep(1);
-				//	} catch (Exception local) {}
-				//TODO: what the fuck is this for? :P
+			GL11.glDepthMask(true);
+			GL11.glDisable(3042 /*GL_BLEND*/);
+			GL11.glEnable(2929 /*GL_DEPTH_TEST*/);
+			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+
+			if (this.showNether || this.game.thePlayer.dimension!=-1)
+				if(coords) showCoords(scWidth, scHeight);
+		}
+
+		//while (active) try {
+		//		Thread.currentThread().sleep(1);
+		//	} catch (Exception local) {}
+		//TODO: what the fuck is this for? :P
+	}
+
+	private void checkForChanges() {
+		String j;
+		String mapName;
+		if (game.isIntegratedServerRunning())
+			mapName = this.getMapName();
+		else {
+			mapName = getServerName();
+			if (mapName != null) {
+				String[] i = mapName.toLowerCase().split(":");
+				mapName = i[0];
 			}
-			private int chkLen(String paramStr) {
-				return this.lang.getStringWidth(paramStr);
-			}
+		} 
 
-			private void write(String paramStr, int paramInt1, int paramInt2, int paramInt3) {
-				this.lang.drawString(paramStr, paramInt1, paramInt2, paramInt3);
-//				this.lang.drawStringWithShadow(paramStr, paramInt1, paramInt2, paramInt3); // dead.  replaced by 50103?
-			}
+		if(!world.equals(mapName) && (mapName != null)) {
+			world = mapName;
+			iMenu = 1;
+			loadWaypoints();
+		}
+		
+		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
+			pack = game.texturePackList.getSelectedTexturePack();
+			this.loadTexturePackColors();
+		}
+	}
 
-			private int xCoord() {
-				return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
-			}
+	private int chkLen(String paramStr) {
+		return this.lang.getStringWidth(paramStr);
+	}
 
-			private int zCoord() {
-				return (int)(this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
-			}
+	private void write(String paramStr, int paramInt1, int paramInt2, int paramInt3) {
+		this.lang.drawString(paramStr, paramInt1, paramInt2, paramInt3);
+		//				this.lang.drawStringWithShadow(paramStr, paramInt1, paramInt2, paramInt3); // dead.  replaced by 50103?
+	}
 
-			private int yCoord() {
-				return (int)this.game.thePlayer.posY;
-			}
+	private int xCoord() {
+		return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
+	}
 
-			private float radius() {
-				return this.game.thePlayer.rotationYaw;
-			}
+	private int zCoord() {
+		return (int)(this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
+	}
 
-			private String dCoord(int paramInt1) {
-				if(paramInt1 < 0)
-					return "-" + Math.abs(paramInt1+1);
-				else
-					return "+" + paramInt1;
-			}
+	private int yCoord() {
+		return (int)this.game.thePlayer.posY;
+	}
 
-			private int tex(BufferedImage paramImg) {
-				return this.renderEngine.allocateAndSetupTexture(paramImg);
-			}
+	private float radius() {
+		return this.game.thePlayer.rotationYaw;
+	}
 
-			private int img(String paramStr) { // returns index of texturemap(name) aka glBoundTexture.  If there isn't one, it glBindTexture's it in setupTexture
-				return this.renderEngine.getTexture(paramStr);
-			}
+	private String dCoord(int paramInt1) {
+		if(paramInt1 < 0)
+			return "-" + Math.abs(paramInt1+1);
+		else
+			return "+" + paramInt1;
+	}
 
-			private void disp(int paramInt) { 
-				this.renderEngine.bindTexture(paramInt); // this func glBindTexture's GL_TEXTURE_2D, int paramInt
-			}
-			public World getWorld()
-			{
-				return game.theWorld;
-			}
+	private int tex(BufferedImage paramImg) {
+		return this.renderEngine.allocateAndSetupTexture(paramImg);
+	}
 
-			private final int getBlockHeightNether(World world, int x, int z, int starty) 
-			{
-				int y = starty;
-				//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
-				//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
-				if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
-					while (y > 0) {
-						y--;
-						if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
-							return y + 1;
-					}
+	private int img(String paramStr) { // returns index of texturemap(name) aka glBoundTexture.  If there isn't one, it glBindTexture's it in setupTexture
+		return this.renderEngine.getTexture(paramStr);
+	}
+
+	private void disp(int paramInt) { 
+		this.renderEngine.bindTexture(paramInt); // this func glBindTexture's GL_TEXTURE_2D, int paramInt
+	}
+	public World getWorld()
+	{
+		return game.theWorld;
+	}
+
+	private final int getBlockHeightNether(World world, int x, int z, int starty) 
+	{
+		int y = starty;
+		//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
+		//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
+		if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
+			while (y > 0) {
+				y--;
+				if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
+					return y + 1;
+			}
+		}
+		else {
+			while ((y <= starty+10) && (y < 127)) {
+				y++;
+				if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
+					return y;
+			}
+		}
+		return -1;
+		//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
+	}
+
+	private void mapCalcNether() {
+		World data = getWorld();
+		int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
+		this.lZoom = this.zoom;
+		int multi = (int)Math.pow(2, this.lZoom);
+		int startX = this.xCoord(); // 1
+		int startZ = this.zCoord(); // j
+		this.lastX = startX;
+		this.lastZ = startZ;
+		startX -= 16*multi;
+		startZ -= 16*multi;
+		int color24 = 0; // k
+		int height = 0;
+		boolean solidNether = false;
+
+		for (int imageY = 0; imageY < 32 * multi; imageY++) {
+			for (int imageX = 0; imageX < 32 * multi; imageX++) {
+				color24 = 0;
+				boolean check = false;
+
+				if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+
+				height = getBlockHeightNether(data, startX + imageX, startZ + imageY, this.yCoord());		
+				if (height == -1) {
+					height = this.yCoord() + 1;
+					solidNether = true;
 				}
 				else {
-					while ((y <= starty+10) && (y < 127)) {
-						y++;
-						if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
-							return y;
-					}
+					solidNether = false;
 				}
-				return -1;
-//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
-			}
-
-			private void mapCalcNether() {
-				World data = getWorld();
-				int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
-				this.lZoom = this.zoom;
-				int multi = (int)Math.pow(2, this.lZoom);
-				int startX = this.xCoord(); // 1
-				int startZ = this.zCoord(); // j
-				this.lastX = startX;
-				this.lastZ = startZ;
-				startX -= 16*multi;
-				startZ -= 16*multi;
-				int color24 = 0; // k
-				int height = 0;
-				boolean solidNether = false;
-
-				for (int imageY = 0; imageY < 32 * multi; imageY++) {
-					for (int imageX = 0; imageX < 32 * multi; imageX++) {
-						color24 = 0;
-						boolean check = false;
-
-						if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-						
-						height = getBlockHeightNether(data, startX + imageX, startZ + imageY, this.yCoord());		
-						if (height == -1) {
-							height = this.yCoord() + 1;
-							solidNether = true;
-						}
+				if ((check) || (squareMap) || (this.full)) {
+					if (this.rc) {
+						if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+							color24 = 0xFFFFFF;
 						else {
-							solidNether = false;
+							color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
 						}
-						if ((check) || (squareMap) || (this.full)) {
-							if (this.rc) {
-								if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-									color24 = 0xFFFFFF;
-								else {
-									color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-								}
-							} else color24 = 0xFFFFFF;
+					} else color24 = 0xFFFFFF;
+				}
+
+				if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
+					if (heightmap) {
+						int i2 = height-this.yCoord();
+						double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+						int r = color24 / 0x10000;
+						int g = (color24 - r * 0x10000)/0x100;
+						int b = (color24 - r * 0x10000-g*0x100);
+
+						if (i2>=0) {
+							r = (int)(sc * (0xff-r)) + r;
+							g = (int)(sc * (0xff-g)) + g;
+							b = (int)(sc * (0xff-b)) + b;
+						} else {
+							i2=Math.abs(i2);
+							r = r -(int)(sc * r);
+							g = g -(int)(sc * g);
+							b = b -(int)(sc * b);
 						}
 
-						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-							if (heightmap) {
-								int i2 = height-this.yCoord();
-								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-								int r = color24 / 0x10000;
-								int g = (color24 - r * 0x10000)/0x100;
-								int b = (color24 - r * 0x10000-g*0x100);
+						color24 = r * 0x10000 + g * 0x100 + b;
+					}
 
-								if (i2>=0) {
-									r = (int)(sc * (0xff-r)) + r;
-									g = (int)(sc * (0xff-g)) + g;
-									b = (int)(sc * (0xff-b)) + b;
-								} else {
-									i2=Math.abs(i2);
-									r = r -(int)(sc * r);
-									g = g -(int)(sc * g);
-									b = b -(int)(sc * b);
-								}
+					int i3 = 255;
 
-								color24 = r * 0x10000 + g * 0x100 + b;
+					if (lightmap)
+						//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+						i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+					else if (solidNether)
+						i3 = 32;
+
+					if(i3 > 255) i3 = 255;
+
+					if(i3 < 76 && !solidNether) i3 = 76;
+					else if (i3 < 32) i3 = 32;
+
+					color24 = i3 * 0x1000000 + color24 ;
+				}
+
+				this.map[this.lZoom].setRGB(imageX, imageY, color24);
+			}
+		}
+	}
+	private void mapCalcOverworld() {
+		World data = getWorld();
+		int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
+		this.lZoom = this.zoom;
+		int multi = (int)Math.pow(2, this.lZoom);
+		int startX = this.xCoord(); // 1
+		int startZ = this.zCoord(); // j
+		if (lastX - startX != 0) {
+			System.out.println("Moved x: " + (lastX - startX));
+		}
+		if (lastZ - startZ != 0) {
+			System.out.println("Moved z: " + (lastZ - startZ));
+		}
+		this.lastX = startX;
+		this.lastZ = startZ;
+		startX -= 16*multi;
+		startZ -= 16*multi; // + west at top, - north at top
+		int color24 = 0; // k
+		int height = 0;
+		for (int imageY = 0; imageY < 32 * multi; imageY++) {
+			for (int imageX = 0; imageX < 32 * multi; imageX++) {
+				color24 = 0;
+				boolean check = false;
+
+				if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+
+				//int i1 ~ height
+				//int height = data.f(i + m, startZ - imageX); // notch
+				//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
+				//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
+				//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
+				//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+				height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
+
+				if ((check) || (squareMap) || (this.full)) {
+					if (this.rc) {
+						if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+							color24 = 0xFFFFFF;
+						else {
+							color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+						}
+					} else color24 = 0xFFFFFF;
+				}
+
+				if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
+					if (heightmap) {
+						int i2 = height-this.yCoord();
+						//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+						double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
+						//double sc = Math.abs(i2)/340.0D;
+
+						int r = color24 / 0x10000;
+						int g = (color24 - r * 0x10000)/0x100;
+						int b = (color24 - r * 0x10000-g*0x100);
+
+						if (i2>=0) {
+							r = (int)(sc * (0xff-r)) + r;
+							g = (int)(sc * (0xff-g)) + g;
+							b = (int)(sc * (0xff-b)) + b;
+						} else {
+							i2=Math.abs(i2);
+							r = r -(int)(sc * r);
+							g = g -(int)(sc * g);
+							b = b -(int)(sc * b);
+						}
+
+						color24 = r * 0x10000 + g * 0x100 + b;
+					}
+
+					int i3 = 255;
+
+					if (lightmap)
+						//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+						i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+
+					if(i3 > 255) i3 = 255;
+
+					if(i3 < 32) i3 = 32;
+
+					color24 = i3 * 0x1000000 + color24 ;
+				}
+
+				this.map[this.lZoom].setRGB(imageX, imageY, color24);
+			}
+		}
+	}
+/*	private void mapCalcOverworld() { // ** speed
+		World data = getWorld();
+		int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
+		this.lZoom = this.zoom;
+		int multi = (int)Math.pow(2, this.lZoom);
+		int startX = this.xCoord(); // 1
+		int startZ = this.zCoord(); // j
+		int offsetX = startX - lastX;
+		int offsetZ = startZ - lastZ;
+		this.lastX = startX;
+		this.lastZ = startZ;
+		if (offsetX > 0) {
+			System.out.println("Moved x: " + offsetX);
+			startX -= 16*multi;
+			startZ -= 16*multi; 
+			int color24 = 0; // k
+			int height = 0;
+			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
+			BufferedImage snip = this.map[this.lZoom].getSubimage(offsetX, 0, this.map[this.lZoom].getWidth()-offsetX , this.map[this.lZoom].getHeight());
+			java.awt.Graphics gfx = comp.getGraphics ();
+			gfx.drawImage (snip, 0, 0, null);
+			gfx.dispose ();
+			for (int imageY = 0; imageY < 32 * multi; imageY++) {
+				for (int imageX = 32 * multi - offsetX; imageX < 32 * multi; imageX++) {
+					color24 = 0;
+					boolean check = false;
+
+					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+
+					//int i1 ~ height
+					//int height = data.f(i + m, startZ - imageX); // notch
+					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
+					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
+					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
+					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
+
+					if ((check) || (squareMap) || (this.full)) {
+						if (this.rc) {
+							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+								color24 = 0xFFFFFF;
+							else {
+								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+							}
+						} else color24 = 0xFFFFFF;
+					}
+
+					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
+						if (heightmap) {
+							int i2 = height-this.yCoord();
+							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
+							//double sc = Math.abs(i2)/340.0D;
+
+							int r = color24 / 0x10000;
+							int g = (color24 - r * 0x10000)/0x100;
+							int b = (color24 - r * 0x10000-g*0x100);
+
+							if (i2>=0) {
+								r = (int)(sc * (0xff-r)) + r;
+								g = (int)(sc * (0xff-g)) + g;
+								b = (int)(sc * (0xff-b)) + b;
+							} else {
+								i2=Math.abs(i2);
+								r = r -(int)(sc * r);
+								g = g -(int)(sc * g);
+								b = b -(int)(sc * b);
 							}
 
-							int i3 = 255;
-
-							if (lightmap)
-								//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-								i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-							else if (solidNether)
-								i3 = 32;
-
-							if(i3 > 255) i3 = 255;
-
-							if(i3 < 76 && !solidNether) i3 = 76;
-							else if (i3 < 32) i3 = 32;
-
-							color24 = i3 * 0x1000000 + color24 ;
+							color24 = r * 0x10000 + g * 0x100 + b;
 						}
 
-						this.map[this.lZoom].setRGB(imageX, imageY, color24);
+						int i3 = 255;
+
+						if (lightmap)
+							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+
+						if(i3 > 255) i3 = 255;
+
+						if(i3 < 32) i3 = 32;
+
+						color24 = i3 * 0x1000000 + color24 ;
 					}
+					comp.setRGB(imageX, imageY, color24);
 				}
 			}
-			private void mapCalcOverworld() {
-				World data = getWorld();
-				int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
-				this.lZoom = this.zoom;
-				int multi = (int)Math.pow(2, this.lZoom);
-				int startX = this.xCoord(); // 1
-				int startZ = this.zCoord(); // j
-				this.lastX = startX;
-				this.lastZ = startZ;
-				startX -= 16*multi;
-				startZ -= 16*multi; // + west at top, - north at top
-				int color24 = 0; // k
-				int height = 0;
-				for (int imageY = 0; imageY < 32 * multi; imageY++) {
-					for (int imageX = 0; imageX < 32 * multi; imageX++) {
-						color24 = 0;
-						boolean check = false;
+			this.map[this.lZoom] = comp;
+			
+		}
+		if (offsetX < 0) {
+			System.out.println("Moved x: " + offsetX);
+			startX -= 16*multi;
+			startZ -= 16*multi; 
+			offsetX = Math.abs(offsetX);
+			int color24 = 0; // k
+			int height = 0;
+			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
+			BufferedImage snip = this.map[this.lZoom].getSubimage(0, 0, this.map[this.lZoom].getWidth()-offsetX , this.map[this.lZoom].getHeight());
+			java.awt.Graphics gfx = comp.getGraphics ();
+			gfx.drawImage (snip, offsetX, 0, null);
+			gfx.dispose ();
+			for (int imageY = 0; imageY < 32 * multi; imageY++) {
+				for (int imageX = 0; imageX < offsetX; imageX++) {
+					color24 = 0;
+					boolean check = false;
 
-						if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-						
-						//int i1 ~ height
-						//int height = data.f(i + m, startZ - imageX); // notch
-						//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
-						//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
-						//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-						//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-						height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
+					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
 
-						if ((check) || (squareMap) || (this.full)) {
-							if (this.rc) {
-								if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-									color24 = 0xFFFFFF;
-								else {
-									color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-								}
-							} else color24 = 0xFFFFFF;
-						}
+					//int i1 ~ height
+					//int height = data.f(i + m, startZ - imageX); // notch
+					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
+					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
+					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
+					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
 
-						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-							if (heightmap) {
-								int i2 = height-this.yCoord();
-								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-								int r = color24 / 0x10000;
-								int g = (color24 - r * 0x10000)/0x100;
-								int b = (color24 - r * 0x10000-g*0x100);
+					if ((check) || (squareMap) || (this.full)) {
+						if (this.rc) {
+							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+								color24 = 0xFFFFFF;
+							else {
+								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+							}
+						} else color24 = 0xFFFFFF;
+					}
 
-								if (i2>=0) {
-									r = (int)(sc * (0xff-r)) + r;
-									g = (int)(sc * (0xff-g)) + g;
-									b = (int)(sc * (0xff-b)) + b;
-								} else {
-									i2=Math.abs(i2);
-									r = r -(int)(sc * r);
-									g = g -(int)(sc * g);
-									b = b -(int)(sc * b);
-								}
+					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
+						if (heightmap) {
+							int i2 = height-this.yCoord();
+							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
+							//double sc = Math.abs(i2)/340.0D;
 
-								color24 = r * 0x10000 + g * 0x100 + b;
+							int r = color24 / 0x10000;
+							int g = (color24 - r * 0x10000)/0x100;
+							int b = (color24 - r * 0x10000-g*0x100);
+
+							if (i2>=0) {
+								r = (int)(sc * (0xff-r)) + r;
+								g = (int)(sc * (0xff-g)) + g;
+								b = (int)(sc * (0xff-b)) + b;
+							} else {
+								i2=Math.abs(i2);
+								r = r -(int)(sc * r);
+								g = g -(int)(sc * g);
+								b = b -(int)(sc * b);
 							}
 
-							int i3 = 255;
-
-							if (lightmap)
-								//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-								i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-
-							if(i3 > 255) i3 = 255;
-
-							if(i3 < 32) i3 = 32;
-
-							color24 = i3 * 0x1000000 + color24 ;
+							color24 = r * 0x10000 + g * 0x100 + b;
 						}
 
-						this.map[this.lZoom].setRGB(imageX, imageY, color24);
+						int i3 = 255;
+
+						if (lightmap)
+							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+
+						if(i3 > 255) i3 = 255;
+
+						if(i3 < 32) i3 = 32;
+
+						color24 = i3 * 0x1000000 + color24 ;
 					}
+					comp.setRGB(imageX, imageY, color24);
 				}
 			}
-			private void mapCalc() {
+			this.map[this.lZoom] = comp;
+			
+		}
+		if (offsetZ > 0) {
+			System.out.println("Moved z: " + offsetZ);
+			startX -= 16*multi;
+			startZ -= 16*multi; 
+			int color24 = 0; // k
+			int height = 0;
+			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
+			BufferedImage snip = this.map[this.lZoom].getSubimage(0, offsetZ, this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight()-offsetZ);
+			java.awt.Graphics gfx = comp.getGraphics ();
+			gfx.drawImage (snip, 0, 0, null);
+			gfx.dispose ();
+			for (int imageY = 32 * multi - offsetZ; imageY < 32 * multi; imageY++) {
+				for (int imageX = 0; imageX < 32 * multi; imageX++) {
+					color24 = 0;
+					boolean check = false;
 
-				if (this.game.thePlayer.dimension!=-1)
-					//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
-					//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
-					if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, this.yCoord(), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
-						mapCalcNether();
-					else
-						mapCalcOverworld();
-/*					if (showCaves) {
+					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+
+					//int i1 ~ height
+					//int height = data.f(i + m, startZ - imageX); // notch
+					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
+					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
+					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
+					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
+
+					if ((check) || (squareMap) || (this.full)) {
+						if (this.rc) {
+							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+								color24 = 0xFFFFFF;
+							else {
+								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+							}
+						} else color24 = 0xFFFFFF;
+					}
+
+					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
+						if (heightmap) {
+							int i2 = height-this.yCoord();
+							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
+							//double sc = Math.abs(i2)/340.0D;
+
+							int r = color24 / 0x10000;
+							int g = (color24 - r * 0x10000)/0x100;
+							int b = (color24 - r * 0x10000-g*0x100);
+
+							if (i2>=0) {
+								r = (int)(sc * (0xff-r)) + r;
+								g = (int)(sc * (0xff-g)) + g;
+								b = (int)(sc * (0xff-b)) + b;
+							} else {
+								i2=Math.abs(i2);
+								r = r -(int)(sc * r);
+								g = g -(int)(sc * g);
+								b = b -(int)(sc * b);
+							}
+
+							color24 = r * 0x10000 + g * 0x100 + b;
+						}
+
+						int i3 = 255;
+
+						if (lightmap)
+							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+
+						if(i3 > 255) i3 = 255;
+
+						if(i3 < 32) i3 = 32;
+
+						color24 = i3 * 0x1000000 + color24 ;
+					}
+					comp.setRGB(imageX, imageY, color24);
+				}
+			}
+			this.map[this.lZoom] = comp;
+			
+		}
+		if (offsetZ < 0) {
+			System.out.println("Moved z: " + offsetZ);
+			startX -= 16*multi;
+			startZ -= 16*multi; 
+			offsetZ = Math.abs(offsetZ);
+			int color24 = 0; // k
+			int height = 0;
+			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
+			BufferedImage snip = this.map[this.lZoom].getSubimage(0, 0, this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight()-offsetZ);
+			java.awt.Graphics gfx = comp.getGraphics ();
+			gfx.drawImage (snip, 0, offsetZ, null);
+			gfx.dispose ();
+			for (int imageY = 0; imageY < offsetZ; imageY++) {
+				for (int imageX = 0; imageX < 32 * multi; imageX++) {
+					color24 = 0;
+					boolean check = false;
+
+					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
+
+					//int i1 ~ height
+					//int height = data.f(i + m, startZ - imageX); // notch
+					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
+					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
+					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
+					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
+					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
+
+					if ((check) || (squareMap) || (this.full)) {
+						if (this.rc) {
+							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+								color24 = 0xFFFFFF;
+							else {
+								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+							}
+						} else color24 = 0xFFFFFF;
+					}
+
+					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
+						if (heightmap) {
+							int i2 = height-this.yCoord();
+							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
+							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
+							//double sc = Math.abs(i2)/340.0D;
+
+							int r = color24 / 0x10000;
+							int g = (color24 - r * 0x10000)/0x100;
+							int b = (color24 - r * 0x10000-g*0x100);
+
+							if (i2>=0) {
+								r = (int)(sc * (0xff-r)) + r;
+								g = (int)(sc * (0xff-g)) + g;
+								b = (int)(sc * (0xff-b)) + b;
+							} else {
+								i2=Math.abs(i2);
+								r = r -(int)(sc * r);
+								g = g -(int)(sc * g);
+								b = b -(int)(sc * b);
+							}
+
+							color24 = r * 0x10000 + g * 0x100 + b;
+						}
+
+						int i3 = 255;
+
+						if (lightmap)
+							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
+
+						if(i3 > 255) i3 = 255;
+
+						if(i3 < 32) i3 = 32;
+
+						color24 = i3 * 0x1000000 + color24 ;
+					}
+					comp.setRGB(imageX, imageY, color24);
+				}
+			}
+			this.map[this.lZoom] = comp;
+			
+		}
+
+		//if (lastZ - startZ != 0) {
+		//	System.out.println("Moved z: " + (lastZ - startZ));
+		//}
+	} */
+	
+	private void mapCalc() {
+
+		if (this.game.thePlayer.dimension!=-1)
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
+			if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, this.yCoord(), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+				mapCalcNether();
+			else
+				mapCalcOverworld();
+		/*					if (showCaves) {
 						Chunk chunk = getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord());
 						ExtendedBlockStorage[] extendedblockstoragearray = chunk.func_48495_i();
 						ExtendedBlockStorage extendedblockstorage = extendedblockstoragearray[this.zCoord() >> 4];
@@ -657,11 +1046,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					}
 					else
 						mapCalcOverworld();
-*/
-				else if (showNether)
-					mapCalcNether();
+		 */
+		else if (showNether)
+			mapCalcNether();
 
-/*
+		/*
 				if (this.game.thePlayer.dimension!=-1)
 					mapCalcOverworld();
 				else
@@ -671,59 +1060,58 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					mapCalcOverworld();
 				else
 					mapCalcNether();
-*/
-			}
-			
-			private int calcLightSMPtoo(int x, int y, int z, int skylightsubtract) {
-//				return getWorld().getBlockLightValue_do(x, z, y, false);
-				World data = getWorld();
-				Chunk chunk = data.getChunkFromChunkCoords(x >> 4, z >> 4);
-		        return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); // call calculate since the var calc sets can't be counted on to be set in SMP.  ie it isn't
-		        																		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
-			}
-			
-			public void run() {
-				if (this.game == null)
-					return;
-				while(true){
-					if(this.threading)
-					{
-						this.active = true;
-						while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
-						  if (this.enabled && !this.hide)
-							  if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
-								  try {this.mapCalc(); this.timer = 1;} catch (Exception local) {}
-						  this.timer++;
-						  this.active = false;
-						}
-						active = false;
-						try {this.zCalc.sleep(10);} catch (Exception exc) {}
-						try {this.zCalc.wait(0);} catch (Exception exc) {}
-					}
-					else
-					{
-						try {this.zCalc.sleep(1000);} catch (Exception exc) {}
-						try {this.zCalc.wait(0);} catch (Exception exc) {}
-					}
+		 */
+	}
+
+	private int calcLightSMPtoo(int x, int y, int z, int skylightsubtract) {
+		//				return getWorld().getBlockLightValue_do(x, z, y, false);
+		World data = getWorld();
+		Chunk chunk = data.getChunkFromChunkCoords(x >> 4, z >> 4);
+		return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); // call calculate since the var calc sets can't be counted on to be set in SMP.  ie it isn't
+		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
+	}
+
+	public void run() {
+		if (this.game == null)
+			return;
+		while(true){
+			if(this.threading)
+			{
+				this.active = true;
+				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
+					if (this.enabled && !this.hide)
+						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
+							try {this.mapCalc(); this.timer = 1;} catch (Exception local) {}
+					this.timer++;
+					this.active = false;
 				}
+				active = false;
+				try {this.zCalc.sleep(10);} catch (Exception exc) {}
+				try {this.zCalc.wait(0);} catch (Exception exc) {}
 			}
+			else
+			{
+				try {this.zCalc.sleep(1000);} catch (Exception exc) {}
+				try {this.zCalc.wait(0);} catch (Exception exc) {}
+			}
+		}
+	}
 	//END UPDATE SECTION
-			
+
 
 	public static mod_ZanMinimap instance;
 
 	public mod_ZanMinimap() {
 
 		//TODO: remodloaderize
-        //ModLoader.SetInGameHook(this, true, false);
-		
+		//ModLoader.SetInGameHook(this, true, false);
+
 		instance=this;
 		if (classExists("mod_MotionTracker")) {
 			motionTracker = new mod_MotionTracker();		
 			motionTrackerExists = true;
 		}
 
-		threading = false;
 		zCalc.start();
 		this.map[0] = new BufferedImage(32,32,2);
 		this.map[1] = new BufferedImage(64,64,2);
@@ -750,7 +1138,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.sMenu[1][9] = "Welcome Screen:";
 		this.sMenu[1][10] = "Threading:";
 		if (motionTrackerExists) this.sMenu[1][11] = "Radar Mode:";
-		
+
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
 
 		try {
@@ -760,7 +1148,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				haveLoadedBefore=false;
 				while ((sCurrentLine = in.readLine()) != null) {
 					String[] curLine = sCurrentLine.split(":");
-					
+
 					if(curLine[0].equals("Show Minimap"))
 						squareMap = Boolean.parseBoolean(curLine[1]);
 					if(curLine[0].equals("Old North"))
@@ -786,7 +1174,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						haveLoadedBefore=true;
 						threading=Boolean.parseBoolean(curLine[1]);
 					}
-					
+
 				}
 				in.close();
 			}
@@ -798,169 +1186,189 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 		for(int i = 0; i<blockColors.length; i++)
 			blockColors[i] = 0xff01ff;
-			
-		settingsFile = new File(getAppDir("minecraft"), "colours.txt");
 
 		try {
-			
+			// load default colors.  For if TP fails?  Also for that bit at the start
 			blockColors[blockColorID(1, 0)] = 0x686868;
-  			blockColors[blockColorID(2, 0)] = 0x74b44a;
-  			blockColors[blockColorID(3, 0)] = 0x79553a;
-  			blockColors[blockColorID(4, 0)] = 0x959595;
-  			blockColors[blockColorID(5, 0)] = 0xbc9862;
-  			blockColors[blockColorID(6, 0)] = 0x946428;
-  			blockColors[blockColorID(7, 0)] = 0x333333;
-  			blockColors[blockColorID(8, 0)] = 0x3256ff;
-  			blockColors[blockColorID(8, 1)] = 0x3256ff;
-  			blockColors[blockColorID(8, 2)] = 0x3256ff;
-  			blockColors[blockColorID(8, 3)] = 0x3256ff;
-  			blockColors[blockColorID(8, 4)] = 0x3256ff;
-  			blockColors[blockColorID(8, 5)] = 0x3256ff;
-  			blockColors[blockColorID(8, 6)] = 0x3256ff;
-  			blockColors[blockColorID(8, 7)] = 0x3256ff;
-  			blockColors[blockColorID(9, 0)] = 0x3256ff;
-  			blockColors[blockColorID(10, 0)] = 0xd86514;
-  			blockColors[blockColorID(10, 1)] = 0xd76514;
-  			blockColors[blockColorID(10, 2)] = 0xd66414;
-  			blockColors[blockColorID(10, 3)] = 0xd56414;
-  			blockColors[blockColorID(10, 4)] = 0xd46314;
-  			blockColors[blockColorID(10, 5)] = 0xd36314;
-  			blockColors[blockColorID(10, 6)] = 0xd26214;
-  			blockColors[blockColorID(11, 0)] = 0xd96514;
-  			blockColors[blockColorID(12, 0)] = 0xddd7a0;
-  			blockColors[blockColorID(13, 0)] = 0x747474;
-  			blockColors[blockColorID(14, 0)] = 0x747474;
-  			blockColors[blockColorID(15, 0)] = 0x747474;
-  			blockColors[blockColorID(16, 0)] = 0x747474;
-  			blockColors[blockColorID(17, 0)] = 0x342919;
-  			blockColors[blockColorID(17, 1)] = 0x342919;
-  			blockColors[blockColorID(17, 2)] = 0x342919;
-  			blockColors[blockColorID(18, 0)] = 0x164d0c;
-  			blockColors[blockColorID(18, 1)] = 0x164d0c;
-  			blockColors[blockColorID(18, 2)] = 0x164d0c;
-  			blockColors[blockColorID(18, 3)] = 0x164d0c;
-  			blockColors[blockColorID(19, 0)] = 0xe5e54e;
-  			blockColors[blockColorID(20, 0)] = 0xffffff;
-  			blockColors[blockColorID(21, 0)] = 0x677087;
-  			blockColors[blockColorID(22, 0)] = 0xd2eb2;
-  			blockColors[blockColorID(23, 0)] = 0x747474;
-  			blockColors[blockColorID(24, 0)] = 0xc6bd6d;
-  			blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
-  			blockColors[blockColorID(35, 0)] = 0xf4f4f4;
-  			blockColors[blockColorID(35, 1)] = 0xeb843e;
-  			blockColors[blockColorID(35, 2)] = 0xc55ccf;
-  			blockColors[blockColorID(35, 3)] = 0x7d9cda;
-  			blockColors[blockColorID(35, 4)] = 0xddd13a;
-  			blockColors[blockColorID(35, 5)] = 0x3ecb31;
-  			blockColors[blockColorID(35, 6)] = 0xe09aad;
-  			blockColors[blockColorID(35, 7)] = 0x434343;
-  			blockColors[blockColorID(35, 8)] = 0xafafaf;
-  			blockColors[blockColorID(35, 9)] = 0x2f8286;
-  			blockColors[blockColorID(35, 10)] = 0x9045d1;
-  			blockColors[blockColorID(35, 11)] = 0x2d3ba7;
-  			blockColors[blockColorID(35, 12)] = 0x573016;
-  			blockColors[blockColorID(35, 13)] = 0x41581f;
-  			blockColors[blockColorID(35, 14)] = 0xb22c27;
-  			blockColors[blockColorID(35, 15)] = 0x1b1717;
-  			blockColors[blockColorID(37, 0)] = 0xf1f902;
-  			blockColors[blockColorID(38, 0)] = 0xf7070f;
-  			blockColors[blockColorID(39, 0)] = 0x916d55;
-  			blockColors[blockColorID(40, 0)] = 0x9a171c;
-  			blockColors[blockColorID(41, 0)] = 0xfefb5d;
-  			blockColors[blockColorID(42, 0)] = 0xe9e9e9;
-  			blockColors[blockColorID(43, 0)] = 0xa8a8a8;
-  			blockColors[blockColorID(43, 1)] = 0xc6bd6d;
-  			blockColors[blockColorID(43, 2)] = 0xbc9862;
-  			blockColors[blockColorID(43, 3)] = 0x959595;
-  			blockColors[blockColorID(43, 4)] = 0xaa543b;
-  			blockColors[blockColorID(43, 5)] = 0x7a7a7a;
-  			blockColors[blockColorID(43, 6)] = 0xa8a8a8;
-  			blockColors[blockColorID(44, 0)] = 0xa8a8a8;
-  			blockColors[blockColorID(44, 1)] = 0xc6bd6d;
-  			blockColors[blockColorID(44, 2)] = 0xbc9862;
-  			blockColors[blockColorID(44, 3)] = 0x959595;
-  			blockColors[blockColorID(44, 4)] = 0xaa543b;
-  			blockColors[blockColorID(44, 5)] = 0x7a7a7a;
-  			blockColors[blockColorID(44, 6)] = 0xa8a8a8;
-  			blockColors[blockColorID(45, 0)] = 0xaa543b;
-  			blockColors[blockColorID(46, 0)] = 0xdb441a;
-  			blockColors[blockColorID(47, 0)] = 0xb4905a;
-  			blockColors[blockColorID(48, 0)] = 0x1f471f;
-  			blockColors[blockColorID(49, 0)] = 0x101018;
-  			blockColors[blockColorID(50, 0)] = 0xffd800;
-  			blockColors[blockColorID(51, 0)] = 0xc05a01;
-  			blockColors[blockColorID(52, 0)] = 0x265f87;
-  			blockColors[blockColorID(53, 0)] = 0xbc9862;
-  			blockColors[blockColorID(53, 1)] = 0xbc9862;
-  			blockColors[blockColorID(53, 2)] = 0xbc9862;
-  			blockColors[blockColorID(53, 3)] = 0xbc9862;
-  			blockColors[blockColorID(54, 0)] = 0x8f691d; // chest
-  			blockColors[blockColorID(55, 0)] = 0x480000;
-  			blockColors[blockColorID(56, 0)] = 0x747474;
-  			blockColors[blockColorID(57, 0)] = 0x82e4e0;
-  			blockColors[blockColorID(58, 0)] = 0xa26b3e;
-  			blockColors[blockColorID(59, 0)] = 57872;
-  			blockColors[blockColorID(60, 0)] = 0x633f24;
-  			blockColors[blockColorID(61, 0)] = 0x747474;
-  			blockColors[blockColorID(62, 0)] = 0x747474;
-  			blockColors[blockColorID(63, 0)] = 0xb4905a;
-  			blockColors[blockColorID(64, 0)] = 0x7a5b2b;
-  			blockColors[blockColorID(65, 0)] = 0xac8852;
-  			blockColors[blockColorID(66, 0)] = 0xa4a4a4;
-  			blockColors[blockColorID(67, 0)] = 0x9e9e9e;
-  			blockColors[blockColorID(67, 1)] = 0x9e9e9e;
-  			blockColors[blockColorID(67, 2)] = 0x9e9e9e;
-  			blockColors[blockColorID(67, 3)] = 0x9e9e9e;
-  			blockColors[blockColorID(68, 0)] = 0x9f844d;
-  			blockColors[blockColorID(69, 0)] = 0x695433;
-  			blockColors[blockColorID(70, 0)] = 0x8f8f8f;
-  			blockColors[blockColorID(71, 0)] = 0xc1c1c1;
-  			blockColors[blockColorID(72, 0)] = 0xbc9862;
-  			blockColors[blockColorID(73, 0)] = 0x747474;
-  			blockColors[blockColorID(74, 0)] = 0x747474;
-  			blockColors[blockColorID(75, 0)] = 0x290000;
-  			blockColors[blockColorID(76, 0)] = 0xfd0000;
-  			blockColors[blockColorID(77, 0)] = 0x747474;
-  			blockColors[blockColorID(78, 0)] = 0xfbffff;
-  			blockColors[blockColorID(79, 0)] = 0x8ebfff;
-  			blockColors[blockColorID(80, 0)] = 0xffffff;
-  			blockColors[blockColorID(81, 0)] = 0x11801e;
-  			blockColors[blockColorID(82, 0)] = 0xffffff;
-  			blockColors[blockColorID(83, 0)] = 0xa1a7b2;
-  			blockColors[blockColorID(84, 0)] = 0x8f691d; // jukebox
-  			blockColors[blockColorID(85, 0)] = 0x9b664b;
-  			blockColors[blockColorID(86, 0)] = 0xbc9862;
-  			blockColors[blockColorID(87, 0)] = 0x582218;
-  			blockColors[blockColorID(88, 0)] = 0x996731;
-  			blockColors[blockColorID(89, 0)] = 0xcda838;
-  			blockColors[blockColorID(90, 0)] = 0x732486;
-  			blockColors[blockColorID(91, 0)] = 0xffc88d;
-  			blockColors[blockColorID(92, 0)] = 0xe3cccd;
-  			blockColors[blockColorID(93, 0)] = 0x979393;
-  			blockColors[blockColorID(94, 0)] = 0xc09393;
-  			blockColors[blockColorID(95, 0)] = 0x8f691d;
-  			blockColors[blockColorID(96, 0)] = 0x7e5d2d;
-  			blockColors[blockColorID(97, 0)] = 0x686868;
-  			blockColors[blockColorID(98, 0)] = 0x7a7a7a;
-  			blockColors[blockColorID(98, 1)] = 0x1f471f;
-  			blockColors[blockColorID(98, 2)] = 0x7a7a7a;
-  			blockColors[blockColorID(99, 0)] = 0xcaab78;
-  			blockColors[blockColorID(100, 0)] = 0xcaab78;
-  			blockColors[blockColorID(101, 0)] = 0x6d6c6a;
-  			blockColors[blockColorID(102, 0)] = 0xffffff;
-  			blockColors[blockColorID(103, 0)] = 0x979924;
-  			blockColors[blockColorID(104, 0)] = 39168;
-  			blockColors[blockColorID(105, 0)] = 39168;
-  			blockColors[blockColorID(106, 0)] = 0x1f4e0a;
-  			blockColors[blockColorID(107, 0)] = 0xbc9862;
-  			blockColors[blockColorID(108, 0)] = 0xaa543b;
-  			blockColors[blockColorID(108, 1)] = 0xaa543b;
-  			blockColors[blockColorID(108, 2)] = 0xaa543b;
-  			blockColors[blockColorID(108, 3)] = 0xaa543b;
-  			blockColors[blockColorID(109, 0)] = 0x7a7a7a;
-  			blockColors[blockColorID(109, 1)] = 0x7a7a7a;
-  			blockColors[blockColorID(109, 2)] = 0x7a7a7a;
-  			blockColors[blockColorID(109, 3)] = 0x7a7a7a;
+			blockColors[blockColorID(2, 0)] = 0x74b44a;
+			blockColors[blockColorID(3, 0)] = 0x79553a;
+			blockColors[blockColorID(4, 0)] = 0x959595;
+			blockColors[blockColorID(5, 0)] = 0xbc9862; // oak wood planks
+			blockColors[blockColorID(5, 1)] = 0x805e36; // spruce wood planks
+			blockColors[blockColorID(5, 2)] = 0xd7c185; // birch planks
+			blockColors[blockColorID(5, 3)] = 0x9f714a; // jungle planks
+			blockColors[blockColorID(6, 0)] = 0x946428;
+			blockColors[blockColorID(7, 0)] = 0x333333;
+			blockColors[blockColorID(8, 0)] = 0x3256ff;
+			blockColors[blockColorID(8, 1)] = 0x3256ff;
+			blockColors[blockColorID(8, 2)] = 0x3256ff;
+			blockColors[blockColorID(8, 3)] = 0x3256ff;
+			blockColors[blockColorID(8, 4)] = 0x3256ff;
+			blockColors[blockColorID(8, 5)] = 0x3256ff;
+			blockColors[blockColorID(8, 6)] = 0x3256ff;
+			blockColors[blockColorID(8, 7)] = 0x3256ff;
+			blockColors[blockColorID(9, 0)] = 0x3256ff;
+			blockColors[blockColorID(10, 0)] = 0xd86514;
+			blockColors[blockColorID(10, 1)] = 0xd76514;
+			blockColors[blockColorID(10, 2)] = 0xd66414;
+			blockColors[blockColorID(10, 3)] = 0xd56414;
+			blockColors[blockColorID(10, 4)] = 0xd46314;
+			blockColors[blockColorID(10, 5)] = 0xd36314;
+			blockColors[blockColorID(10, 6)] = 0xd26214;
+			blockColors[blockColorID(11, 0)] = 0xd96514;
+			blockColors[blockColorID(12, 0)] = 0xddd7a0;
+			blockColors[blockColorID(13, 0)] = 0x747474;
+			blockColors[blockColorID(14, 0)] = 0x747474;
+			blockColors[blockColorID(15, 0)] = 0x747474;
+			blockColors[blockColorID(16, 0)] = 0x747474;
+			blockColors[blockColorID(17, 0)] = 0x342919; // logs right side up
+			blockColors[blockColorID(17, 1)] = 0x342919;
+			blockColors[blockColorID(17, 2)] = 0x342919;
+			blockColors[blockColorID(17, 3)] = 0x584519;
+			blockColors[blockColorID(17, 4)] = 0x342919; // logs on side
+			blockColors[blockColorID(17, 5)] = 0x342919;
+			blockColors[blockColorID(17, 6)] = 0x342919;
+			blockColors[blockColorID(17, 7)] = 0x584519;
+			blockColors[blockColorID(17, 8)] = 0x342919; 
+			blockColors[blockColorID(17, 9)] = 0x342919;
+			blockColors[blockColorID(17, 10)] = 0x342919;
+			blockColors[blockColorID(17, 11)] = 0x584519;
+			blockColors[blockColorID(17, 12)] = 0x342919; // logs all bark?
+			blockColors[blockColorID(17, 13)] = 0x342919;
+			blockColors[blockColorID(17, 14)] = 0x342919;
+			blockColors[blockColorID(17, 15)] = 0x584519;
+			blockColors[blockColorID(18, 0)] = 0x164d0c;
+			blockColors[blockColorID(18, 1)] = 0x164d0c;
+			blockColors[blockColorID(18, 2)] = 0x164d0c;
+			blockColors[blockColorID(18, 3)] = 0x164d0c;
+			blockColors[blockColorID(19, 0)] = 0xe5e54e;
+			blockColors[blockColorID(20, 0)] = 0xffffff;
+			blockColors[blockColorID(21, 0)] = 0x677087;
+			blockColors[blockColorID(22, 0)] = 0xd2eb2;
+			blockColors[blockColorID(23, 0)] = 0x747474;
+			blockColors[blockColorID(24, 0)] = 0xc6bd6d; // sandstone
+			blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
+			blockColors[blockColorID(35, 0)] = 0xf4f4f4;
+			blockColors[blockColorID(35, 1)] = 0xeb843e;
+			blockColors[blockColorID(35, 2)] = 0xc55ccf;
+			blockColors[blockColorID(35, 3)] = 0x7d9cda;
+			blockColors[blockColorID(35, 4)] = 0xddd13a;
+			blockColors[blockColorID(35, 5)] = 0x3ecb31;
+			blockColors[blockColorID(35, 6)] = 0xe09aad;
+			blockColors[blockColorID(35, 7)] = 0x434343;
+			blockColors[blockColorID(35, 8)] = 0xafafaf;
+			blockColors[blockColorID(35, 9)] = 0x2f8286;
+			blockColors[blockColorID(35, 10)] = 0x9045d1;
+			blockColors[blockColorID(35, 11)] = 0x2d3ba7;
+			blockColors[blockColorID(35, 12)] = 0x573016;
+			blockColors[blockColorID(35, 13)] = 0x41581f;
+			blockColors[blockColorID(35, 14)] = 0xb22c27;
+			blockColors[blockColorID(35, 15)] = 0x1b1717;
+			blockColors[blockColorID(37, 0)] = 0xf1f902;
+			blockColors[blockColorID(38, 0)] = 0xf7070f;
+			blockColors[blockColorID(39, 0)] = 0x916d55;
+			blockColors[blockColorID(40, 0)] = 0x9a171c;
+			blockColors[blockColorID(41, 0)] = 0xfefb5d;
+			blockColors[blockColorID(42, 0)] = 0xe9e9e9;
+			blockColors[blockColorID(43, 0)] = 0xa8a8a8;
+			blockColors[blockColorID(43, 1)] = 0xc6bd6d;
+			blockColors[blockColorID(43, 2)] = 0xbc9862;
+			blockColors[blockColorID(43, 3)] = 0x959595;
+			blockColors[blockColorID(43, 4)] = 0xaa543b;
+			blockColors[blockColorID(43, 5)] = 0x7a7a7a;
+			blockColors[blockColorID(43, 6)] = 0xa8a8a8;
+			blockColors[blockColorID(44, 0)] = 0xa8a8a8; // slabs
+			blockColors[blockColorID(44, 1)] = 0xc6bd6d;
+			blockColors[blockColorID(44, 2)] = 0xbc9862;
+			blockColors[blockColorID(44, 3)] = 0x959595;
+			blockColors[blockColorID(44, 4)] = 0xaa543b;
+			blockColors[blockColorID(44, 5)] = 0x7a7a7a;
+			blockColors[blockColorID(44, 6)] = 0xa8a8a8;
+			blockColors[blockColorID(44, 8)] = 0xa8a8a8; // slabs upside down
+			blockColors[blockColorID(44, 9)] = 0xc6bd6d;
+			blockColors[blockColorID(44, 10)] = 0xbc9862;
+			blockColors[blockColorID(44, 11)] = 0x959595;
+			blockColors[blockColorID(44, 12)] = 0xaa543b;
+			blockColors[blockColorID(44, 13)] = 0x7a7a7a;
+			blockColors[blockColorID(45, 0)] = 0xaa543b;
+			blockColors[blockColorID(46, 0)] = 0xdb441a;
+			blockColors[blockColorID(47, 0)] = 0xb4905a;
+			blockColors[blockColorID(48, 0)] = 0x1f471f;
+			blockColors[blockColorID(49, 0)] = 0x101018;
+			blockColors[blockColorID(50, 0)] = 0xffd800;
+			blockColors[blockColorID(51, 0)] = 0xc05a01;
+			blockColors[blockColorID(52, 0)] = 0x265f87;
+			blockColors[blockColorID(53, 0)] = 0xbc9862;
+			blockColors[blockColorID(53, 1)] = 0xbc9862;
+			blockColors[blockColorID(53, 2)] = 0xbc9862;
+			blockColors[blockColorID(53, 3)] = 0xbc9862;
+			blockColors[blockColorID(54, 0)] = 0x8f691d; // chest
+			blockColors[blockColorID(55, 0)] = 0x480000;
+			blockColors[blockColorID(56, 0)] = 0x747474;
+			blockColors[blockColorID(57, 0)] = 0x82e4e0;
+			blockColors[blockColorID(58, 0)] = 0xa26b3e;
+			blockColors[blockColorID(59, 0)] = 57872;
+			blockColors[blockColorID(60, 0)] = 0x633f24;
+			blockColors[blockColorID(61, 0)] = 0x747474;
+			blockColors[blockColorID(62, 0)] = 0x747474;
+			blockColors[blockColorID(63, 0)] = 0xb4905a;
+			blockColors[blockColorID(64, 0)] = 0x7a5b2b;
+			blockColors[blockColorID(65, 0)] = 0xac8852;
+			blockColors[blockColorID(66, 0)] = 0xa4a4a4;
+			blockColors[blockColorID(67, 0)] = 0x9e9e9e;
+			blockColors[blockColorID(67, 1)] = 0x9e9e9e;
+			blockColors[blockColorID(67, 2)] = 0x9e9e9e;
+			blockColors[blockColorID(67, 3)] = 0x9e9e9e;
+			blockColors[blockColorID(68, 0)] = 0x9f844d;
+			blockColors[blockColorID(69, 0)] = 0x695433;
+			blockColors[blockColorID(70, 0)] = 0x8f8f8f;
+			blockColors[blockColorID(71, 0)] = 0xc1c1c1;
+			blockColors[blockColorID(72, 0)] = 0xbc9862;
+			blockColors[blockColorID(73, 0)] = 0x747474;
+			blockColors[blockColorID(74, 0)] = 0x747474;
+			blockColors[blockColorID(75, 0)] = 0x290000;
+			blockColors[blockColorID(76, 0)] = 0xfd0000;
+			blockColors[blockColorID(77, 0)] = 0x747474;
+			blockColors[blockColorID(78, 0)] = 0xfbffff;
+			blockColors[blockColorID(79, 0)] = 0x8ebfff;
+			blockColors[blockColorID(80, 0)] = 0xffffff;
+			blockColors[blockColorID(81, 0)] = 0x11801e;
+			blockColors[blockColorID(82, 0)] = 0xffffff;
+			blockColors[blockColorID(83, 0)] = 0xa1a7b2;
+			blockColors[blockColorID(84, 0)] = 0x8f691d; // jukebox
+			blockColors[blockColorID(85, 0)] = 0x9b664b;
+			blockColors[blockColorID(86, 0)] = 0xbc9862;
+			blockColors[blockColorID(87, 0)] = 0x582218;
+			blockColors[blockColorID(88, 0)] = 0x996731;
+			blockColors[blockColorID(89, 0)] = 0xcda838;
+			blockColors[blockColorID(90, 0)] = 0x732486;
+			blockColors[blockColorID(91, 0)] = 0xffc88d;
+			blockColors[blockColorID(92, 0)] = 0xe3cccd;
+			blockColors[blockColorID(93, 0)] = 0x979393;
+			blockColors[blockColorID(94, 0)] = 0xc09393;
+			blockColors[blockColorID(95, 0)] = 0x8f691d;
+			blockColors[blockColorID(96, 0)] = 0x7e5d2d;
+			blockColors[blockColorID(97, 0)] = 0x686868;
+			blockColors[blockColorID(98, 0)] = 0x7a7a7a;
+			blockColors[blockColorID(98, 1)] = 0x1f471f;
+			blockColors[blockColorID(98, 2)] = 0x7a7a7a;
+			blockColors[blockColorID(99, 0)] = 0xcaab78;
+			blockColors[blockColorID(100, 0)] = 0xcaab78;
+			blockColors[blockColorID(101, 0)] = 0x6d6c6a;
+			blockColors[blockColorID(102, 0)] = 0xffffff;
+			blockColors[blockColorID(103, 0)] = 0x979924;
+			blockColors[blockColorID(104, 0)] = 39168;
+			blockColors[blockColorID(105, 0)] = 39168;
+			blockColors[blockColorID(106, 0)] = 0x1f4e0a;
+			blockColors[blockColorID(107, 0)] = 0xbc9862;
+			blockColors[blockColorID(108, 0)] = 0xaa543b;
+			blockColors[blockColorID(108, 1)] = 0xaa543b;
+			blockColors[blockColorID(108, 2)] = 0xaa543b;
+			blockColors[blockColorID(108, 3)] = 0xaa543b;
+			blockColors[blockColorID(109, 0)] = 0x7a7a7a;
+			blockColors[blockColorID(109, 1)] = 0x7a7a7a;
+			blockColors[blockColorID(109, 2)] = 0x7a7a7a;
+			blockColors[blockColorID(109, 3)] = 0x7a7a7a;
 			blockColors[blockColorID(110, 0)] = 0x6e646a; // mycelium
 			blockColors[blockColorID(112, 0)] = 0x43262f; // netherbrick
 			blockColors[blockColorID(114, 0)] = 0x43262f; // netherbrick stairs
@@ -970,10 +1378,44 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(121, 0)] = 0xd3dca4; // endstone
 			blockColors[blockColorID(123, 0)] = 0x8f691d; // inactive glowstone lamp
 			blockColors[blockColorID(124, 0)] = 0xcda838; // active glowstone lamp
+			blockColors[blockColorID(125, 0)] = 0xbc9862; // wooden double slab
+			blockColors[blockColorID(125, 1)] = 0x805e36;  
+			blockColors[blockColorID(125, 2)] = 0xd7c185; 
+			blockColors[blockColorID(125, 3)] = 0x9f714a; 
+			blockColors[blockColorID(126, 0)] = 0xbc9862; // wooden slab
+			blockColors[blockColorID(126, 1)] = 0x805e36;  
+			blockColors[blockColorID(126, 2)] = 0xd7c185; 
+			blockColors[blockColorID(126, 3)] = 0x9f714a;
+			blockColors[blockColorID(126, 8)] = 0xbc9862; // wooden slab upside down
+			blockColors[blockColorID(126, 9)] = 0x805e36;  
+			blockColors[blockColorID(126, 10)] = 0xd7c185; 
+			blockColors[blockColorID(126, 11)] = 0x9f714a;
+			blockColors[blockColorID(127, 0)] = 0xae682a;  // cocoa plant
+			blockColors[blockColorID(128, 0)] = 0xc6bd6d;  // sandstone stairs
+			blockColors[blockColorID(128, 1)] = 0xc6bd6d;
+			blockColors[blockColorID(128, 2)] = 0xc6bd6d;
+			blockColors[blockColorID(128, 3)] = 0xc6bd6d;
+			blockColors[blockColorID(129, 0)] = 0x747474; // emerald ore
+			blockColors[blockColorID(130, 0)] = 0x2d0133; // ender chest (using side of enchanting table)
+			blockColors[blockColorID(131, 0)] = 0x7a7a7a; // tripwire hook
+			blockColors[blockColorID(132, 0)] = 0x767676; // tripwire
+			blockColors[blockColorID(133, 0)] = 0x45d56a; // emerald block
+			blockColors[blockColorID(134, 0)] = 0x805e36;  // spruce stairs
+			blockColors[blockColorID(134, 1)] = 0x805e36;
+			blockColors[blockColorID(134, 2)] = 0x805e36;
+			blockColors[blockColorID(134, 3)] = 0x805e36;
+			blockColors[blockColorID(135, 0)] = 0xd7c185;  // birch stairs
+			blockColors[blockColorID(135, 1)] = 0xd7c185;
+			blockColors[blockColorID(135, 2)] = 0xd7c185;
+			blockColors[blockColorID(135, 3)] = 0xd7c185;
+			blockColors[blockColorID(136, 0)] = 0x9f714a;  // jungle stairs
+			blockColors[blockColorID(136, 1)] = 0x9f714a;
+			blockColors[blockColorID(136, 2)] = 0x9f714a;
+			blockColors[blockColorID(136, 3)] = 0x9f714a;
 			if(settingsFile.exists()) {
 				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
 				String sCurrentLine;
-	
+
 				while ((sCurrentLine = in.readLine()) != null) {
 					String[] curLine = sCurrentLine.split(":");
 					try{
@@ -991,13 +1433,13 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 				in.close();
 			}
-			
+
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
 			for(int i = 0; i<blockColors.length; i++)
 				if(blockColors[i] != 0xff00ff) {
 					int meta = i >> 8;
-					int id = i & 0xff;
-					out.println("Block:"+id+":"+meta+":"+Integer.toHexString(blockColors[i]));
+			int id = i & 0xff;
+			out.println("Block:"+id+":"+meta+":"+Integer.toHexString(blockColors[i]));
 				}
 			out.close();
 		} catch (Exception e) {e.printStackTrace();}
@@ -1021,10 +1463,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				return col;
 		}
 		catch (ArrayIndexOutOfBoundsException e) {
-//			System.err.println("BlockID: " + blockid + " - Meta: " + meta);
+			//			System.err.println("BlockID: " + blockid + " - Meta: " + meta);
 			throw e;
 		}
-//		System.err.println("Unable to find a block color for blockid: " + blockid + " blockmeta: " + meta);
+		//		System.err.println("Unable to find a block color for blockid: " + blockid + " blockmeta: " + meta);
 		return 0xff01ff;
 	}
 
@@ -1033,11 +1475,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			Class.forName (className);
 			return true;
 		}
-		 catch (ClassNotFoundException exception) {
+		catch (ClassNotFoundException exception) {
 			return false;
 		}
 	}
-	
+
 	private void saveAll() {
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
 
@@ -1078,47 +1520,344 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	private void loadWaypoints() {
-		String j;
-		String mapName;
-		if (game.isIntegratedServerRunning())
-			mapName = this.getMapName();
-		else {
-			String[] i = getServerName().toLowerCase().split(":");
-			mapName = i[0];
-		} 
+		wayPts = new ArrayList<Waypoint>();
+		settingsFile = new File(getAppDir("minecraft"), world + ".points");
 
-		if(!world.equals(mapName)) {
-			world = mapName;
-			iMenu = 1;
-			wayPts = new ArrayList<Waypoint>();
-			settingsFile = new File(getAppDir("minecraft"), world + ".points");
+		try {
+			if(settingsFile.exists()) {
+				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
+				String sCurrentLine;
 
-			try {
-				if(settingsFile.exists()) {
-					BufferedReader in = new BufferedReader(new FileReader(settingsFile));
-					String sCurrentLine;
+				while ((sCurrentLine = in.readLine()) != null) {
+					String[] curLine = sCurrentLine.split(":");
 
-					while ((sCurrentLine = in.readLine()) != null) {
-						String[] curLine = sCurrentLine.split(":");
+					if(curLine.length==4)
+						wayPts.add(new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3])));
+					else
+						wayPts.add(new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3]),
+								Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6])));
+				}
 
-						if(curLine.length==4)
-							wayPts.add(new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3])));
-						else
-							wayPts.add(new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3]),
-													Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6])));
-					}
-
-					in.close();
-					chatInfo("§EWaypoints loaded for " + world);
-				} else chatInfo("§EError: No waypoints exist for this world/server.");
-			} catch (Exception local) {
-				chatInfo("§EError Loading Waypoints");
-			}
+				in.close();
+				chatInfo("§EWaypoints loaded for " + world);
+			} else chatInfo("§EError: No waypoints exist for this world/server.");
+		} catch (Exception local) {
+			chatInfo("§EError Loading Waypoints");
 		}
+
 	}
-
 	
+	private void loadTexturePackColors() {
+		File tpFile = new File(getAppDir("minecraft"), "moo");
+		System.out.println(game.renderEngine.getTexture("terrain.png"));
+		this.renderEngine.bindTexture(this.renderEngine.getTexture("terrain.png"));
 
+		try {
+		    // Read from a file
+		    //File file = new File("image.gif");
+		    //image = ImageIO.read(file);
+
+		    // Read from an input stream
+		    //InputStream is = new BufferedInputStream(
+		    //    new FileInputStream("image.gif"));
+		    //image = ImageIO.read(is);
+
+		    // Read from a URL
+		    //URL url = new URL("http://hostname.com/image.gif");
+		    //image = ImageIO.read(url);
+		
+			//File file = new File("c:/terrain.png");
+			//java.awt.Image terrain = ImageIO.read(file);
+			InputStream is = pack.getResourceAsStream("/terrain.png");
+			java.awt.Image terrain = ImageIO.read(is);
+			System.out.println("WIDTH: " + terrain.getWidth(null));
+			terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
+			BufferedImage terrainBuff = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_INT_RGB);
+			java.awt.Graphics gfx = terrainBuff.createGraphics();
+
+		    // Paint the image onto the buffered image
+		    gfx.drawImage(terrain, 0, 0, null);
+		    gfx.dispose();
+			blockColors[blockColorID(1, 0)] = getColor(terrainBuff, 1);
+//			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
+			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7,  0.7)) & 0x00FFFFFF;
+			blockColors[blockColorID(3, 0)] = getColor(terrainBuff, 2); 
+			blockColors[blockColorID(4, 0)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(5, 0)] = getColor(terrainBuff, 4); // planks
+			blockColors[blockColorID(5, 1)] = getColor(terrainBuff, 198);
+			blockColors[blockColorID(5, 2)] = getColor(terrainBuff, 214);
+			blockColors[blockColorID(5, 3)] = getColor(terrainBuff, 199);
+			blockColors[blockColorID(6, 0)] = getColor(terrainBuff, 15);
+			blockColors[blockColorID(7, 0)] = getColor(terrainBuff, 17);
+			blockColors[blockColorID(8, 0)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 1)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 2)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 3)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 4)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 5)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 6)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(8, 7)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(9, 0)] = getColor(terrainBuff, 205);
+			blockColors[blockColorID(10, 0)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(10, 1)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(10, 2)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(10, 3)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(10, 4)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(10, 5)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(10, 6)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(11, 0)] = getColor(terrainBuff, 237);
+			blockColors[blockColorID(12, 0)] = getColor(terrainBuff, 18);
+			blockColors[blockColorID(13, 0)] = getColor(terrainBuff, 19);
+			blockColors[blockColorID(14, 0)] = getColor(terrainBuff, 32);
+			blockColors[blockColorID(15, 0)] = getColor(terrainBuff, 33);
+			blockColors[blockColorID(16, 0)] = getColor(terrainBuff, 34);
+			blockColors[blockColorID(17, 0)] = getColor(terrainBuff, 21); // logs right side up
+			blockColors[blockColorID(17, 1)] = getColor(terrainBuff, 21);
+			blockColors[blockColorID(17, 2)] = getColor(terrainBuff, 21);
+			blockColors[blockColorID(17, 3)] = getColor(terrainBuff, 21);
+			blockColors[blockColorID(17, 4)] = getColor(terrainBuff, 20); // logs on side
+			blockColors[blockColorID(17, 5)] = getColor(terrainBuff, 116);
+			blockColors[blockColorID(17, 6)] = getColor(terrainBuff, 117);
+			blockColors[blockColorID(17, 7)] = getColor(terrainBuff, 153);
+			blockColors[blockColorID(17, 8)] = getColor(terrainBuff, 20); 
+			blockColors[blockColorID(17, 9)] = getColor(terrainBuff, 116);
+			blockColors[blockColorID(17, 10)] = getColor(terrainBuff, 117);
+			blockColors[blockColorID(17, 11)] = getColor(terrainBuff, 153);
+			blockColors[blockColorID(17, 12)] = getColor(terrainBuff, 20); // logs all bark?
+			blockColors[blockColorID(17, 13)] = getColor(terrainBuff, 116);
+			blockColors[blockColorID(17, 14)] = getColor(terrainBuff, 117);
+			blockColors[blockColorID(17, 15)] = getColor(terrainBuff, 153);
+			//blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 53); // leaves
+			//blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
+			//blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 53);
+			//blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 196);
+			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColor(0.7,  0.7)) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 133), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 196), ColorizerFoliage.getFoliageColorBasic()) & 0x00FFFFFF;
+			blockColors[blockColorID(19, 0)] = getColor(terrainBuff, 48);
+			blockColors[blockColorID(20, 0)] = getColor(terrainBuff, 49);
+			blockColors[blockColorID(21, 0)] = getColor(terrainBuff, 160);
+			blockColors[blockColorID(22, 0)] = getColor(terrainBuff, 144);
+			blockColors[blockColorID(23, 0)] = getColor(terrainBuff, 62);
+			blockColors[blockColorID(24, 0)] = getColor(terrainBuff, 176); // sandstone.  could differentiate
+			blockColors[blockColorID(25, 0)] = getColor(terrainBuff, 74); // note block
+			blockColors[blockColorID(35, 0)] = getColor(terrainBuff, 64);
+			blockColors[blockColorID(35, 1)] = getColor(terrainBuff, 210);
+			blockColors[blockColorID(35, 2)] = getColor(terrainBuff, 194);
+			blockColors[blockColorID(35, 3)] = getColor(terrainBuff, 178);
+			blockColors[blockColorID(35, 4)] = getColor(terrainBuff, 162);
+			blockColors[blockColorID(35, 5)] = getColor(terrainBuff, 146);
+			blockColors[blockColorID(35, 6)] = getColor(terrainBuff, 130);
+			blockColors[blockColorID(35, 7)] = getColor(terrainBuff, 114);
+			blockColors[blockColorID(35, 8)] = getColor(terrainBuff, 225);
+			blockColors[blockColorID(35, 9)] = getColor(terrainBuff, 209);
+			blockColors[blockColorID(35, 10)] = getColor(terrainBuff, 193);
+			blockColors[blockColorID(35, 11)] = getColor(terrainBuff, 177);
+			blockColors[blockColorID(35, 12)] = getColor(terrainBuff, 161);
+			blockColors[blockColorID(35, 13)] = getColor(terrainBuff, 145);
+			blockColors[blockColorID(35, 14)] = getColor(terrainBuff, 129);
+			blockColors[blockColorID(35, 15)] = getColor(terrainBuff, 113);
+			blockColors[blockColorID(37, 0)] = getColor(terrainBuff, 13); // dandelion
+			blockColors[blockColorID(38, 0)] = getColor(terrainBuff, 12); // rose
+			blockColors[blockColorID(39, 0)] = getColor(terrainBuff, 29); // brown shroom
+			blockColors[blockColorID(40, 0)] = getColor(terrainBuff, 28); // red shroom
+			blockColors[blockColorID(41, 0)] = getColor(terrainBuff, 23);
+			blockColors[blockColorID(42, 0)] = getColor(terrainBuff, 22);
+			blockColors[blockColorID(43, 0)] = getColor(terrainBuff, 6); // double slabs
+			blockColors[blockColorID(43, 1)] = getColor(terrainBuff, 176); 
+			blockColors[blockColorID(43, 2)] = getColor(terrainBuff, 4);
+			blockColors[blockColorID(43, 3)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(43, 4)] = getColor(terrainBuff, 7);
+			blockColors[blockColorID(43, 5)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(44, 0)] = getColor(terrainBuff, 6); // slabs
+			blockColors[blockColorID(44, 1)] = getColor(terrainBuff, 176);
+			blockColors[blockColorID(44, 2)] = getColor(terrainBuff, 4);
+			blockColors[blockColorID(44, 3)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(44, 4)] = getColor(terrainBuff, 7);
+			blockColors[blockColorID(44, 5)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(44, 8)] = getColor(terrainBuff, 6); // slabs upside down
+			blockColors[blockColorID(44, 9)] = getColor(terrainBuff, 176);
+			blockColors[blockColorID(44, 10)] = getColor(terrainBuff, 4);
+			blockColors[blockColorID(44, 11)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(44, 12)] = getColor(terrainBuff, 7);
+			blockColors[blockColorID(44, 13)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(45, 0)] = getColor(terrainBuff, 7);
+			blockColors[blockColorID(46, 0)] = getColor(terrainBuff, 9); // tnt
+			blockColors[blockColorID(47, 0)] = getColor(terrainBuff, 4); // bookshelf
+			blockColors[blockColorID(48, 0)] = getColor(terrainBuff, 36);
+			blockColors[blockColorID(49, 0)] = getColor(terrainBuff, 37);
+			blockColors[blockColorID(50, 0)] = getColor(terrainBuff, 80); // torch
+			blockColors[blockColorID(51, 0)] = getColor(terrainBuff, 237); // fire (using lava)
+			blockColors[blockColorID(52, 0)] = getColor(terrainBuff, 65); // spawner
+			blockColors[blockColorID(53, 0)] = getColor(terrainBuff, 4); // oak stairs
+			blockColors[blockColorID(53, 1)] = getColor(terrainBuff, 4);
+			blockColors[blockColorID(53, 2)] = getColor(terrainBuff, 4);
+			blockColors[blockColorID(53, 3)] = getColor(terrainBuff, 4);
+			blockColors[blockColorID(54, 0)] = getColor(terrainBuff, 58); // chest (as long as some of it is still in terrain.png)
+			blockColors[blockColorID(55, 0)] = getColor(terrainBuff, 164); // redstone wire
+			blockColors[blockColorID(56, 0)] = getColor(terrainBuff, 50);
+			blockColors[blockColorID(57, 0)] = getColor(terrainBuff, 24);
+			blockColors[blockColorID(58, 0)] = getColor(terrainBuff, 43); // crafting table
+			blockColors[blockColorID(59, 0)] = getColor(terrainBuff, 95); // wheat seeds
+			blockColors[blockColorID(60, 0)] = getColor(terrainBuff, 87); // farmland
+			blockColors[blockColorID(60, 1)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 2)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 3)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 4)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 5)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 6)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 7)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(60, 8)] = getColor(terrainBuff, 86); 
+			blockColors[blockColorID(61, 0)] = getColor(terrainBuff, 62); // furnace
+			blockColors[blockColorID(62, 0)] = getColor(terrainBuff, 62); // burning furnace
+			blockColors[blockColorID(63, 0)] = getColor(terrainBuff, 4); // sign
+			blockColors[blockColorID(64, 0)] = getColor(terrainBuff, 97); // wood door
+			blockColors[blockColorID(65, 0)] = getColor(terrainBuff, 83); // ladder
+			blockColors[blockColorID(66, 0)] = getColor(terrainBuff, 28); // rails
+			blockColors[blockColorID(67, 0)] = getColor(terrainBuff, 16); // cobble stairs
+			blockColors[blockColorID(67, 1)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(67, 2)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(67, 3)] = getColor(terrainBuff, 16);
+			blockColors[blockColorID(68, 0)] = getColor(terrainBuff, 4); // wall sign
+			blockColors[blockColorID(69, 0)] = getColor(terrainBuff, 96); // lever
+			blockColors[blockColorID(70, 0)] = getColor(terrainBuff, 1); // stone plate
+			blockColors[blockColorID(71, 0)] = getColor(terrainBuff, 98); // iron door
+			blockColors[blockColorID(72, 0)] = getColor(terrainBuff, 4); // wood plate
+			blockColors[blockColorID(73, 0)] = getColor(terrainBuff, 51); // redstone ore
+			blockColors[blockColorID(74, 0)] = getColor(terrainBuff, 51); // glowing redstone ore
+			blockColors[blockColorID(75, 0)] = getColor(terrainBuff, 115); // redstone torch off
+			blockColors[blockColorID(76, 0)] = getColor(terrainBuff, 99); // redstone torch on
+			blockColors[blockColorID(77, 0)] = getColor(terrainBuff, 1); // button
+			blockColors[blockColorID(78, 0)] = getColor(terrainBuff, 66); // snow
+			blockColors[blockColorID(79, 0)] = getColor(terrainBuff, 67); // ice
+			blockColors[blockColorID(80, 0)] = getColor(terrainBuff, 66); // snow block
+			blockColors[blockColorID(81, 0)] = getColor(terrainBuff, 69); // cactus
+			blockColors[blockColorID(82, 0)] = getColor(terrainBuff, 77); // clay
+			blockColors[blockColorID(83, 0)] = getColor(terrainBuff, 73); // sugar cane
+			blockColors[blockColorID(84, 0)] = getColor(terrainBuff, 75); // jukebox
+			blockColors[blockColorID(85, 0)] = getColor(terrainBuff, 4); // fence
+			blockColors[blockColorID(86, 0)] = getColor(terrainBuff, 102); // pumpkin
+			blockColors[blockColorID(87, 0)] = getColor(terrainBuff, 103); // netherrack
+			blockColors[blockColorID(88, 0)] = getColor(terrainBuff, 104); // soulsand
+			blockColors[blockColorID(89, 0)] = getColor(terrainBuff, 105); // glowstone
+			blockColors[blockColorID(90, 0)] = getColor(terrainBuff, 14); // portal
+			blockColors[blockColorID(91, 0)] = getColor(terrainBuff, 102); // lit pumpkin
+			blockColors[blockColorID(92, 0)] = getColor(terrainBuff, 121); // cake
+			blockColors[blockColorID(93, 0)] = getColor(terrainBuff, 131); // repeater off
+			blockColors[blockColorID(94, 0)] = getColor(terrainBuff, 147); // repeater on
+			blockColors[blockColorID(95, 0)] = getColor(terrainBuff, 58); // locked chest
+			blockColors[blockColorID(96, 0)] = getColor(terrainBuff, 84); // trapdoor
+			blockColors[blockColorID(97, 0)] = getColor(terrainBuff, 1); // monster egg (stone, cobble, or stone brick)
+			blockColors[blockColorID(98, 0)] = getColor(terrainBuff, 54); // stone brick
+			blockColors[blockColorID(98, 1)] = getColor(terrainBuff, 100);
+			blockColors[blockColorID(98, 2)] = getColor(terrainBuff, 101);
+			blockColors[blockColorID(98, 3)] = getColor(terrainBuff, 213);
+			blockColors[blockColorID(99, 0)] = getColor(terrainBuff, 126); // huge brown shroom
+			blockColors[blockColorID(100, 0)] = getColor(terrainBuff, 125); // huge red shroom
+			blockColors[blockColorID(101, 0)] = getColor(terrainBuff, 85); // iron bars
+			blockColors[blockColorID(102, 0)] = getColor(terrainBuff, 49); // glass pane
+			blockColors[blockColorID(103, 0)] = getColor(terrainBuff, 137); // melon
+			blockColors[blockColorID(104, 0)] = getColor(terrainBuff, 127); // pumpkin stem
+			blockColors[blockColorID(105, 0)] = getColor(terrainBuff, 127); // melon stem
+			blockColors[blockColorID(106, 0)] = getColor(terrainBuff, 143); // vines
+			blockColors[blockColorID(107, 0)] = getColor(terrainBuff, 4); // fence gate
+			blockColors[blockColorID(108, 0)] = getColor(terrainBuff, 7); // brick stairs
+			blockColors[blockColorID(108, 1)] = getColor(terrainBuff, 7); 
+			blockColors[blockColorID(108, 2)] = getColor(terrainBuff, 7);
+			blockColors[blockColorID(108, 3)] = getColor(terrainBuff, 7);
+			blockColors[blockColorID(109, 0)] = getColor(terrainBuff, 54); // stone brick stairs
+			blockColors[blockColorID(109, 1)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(109, 2)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(109, 3)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(110, 0)] = getColor(terrainBuff, 78); // mycelium
+			blockColors[blockColorID(112, 0)] = getColor(terrainBuff, 224); // netherbrick
+			blockColors[blockColorID(114, 0)] = getColor(terrainBuff, 224); // netherbrick stairs
+			blockColors[blockColorID(114, 1)] = getColor(terrainBuff, 224); // netherbrick stairs
+			blockColors[blockColorID(114, 2)] = getColor(terrainBuff, 224); // netherbrick stairs
+			blockColors[blockColorID(114, 3)] = getColor(terrainBuff, 224); // netherbrick stairs
+			blockColors[blockColorID(121, 0)] = getColor(terrainBuff, 175); // endstone
+			blockColors[blockColorID(123, 0)] = getColor(terrainBuff, 211); // inactive glowstone lamp
+			blockColors[blockColorID(124, 0)] = getColor(terrainBuff, 212); // active glowstone lamp
+			blockColors[blockColorID(125, 0)] = getColor(terrainBuff, 4); // wooden double slab
+			blockColors[blockColorID(125, 1)] = getColor(terrainBuff, 198);  
+			blockColors[blockColorID(125, 2)] = getColor(terrainBuff, 214); 
+			blockColors[blockColorID(125, 3)] = getColor(terrainBuff, 199); 
+			blockColors[blockColorID(126, 0)] = getColor(terrainBuff, 4); // wooden slab
+			blockColors[blockColorID(126, 1)] = getColor(terrainBuff, 198);  
+			blockColors[blockColorID(126, 2)] = getColor(terrainBuff, 214); 
+			blockColors[blockColorID(126, 3)] = getColor(terrainBuff, 199);
+			blockColors[blockColorID(126, 8)] = getColor(terrainBuff, 4); // wooden slab upside down
+			blockColors[blockColorID(126, 9)] = getColor(terrainBuff, 198);  
+			blockColors[blockColorID(126, 10)] = getColor(terrainBuff, 214); 
+			blockColors[blockColorID(126, 11)] = getColor(terrainBuff, 199);
+			blockColors[blockColorID(127, 0)] = getColor(terrainBuff, 168);  // cocoa plant
+			blockColors[blockColorID(128, 0)] = getColor(terrainBuff, 176);  // sandstone stairs
+			blockColors[blockColorID(128, 1)] = getColor(terrainBuff, 176);
+			blockColors[blockColorID(128, 2)] = getColor(terrainBuff, 176);
+			blockColors[blockColorID(128, 3)] = getColor(terrainBuff, 176);
+			blockColors[blockColorID(129, 0)] = getColor(terrainBuff, 171); // emerald ore
+			blockColors[blockColorID(130, 0)] = getColor(terrainBuff, 182); // ender chest (using side of enchanting table)
+			blockColors[blockColorID(131, 0)] = getColor(terrainBuff, 172); // tripwire hook
+			blockColors[blockColorID(132, 0)] = getColor(terrainBuff, 173); // tripwire
+			blockColors[blockColorID(133, 0)] = getColor(terrainBuff, 25); // emerald block
+			blockColors[blockColorID(134, 0)] = getColor(terrainBuff, 198);  // spruce stairs
+			blockColors[blockColorID(134, 1)] = getColor(terrainBuff, 198);
+			blockColors[blockColorID(134, 2)] = getColor(terrainBuff, 198);
+			blockColors[blockColorID(134, 3)] = getColor(terrainBuff, 198);
+			blockColors[blockColorID(135, 0)] = getColor(terrainBuff, 214);  // birch stairs
+			blockColors[blockColorID(135, 1)] = getColor(terrainBuff, 214);
+			blockColors[blockColorID(135, 2)] = getColor(terrainBuff, 214);
+			blockColors[blockColorID(135, 3)] = getColor(terrainBuff, 214);
+			blockColors[blockColorID(136, 0)] = getColor(terrainBuff, 199);  // jungle stairs
+			blockColors[blockColorID(136, 1)] = getColor(terrainBuff, 199);
+			blockColors[blockColorID(136, 2)] = getColor(terrainBuff, 199);
+			blockColors[blockColorID(136, 3)] = getColor(terrainBuff, 199);
+
+		    
+		}
+		catch (Exception e) {
+			System.out.println("ERRRORRR " + e.getLocalizedMessage());
+		}
+		
+	}
+	
+	private int getColor(BufferedImage image, int textureID) {
+//		int texX = (textureID & 15) << 4; // 0 based horizontal offset in pixels from left of terrain.png (assumes 16px)
+//		int texY = textureID & 240; // 0 based vertical offset in pixels from top of terrain.png (assumes 16px)
+		int texX = textureID & 15; // 0 based column in terrain.png 
+		int texY = (textureID & 240) >> 4; // 0 based row in terrain.png 
+//		System.out.println("int: " + image.getRGB(texX, texY));
+//		System.out.println("as hex: " +  java.lang.Integer.toHexString(image.getRGB(texX, texY)));
+//		System.out.println("22 int: " + (image.getRGB(texX, texY) & 0x00FFFFFF));
+//		System.out.println("22 hex: " +  java.lang.Integer.toHexString(image.getRGB(texX, texY) & 0x00FFFFFF));
+		
+		return (image.getRGB(texX, texY) & 0x00FFFFFF); // the and dumps the alpha, in hex the ff at the beginning
+	}
+	
+    private int colorMultiplier(int color1, int color2)
+    {
+        int red1 = (color1 >> 16 & 255);
+        int green1 = (color1 >> 8 & 255);
+        int blue1 = (color1 >> 0 & 255);
+       
+        int red2 = (color2 >> 16 & 255);
+        int green2 = (color2 >> 8 & 255);
+        int blue2 = (color2 >> 0 & 255);
+        
+        int red = red1 * red2 / 256;
+        int green = green1 * green2 / 256;
+        int blue = blue1 * blue2 / 256;
+        
+        
+        return (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+       // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
+       // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
+       // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
+
+    }
+	
+	
 	private void renderMap (int scWidth) {
 		if (!this.hide && !this.full) {
 			if (this.q != 0) glah(this.q);
@@ -1139,7 +1878,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				drawPre();
 				this.setMap(scWidth);
 				drawPost();
-				
+
 				GL11.glPopMatrix();
 
 				try {
@@ -1254,7 +1993,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				GL11.glColor3f(1.0F, 1.0F, 1.0F);
 				this.drawRound(scWidth);
 				this.drawDirections(scWidth);
-				
+
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
 						int wayX = 0;
@@ -1339,7 +2078,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		ldrawone((scWidth+5)/2-128, (scHeight+5)/2-128, 1.0D, 0.0D, 0.0D);
 		drawPost();
 		GL11.glPopMatrix();
-		
+
 		try {
 			GL11.glPushMatrix();
 			this.disp(this.img("/mmarrow.png"));
@@ -1622,7 +2361,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			this.write(xy, scWidth*2-32*2-m, 146, 0xffffff);
 			xy = Integer.toString(this.yCoord());
 			m = this.chkLen(xy)/2;
-		//	xy="" + this.getWorld().skylightSubtracted + " " + this.getWorld().calculateSkylightSubtracted(1.0F) + " " + this.getWorld().func_35464_b(1.0F); // always 0 in SMP. method works, not value.  it's never updated, no world tick in SMP.  Fscks lightmap functionality
+			//	xy="" + this.getWorld().skylightSubtracted + " " + this.getWorld().calculateSkylightSubtracted(1.0F) + " " + this.getWorld().func_35464_b(1.0F); // always 0 in SMP. method works, not value.  it's never updated, no world tick in SMP.  Fscks lightmap functionality
 			this.write(xy, scWidth*2-32*2-m, 156, 0xffffff);
 			GL11.glPopMatrix();
 		} else {
@@ -1910,8 +2649,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else throw new IllegalArgumentException("bad option number "+i);
 		this.saveAll();
 		this.timer=500;
-		
-		
+
+
 	}
 
 	private void setMap(int paramInt1) {
@@ -1922,13 +2661,13 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 
 	private void drawDirections(int scWidth) {
-		
+
 		/*int wayX = this.xCoord();
 		int wayY = this.yCoord();
 		float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 		double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
 
-		
+
 			try 
 			{
 				GL11.glPushMatrix();
@@ -1951,7 +2690,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			{
 				GL11.glPopMatrix();
 			}*/
-		
+
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
 		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction - 90.0D + northRotate)))),(64.0D * Math.cos(Math.toRadians(-(this.direction - 90.0D + northRotate)))),0.0D); // direction -90 w top.  0 n top.  in all cases n top means 90 more (or w top means 90 less)
@@ -2003,13 +2742,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 
 		this.fudge = 20;
+		//this.mapCalcOverworldBak(); // ** speed
 	}
 
-	
-	
-	
 
-	
+
+
+
+
 
 	//@Override
 	public String Version() {
