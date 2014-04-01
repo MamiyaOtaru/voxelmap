@@ -117,25 +117,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Last direction you were facing*/
 	private float oldDir = 0.0f;
 
-	/*list of moving contacts*/
-	private ArrayList<Float> contactsAngle = new ArrayList(40);
-	private ArrayList<Double> contactsDistance = new ArrayList(40);
-
-	/*number of contacts*/
-	private int count = 0;
-
-	/*minimum distancec to contact*/
-	private int minDistance = 40;
-
-	/*pitches by which to adjust beep.  31 is current mindistance+1*/
-	private float[] pitch = new float[31];
-
-	/*kludge to ensure update only once every 1/15th second*/
-	private boolean OKtoUpdate = false;
-
-	/*kludge to ensure ping sound only once every 1/15th second, different second than the update*/
-	private boolean OKtoPing = false;
-
 	/*Setting file access*/
 	private File settingsFile;
 
@@ -175,14 +156,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	/*Terrain depth toggle*/
 	private boolean heightmap = true;
 
-	/*Show hostiles toggle*/
-	private boolean showHostiles = true;
-
-	/*Show players toggle*/
-	private boolean showPlayers = false;
-
-	/*Show neutrals toggle*/
-	private boolean showNeutrals = true;
 
 	/*Show welcome message toggle*/
 	private boolean welcome = true;
@@ -224,7 +197,64 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			}
 			public String getServerName()
 			{
-				return game.gameSettings.lastServer;
+				//return game.gameSettings.lastServer; // old and busted since the server list
+
+				Object netClientHandler = game.getSendQueue(); // NetClientHandler
+				if (netClientHandler == null)
+					return "unknown1";
+
+				Object networkManager = getPrivateField(netClientHandler, "g" /*"netManager"*/); // NetworkManager - fieldname needs to be obfuscated name
+				if (networkManager == null)
+					return "unknown2";
+
+				Object oSocket = getPrivateField(networkManager, "h" /*"networkSocket"*/); // Socket - fieldname needs to be obfuscated name
+				if (oSocket == null || !(oSocket instanceof java.net.Socket))
+					return "unknown3";
+				java.net.Socket sock = (java.net.Socket) oSocket;
+				String serverName = sock.getInetAddress().getHostName();
+				//int serverPort = sock.getPort();
+	
+				
+				// below doesn't work, figure out some time
+//				Object serverNameObject = getPrivateField(game, "af" /*"serverName"*/); // String - fieldname needs to be obfuscated
+//				if (serverNameObject == null)
+//					return "unknown1";
+//				if (!(serverNameObject instanceof String))
+//					return "unknown2";
+//				String serverName = (String)serverNameObject;
+				
+				return serverName;
+			}
+			public Object getPrivateField (Object o, String fieldName) {   
+
+				// Go and find the private field... 
+				final java.lang.reflect.Field fields[] = o.getClass().getDeclaredFields();
+				for (int i = 0; i < fields.length; ++i) {
+					if (fieldName.equals(fields[i].getName())) {
+						try {
+							fields[i].setAccessible(true);
+							return fields[i].get(o);
+						} 
+						catch (IllegalAccessException ex) {
+							//Assert.fail ("IllegalAccessException accessing " + fieldName);
+						}
+					}
+				}
+				//Assert.fail ("Field '" + fieldName +"' not found");
+				return null;
+
+				/*java.lang.reflect.Field privateField = null;
+				  try {
+					  privateField = o.getClass().getDeclaredField(fieldName);
+				  }
+				  catch (NoSuchFieldException e){}
+				  privateField.setAccessible(true);
+				  Object obj = null;
+				  try {
+					  obj = privateField.get(o);
+				  }
+				  catch (IllegalAccessException e){}
+				  return obj;*/
 			}
 			public void drawPre()
 			{
@@ -462,12 +492,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				World data = getWorld();
 				this.lZoom = this.zoom;
 				int multi = (int)Math.pow(2, this.lZoom);
-				int startX  = this.xCoord(); // 1
+				int startX = this.xCoord(); // 1
 				int startZ = this.yCoord(); // j
 				this.lastX = startX;
 				this.lastZ = startZ;
 				startX -= 16*multi;
-				startZ += 16*multi;
+				startZ -= 16*multi;
 				int color24 = 0; // k
 				int height = 0;
 				boolean solidNether = false;
@@ -479,7 +509,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 						if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
 						
-						height = getBlockHeightNether(data, startX + imageY, startZ - imageX, this.zCoord());		
+						height = getBlockHeightNether(data, startX + imageX, startZ + imageY, this.zCoord());		
 						if (height == -1) {
 							height = this.zCoord() + 1;
 							solidNether = true;
@@ -489,10 +519,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 						if ((check) || (showmap) || (this.full)) {
 							if (this.rc) {
-								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.craftedSnow)) 
+								if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
 								else {
-									color24 = getBlockColor(data.getBlockId(startX + imageY, height - 1, startZ - imageX), data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX));
+									color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
 								}
 							} else color24 = 0xFFFFFF;
 						}
@@ -522,7 +552,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							int i3 = 255;
 
 							if (lightmap)
-								i3 = data.getBlockLightValue_do(startX + imageY, height, startZ - imageX, false) * 17;
+								i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17;
 							else if (solidNether)
 								i3 = 32;
 
@@ -542,12 +572,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				World data = getWorld();
 				this.lZoom = this.zoom;
 				int multi = (int)Math.pow(2, this.lZoom);
-				int startX  = this.xCoord(); // 1
+				int startX = this.xCoord(); // 1
 				int startZ = this.yCoord(); // j
 				this.lastX = startX;
 				this.lastZ = startZ;
 				startX -= 16*multi;
-				startZ += 16*multi;
+				startZ -= 16*multi; // + west at top, - north at top
 				int color24 = 0; // k
 				int height = 0;
 				for (int imageY = 0; imageY < 32 * multi; imageY++) {
@@ -563,14 +593,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
 						//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
 						//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-						height = data.getHeightValue(startX + imageY, startZ - imageX);
+						height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
 
 						if ((check) || (showmap) || (this.full)) {
 							if (this.rc) {
-								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.craftedSnow)) 
+								if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
 								else {
-									color24 = getBlockColor(data.getBlockId(startX + imageY, height - 1, startZ - imageX), data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX));
+									color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
 								}
 							} else color24 = 0xFFFFFF;
 						}
@@ -600,7 +630,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							int i3 = 255;
 
 							if (lightmap)
-								i3 = data.getBlockLightValue_do(startX + imageY, height, startZ - imageX, false) * 17;
+								i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17;
 
 							if(i3 > 255) i3 = 255;
 
@@ -688,10 +718,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			for(int n = 0; n<12; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
 				this.sMenu[m][n] = "";
 
-		this.sMenu[0][0] = "Â§4Zan'sÂ§F Mod! " + this.zmodver;
+		this.sMenu[0][0] = "§4Zan's§F Mod! " + this.zmodver;
 		this.sMenu[0][1] = "Welcome to Zan's Minimap, there are a";
 		this.sMenu[0][2] = "number of features and commands available to you.";
-		this.sMenu[0][3] = "- Press Â§B" + Keyboard.getKeyName(zoomKey) + " Â§Fto zoom in/out, or Â§B"+ Keyboard.getKeyName(menuKey) + "Â§F for options.";
+		this.sMenu[0][3] = "- Press §B" + Keyboard.getKeyName(zoomKey) + " §Fto zoom in/out, or §B"+ Keyboard.getKeyName(menuKey) + "§F for options.";
 		this.sMenu[1][0] = "Options";
 		this.sMenu[1][1] = "Display Coordinates:";
 		this.sMenu[1][2] = "Hide Minimap:";
@@ -912,13 +942,13 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
   			blockColors[blockColorID(109, 1)] = 0x7a7a7a;
   			blockColors[blockColorID(109, 2)] = 0x7a7a7a;
   			blockColors[blockColorID(109, 3)] = 0x7a7a7a;
-			blockColors[blockColorID(110, 0)] = 0x3e1e6b; // mycelium
-			blockColors[blockColorID(112, 0)] = 0x571526; // netherbrick
-			blockColors[blockColorID(114, 0)] = 0x571526; // netherbrick stairs
-			blockColors[blockColorID(114, 1)] = 0x571526; // netherbrick stairs
-			blockColors[blockColorID(114, 2)] = 0x571526; // netherbrick stairs
-			blockColors[blockColorID(114, 3)] = 0x571526; // netherbrick stairs
-			blockColors[blockColorID(121, 0)] = 0x5f741e; // endstone
+			blockColors[blockColorID(110, 0)] = 0x6e646a; // mycelium
+			blockColors[blockColorID(112, 0)] = 0x43262f; // netherbrick
+			blockColors[blockColorID(114, 0)] = 0x43262f; // netherbrick stairs
+			blockColors[blockColorID(114, 1)] = 0x43262f; // netherbrick stairs
+			blockColors[blockColorID(114, 2)] = 0x43262f; // netherbrick stairs
+			blockColors[blockColorID(114, 3)] = 0x43262f; // netherbrick stairs
+			blockColors[blockColorID(121, 0)] = 0xd3dca4; // endstone
 			if(settingsFile.exists()) {
 				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
 				String sCurrentLine;
@@ -951,9 +981,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			out.close();
 		} catch (Exception e) {e.printStackTrace();}
 
-		for (int t = 0; t <= 30; t++) {
-			pitch[t] = (float)(Math.pow(1.0188, (30 - t)));
-		}
 	}
 
 	private final int blockColorID(int blockid, int meta) {
@@ -1007,7 +1034,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			out.println("Threading:" + Boolean.toString(threading));
 			out.close();
 		} catch (Exception local) {
-			chatInfo("Â§EError Saving Settings");
+			chatInfo("§EError Saving Settings");
 		}
 	}
 
@@ -1024,7 +1051,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 			out.close();
 		} catch (Exception local) {
-			chatInfo("Â§EError Saving Waypoints");
+			chatInfo("§EError Saving Waypoints");
 		}
 	}
 
@@ -1058,10 +1085,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					}
 
 					in.close();
-					chatInfo("Â§EWaypoints loaded for " + world);
-				} else chatInfo("Â§EError: No waypoints exist for this world/server.");
+					chatInfo("§EWaypoints loaded for " + world);
+				} else chatInfo("§EError: No waypoints exist for this world/server.");
 			} catch (Exception local) {
-				chatInfo("Â§EError Loading Waypoints");
+				chatInfo("§EError Loading Waypoints");
 			}
 		}
 	}
@@ -1096,7 +1123,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glPushMatrix();
 					this.disp(this.img("/mmarrow.png"));
 					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-					GL11.glRotatef(-this.direction - 90.0F, 0.0F, 0.0F, 1.0F);
+					GL11.glRotatef(-this.direction -180.0F, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 					drawPre();
 					this.setMap(scWidth);
@@ -1129,7 +1156,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-locate - 90 + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-locate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
 								drawPre();
@@ -1147,7 +1174,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/waypoint.png"));
-								GL11.glTranslated(wayY/(Math.pow(2,this.zoom)/2),-wayX/(Math.pow(2,this.zoom)/2),0.0D);
+								GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
 								drawPre();
 								this.setMap(scWidth);
 								drawPost();
@@ -1161,7 +1188,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 					} // end if pt enabled
 				} // end for waypoints
-			} else {
+			} else { // else roundmap
 				GL11.glPushMatrix();
 
 				if (this.zoom == 3) {
@@ -1172,7 +1199,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} else this.q = this.tex(this.map[this.zoom]);
 
 				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-				GL11.glRotatef(this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
+				GL11.glRotatef(this.direction + 180.0F, 0.0F, 0.0F, 1.0F); // +90 west at top.  +180 north at top
 				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 
 				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
@@ -1268,7 +1295,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			GL11.glPushMatrix();
 			this.disp(this.img("/mmarrow.png"));
 			GL11.glTranslatef((scWidth+5)/2, (scHeight+5)/2, 0.0F);
-			GL11.glRotatef(-this.direction - 90.0F, 0.0F, 0.0F, 1.0F);
+			GL11.glRotatef(-this.direction - 180.0F, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 			GL11.glTranslatef(-((scWidth+5)/2), -((scHeight+5)/2), 0.0F);
 			drawPre();
 			ldrawone((scWidth+5)/2-32, (scHeight+5)/2+32, 1.0D, 0.0D, 1.0D);
@@ -1282,141 +1309,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			GL11.glPopMatrix();
 		}
 	}
-
-	private void renderMapMobs (int scWidth) {
-		if (!this.hide && !this.full) { 
-//			if (this.q != 0) glah(this.q);
-//			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-//			GL11.glColor3f(1.0F, 1.0F, 1.0F);
-			this.drawTracker(scWidth);
-			
-			double brightness = 256;
-			double tickerFade = ((double)(System.currentTimeMillis()/10))%150;
-			int ticker = ((int)tickerFade/10);			
-			//if (tickerFade >= 120) 
-			//	brightness = 1 - ((tickerFade-120) * .011F);
-			//else 
-			//	brightness = 1 - ((tickerFade+30) * .011F);  
- 			// above good if we want the pong to be at some point other than when the wave finishes its sweep (at mod 0)
-			brightness = 1 - (tickerFade * .011F);
-
-			if (ticker != 11)
-				OKtoPing = true;
-			if (ticker == 11 && OKtoPing) {
-				OKtoPing = false;
-				game.sndManager.playSoundFX("tracker.MTpingFree", 0.7F, 1.0F); // path, volume, pitch
-			}
-
-			if (ticker != 0) 
-				OKtoUpdate = true;
-			if (ticker == 0 && OKtoUpdate) {
-				OKtoUpdate = false;
-				contactsAngle.clear();
-				contactsDistance.clear();
-				java.util.List entities = this.game.theWorld.getLoadedEntityList();
-				minDistance = 40;
-				count = 0;
-				oldDir = this.direction;
-				for(int j = 0; j < entities.size(); j++) {
-					Entity entity = (Entity)entities.get(j);
-
-					if(isHostile(entity)) { 
-						int wayX = this.xCoord() - (int)(entity.posX);
-						int wayY = this.yCoord() - (int)(entity.posZ);
-						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-						float differenceDegrees = locate - this.direction;
-						if (differenceDegrees < -180)
-					  		differenceDegrees += 360;
-						else if (differenceDegrees > 180)
-				   		differenceDegrees -= 360;
-						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,2)/2);
-						if (hypot < 31.0D && Math.abs(this.zCoord() - (int)(entity.posY)) < 12 && Math.abs(differenceDegrees) > 90 ) {					
-							contactsAngle.add(locate);
-							contactsDistance.add(hypot);
-							count++;
-							if (hypot < minDistance)
-								minDistance = (int)hypot;
-						} // end if valid contact
-					} // end if hostile
-				} // end for loop contacts
-
-            //worldObj.playSoundAtEntity(this, getDeathSound(), getSoundVolume(), (rand.nextFloat() - rand.nextFloat()) * 0.2F + 1.0F); // pig dies
-            //((IWorldAccess)worldAccesses.get(i)).playSound(s, entity.posX, entity.posY - (double)entity.yOffset, entity.posZ, f, f1); // what pig dies calls
-				//mc.sndManager.playSound(block.stepSound.func_1145_d(), (float)i + 0.5F, (float)j + 0.5F, (float)k + 0.5F, (block.stepSound.getVolume() + 1.0F) / 8F, block.stepSound.getPitch() * 0.5F); //player footstep
-				//													aka stepSoundDir() returns step.sand, playSound adds random number to that and gets ogg
-				//game.sndManager.playSound("tracker.MTpingFree", this.xCoord(), this.zCoord(), this.yCoord(), 0.4F, 1.0F);
-				if (count > 0) {
-					//float pitch = 1.0F + ((30.0F-minDistance) / 40.0F);
-					//float pitch = (float)(Math.pow(1.0188, (30.0F-minDistance)));
-					//this.error = "" + pitch;
-					//made array, precalculated to avoid expensive Math.pow calls
-					game.sndManager.playSoundFX("tracker.MTpongFree", 1.1F, pitch[minDistance]); // path, volume, pitch
-				}
-			} // end if recalculate contacts 
-
-			for(int j = 0; j < contactsAngle.size(); j++) {
-				float locate = (Float)(contactsAngle.get(j)).floatValue();
-				float differenceDegrees = locate - this.direction;
-				if (differenceDegrees < -180)
-			  		differenceDegrees += 360;
-				else if (differenceDegrees > 180)
-		   		differenceDegrees -= 360;
-				if (Math.abs(differenceDegrees) > 90 ) {					
-				double hypot = (Double)(contactsDistance.get(j)).doubleValue();
-				try {
-					GL11.glPushMatrix();
-					GL11.glColor4f(256.0F, 256.0F, 256.0F, (float)brightness);
-					this.disp(this.img("/contact.png"));
-					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-					GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F); // this.direction to OldDir if dots don't rotate
-					GL11.glTranslated(0.0D,-hypot,0.0D);
-					GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
-					GL11.glTranslated(0.0D,hypot,0.0D);
-					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
-					GL11.glTranslated(0.0D,-hypot,0.0D);
-					drawPre();
-					this.setMap(scWidth);
-					drawPost();
-				} catch (Exception localException) 
-				{
-					this.error = "Error: waypoint overlay not found!";
-				} finally 
-				{
-					GL11.glPopMatrix();
-				}
-				}
-			} // end for contacts
-
-//				GL11.glPushMatrix();
-//				GL11.glTranslated(32,42,0.0D);
-//				this.write(" " + minDistance, scWidth*2-66, 70, 0xffffff);
-//				GL11.glPopMatrix();
-			GL11.glPushMatrix();
-			GL11.glScalef(0.5f, 0.5f, 1.0f);
-			String distanceString = "";
-			if (count > 0) 
-				distanceString += minDistance;
-			else
-				distanceString += "00";
-			if (minDistance < 10)
-				distanceString = "0" + distanceString;
-			this.write(distanceString , scWidth*2-39*2, 75, 0xff0000);  //-32*2
-			GL11.glPopMatrix(); 
-		} // end if not hidden
-	} // end method rendermapMobs
-
-	private boolean isHostile(Entity entity) {
-		if (entity instanceof EntityMob) // most mobs
-			return true;
-		// TODO pigZombies like wolves
-		if (entity instanceof IMob) // ghast
-			return true;
-		if (entity instanceof EntityWolf) 
-			return ((EntityWolf)entity).isWolfAngry();
-		return false;
-	}
-
-
 
 	private void showMenu (int scWidth, int scHeight) { 
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -1463,7 +1355,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		int title = this.chkLen(head);
 		int centerX = (int)((scWidth+5)/2.0D);
 		int centerY = (int)((scHeight+5)/2.0D);
-		String hide = "Â§7Press Â§F" + Keyboard.getKeyName(zoomKey) + "Â§7 to hide.";
+		String hide = "§7Press §F" + Keyboard.getKeyName(zoomKey) + "§7 to hide.";
 		int footer = this.chkLen(hide);
 		GL11.glDisable(3553); //GL_TEXTURE_2D
 		GL11.glColor4f(0.0f, 0.0f, 0.0f, 0.7f);
@@ -1694,72 +1586,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			this.disp(this.img("/roundmap.png"));
 			drawPre();
 			this.setMap(paramInt1);
-			drawPost();
-		} catch (Exception localException) {
-			this.error = "Error: minimap overlay not found!";
-		}
-	}
-
-	private void drawTracker(int paramInt1) {
-		String imageName = "";
-		if (((int)(System.currentTimeMillis()/100))%15 >= 14)
-			imageName="/trackerSweep6.png";
-		else if (((int)(System.currentTimeMillis()/100))%15 >= 14)
-			imageName="/trackerSweep5.png";
-		else if (((int)(System.currentTimeMillis()/100))%15 >= 13)
-			imageName="/trackerSweep4.png";
-		else if (((int)(System.currentTimeMillis()/100))%15 >= 12)
-			imageName="/trackerSweep3.png";
-		else if (((int)(System.currentTimeMillis()/100))%15 >= 11)
-			imageName="/trackerSweep2.png";
-		else if (((int)(System.currentTimeMillis()/100))%15 >= 10)
-			imageName="/trackerSweep1.png"; 
-		try {
-			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-			GL11.glMatrixMode(GL11.GL_TEXTURE);
-			GL11.glPushMatrix();
-			this.disp(this.img("/trackerBG.png"));
-			GL11.glTranslatef(0.5F, 0.5F, 0.0F);
-			GL11.glRotatef(-this.direction, 0.0F, 0.0F, 1.0F);
-			GL11.glTranslatef(-0.5F, -0.5F, 0.0F);
-			drawPre();
-			//this.setMap(paramInt1);
-			{ 
-				ldrawthree(paramInt1 - 64.0D, 32.0D + 5.0D, 1.0D, 0.25D, 0.5D);
-				ldrawthree(paramInt1, 32.0D + 5.0D, 1.0D, 0.75D, 0.5D);
-				ldrawthree(paramInt1, 5.0D, 1.0D, 0.75D, 0.25D);
-				ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.25D, 0.25D);
-			}
-		
-			drawPost();
-
-			if (!imageName.equals("")) {
-				this.disp(this.img(imageName));
-				drawPre();
-				//this.setMap(paramInt1);
-				{ 
-					ldrawthree(paramInt1 - 64.0D, 32.0D + 5.0D, 1.0D, 0.25D, 0.5D);
-					ldrawthree(paramInt1, 32.0D + 5.0D, 1.0D, 0.75D, 0.5D);
-					ldrawthree(paramInt1, 5.0D, 1.0D, 0.75D, 0.25D);
-					ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.25D, 0.25D);
-				}
-				drawPost();
-			}
-			GL11.glPopMatrix();
-		} catch (Exception localException) {
-			this.error = "Error: minimap overlay not found!";
-		}
-		try {
-			GL11.glMatrixMode(GL11.GL_MODELVIEW);
-			this.disp(this.img("/trackerFG.png"));
-			drawPre();
-			//this.setMap(paramInt1);
-			{ 
-				ldrawthree(paramInt1 - 64.0D, 64.0D + 5.0D, 1.0D, 0.25D, 0.75D);
-				ldrawthree(paramInt1, 64.0D + 5.0D, 1.0D, 0.75D, 0.75D);
-				ldrawthree(paramInt1, 5.0D, 1.0D, 0.75D, 0.25D);
-				ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.25D, 0.25D);
-			}
 			drawPost();
 		} catch (Exception localException) {
 			this.error = "Error: minimap overlay not found!";
@@ -2076,22 +1902,22 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
 		this.write("N", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
 		this.write("E", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
 		this.write("S", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
 		this.write("W", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 	}
