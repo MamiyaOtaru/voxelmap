@@ -29,10 +29,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private BufferedImage[] map = new BufferedImage[4];
 
 	/*Block colour array*/
-	private int[] blockColors = new int[256];
-
-	/*Cloth colour array*/
-	private int[] clothColors = new int[16];
+	private int[] blockColors = new int[4096];
 
 	private int q = 0;
 	private Random generator = new Random();
@@ -494,10 +491,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							if (this.rc) {
 								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
-								else if ((data.getBlockMaterial(startX + imageY, height - 1, startZ - imageX) == Material.cloth)) // || (data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX) == 35))
-									color24 = this.clothColors[data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX)];
 								else {
-									color24 = this.blockColors[data.getBlockId(startX + imageY, height - 1, startZ - imageX)];
+									color24 = getBlockColor(data.getBlockId(startX + imageY, height - 1, startZ - imageX), data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX));
 								}
 							} else color24 = 0xFFFFFF;
 						}
@@ -574,10 +569,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							if (this.rc) {
 								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
-								else if ((data.getBlockMaterial(startX + imageY, height - 1, startZ - imageX) == Material.cloth)) // || (data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX) == 35))
-									color24 = this.clothColors[data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX)];
 								else {
-									color24 = this.blockColors[data.getBlockId(startX + imageY, height - 1, startZ - imageX)];
+									color24 = getBlockColor(data.getBlockId(startX + imageY, height - 1, startZ - imageX), data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX));
 								}
 							} else color24 = 0xFFFFFF;
 						}
@@ -756,130 +749,176 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 		for(int i = 0; i<blockColors.length; i++)
 			blockColors[i] = 0xff01ff;
-		for(int i = 0; i<clothColors.length; i++)
-			clothColors[i] = 0xff01ff;
 			
 		settingsFile = new File(getAppDir("minecraft"), "colours.txt");
 
 		try {
 			
-			blockColors[1]=0x686868;
-			blockColors[2]=0x74b44a;
-			blockColors[3]=0x79553a;
-			blockColors[4]=0x959595;
-			blockColors[5]=0xbc9862;
-			blockColors[6]=0x946428;
-			blockColors[7]=0x333333;
-			blockColors[8]=0x3256ff;
-			blockColors[9]=0x3256ff;
-			blockColors[10]=0xd96514;
-			blockColors[11]=0xd96514;
-			blockColors[12]=0xddd7a0;
-			blockColors[13]=0x747474;
-			blockColors[14]=0x747474;
-			blockColors[15]=0x747474;
-			blockColors[16]=0x747474;
-			blockColors[17]=0x342919;
-			blockColors[18]=0x164d0c;
-			blockColors[19]=0xe5e54e;
-			blockColors[20]=0xffffff;
-			blockColors[21]=0x677087;
-			blockColors[22]=0x0d2eb2;
-			blockColors[23]=0x747474;
-			blockColors[24]=0xc6bd6d;
-			blockColors[25]=0xaadb74;
-			blockColors[35]=0xf1f1f1;
-			blockColors[37]=0xf1f902;
-			blockColors[38]=0xf7070f;
-			blockColors[39]=0x916d55;
-			blockColors[40]=0x9a171c;
-			blockColors[41]=0xfefb5d;
-			blockColors[42]=0xe9e9e9;
-			blockColors[43]=0xa8a8a8;
-			blockColors[44]=0xa8a8a8;
-			blockColors[45]=0xaa543b;
-			blockColors[46]=0xdb441a;
-			blockColors[47]=0xb4905a;
-			blockColors[48]=0x1f471f;
-			blockColors[49]=0x101018;
-			blockColors[50]=0xffd800;
-			blockColors[51]=0xc05a01;
-			blockColors[52]=0x265f87;
-			blockColors[53]=0xbc9862;
-			blockColors[54]=0x8f691d;
-			blockColors[55]=0x480000;
-			blockColors[56]=0x747474;
-			blockColors[57]=0x82e4e0;
-			blockColors[58]=0xa26b3e;
-			blockColors[59]=0x00e210;
-			blockColors[60]=0x633f24;
-			blockColors[61]=0x747474;
-			blockColors[62]=0x747474;
-			blockColors[63]=0xb4905a;
-			blockColors[64]=0x7a5b2b;
-			blockColors[65]=0xac8852;
-			blockColors[66]=0xa4a4a4;
-			blockColors[67]=0x9e9e9e;
-			blockColors[68]=0x9f844d;
-			blockColors[69]=0x695433;
-			blockColors[70]=0x8f8f8f;
-			blockColors[71]=0xc1c1c1;
-			blockColors[72]=0xbc9862;
-			blockColors[73]=0x747474;
-			blockColors[74]=0x747474;
-			blockColors[75]=0x290000;
-			blockColors[76]=0xfd0000;
-			blockColors[77]=0x747474;
-			blockColors[78]=0xfbffff;
-			blockColors[79]=0x8ebfff;
-			blockColors[80]=0xffffff;
-			blockColors[81]=0x11801e;
-			blockColors[82]=0xffffff;
-			blockColors[83]=0xa1a7b2;
-			blockColors[84]=0xaadb74;
-			blockColors[85]=0x9b664b;
-			blockColors[86]=0xbc9862;
-			blockColors[87]=0x582218;
-			blockColors[88]=0x996731;
-			blockColors[89]=0xcda838;
-			blockColors[90]=0x732486;
-			blockColors[91]=0xffc88d;
-			blockColors[92]=0xe3cccd;
-			blockColors[93]=0x979393;
-			blockColors[94]=0xc09393;
-			blockColors[95]=0x8f691d;
-			blockColors[96]=0x7e5d2d;
-			blockColors[97]=0x686868;
-			blockColors[98]=0x7a7a7a;
-			blockColors[99]=0xcaab78;
-			blockColors[100]=0xcaab78;
-			blockColors[101]=0x6d6c6a;
-			blockColors[102]=0xffffff;
-			blockColors[103]=0x979924;
-			blockColors[104]=0x009900;
-			blockColors[105]=0x009900;
-			blockColors[106]=0x1f4e0a;
-			blockColors[107]=0xbc9862;
-			blockColors[108]=0x9b6d61;
-			blockColors[109]=0x7a7a7a;
-
-			clothColors[0]=0xf4f4f4;
-			clothColors[1]=0xeb843e;
-			clothColors[2]=0xc55ccf;
-			clothColors[3]=0x7d9cda;
-			clothColors[4]=0xddd13a;
-			clothColors[5]=0x3ecb31;
-			clothColors[6]=0xe09aad;
-			clothColors[7]=0x434343;
-			clothColors[8]=0xafafaf;
-			clothColors[9]=0x2f8286;
-			clothColors[10]=0x9045d1;
-			clothColors[11]=0x2d3ba7;
-			clothColors[12]=0x573016;
-			clothColors[13]=0x41581f;
-			clothColors[14]=0xb22c27;
-			clothColors[15]=0x1b1717;
-
+			blockColors[blockColorID(1, 0)] = 0x686868;
+  			blockColors[blockColorID(2, 0)] = 0x74b44a;
+  			blockColors[blockColorID(3, 0)] = 0x79553a;
+  			blockColors[blockColorID(4, 0)] = 0x959595;
+  			blockColors[blockColorID(5, 0)] = 0xbc9862;
+  			blockColors[blockColorID(6, 0)] = 0x946428;
+  			blockColors[blockColorID(7, 0)] = 0x333333;
+  			blockColors[blockColorID(8, 0)] = 0x3256ff;
+  			blockColors[blockColorID(8, 1)] = 0x3256ff;
+  			blockColors[blockColorID(8, 2)] = 0x3256ff;
+  			blockColors[blockColorID(8, 3)] = 0x3256ff;
+  			blockColors[blockColorID(8, 4)] = 0x3256ff;
+  			blockColors[blockColorID(8, 5)] = 0x3256ff;
+  			blockColors[blockColorID(8, 6)] = 0x3256ff;
+  			blockColors[blockColorID(8, 7)] = 0x3256ff;
+  			blockColors[blockColorID(9, 0)] = 0x3256ff;
+  			blockColors[blockColorID(10, 0)] = 0xd86514;
+  			blockColors[blockColorID(10, 1)] = 0xd76514;
+  			blockColors[blockColorID(10, 2)] = 0xd66414;
+  			blockColors[blockColorID(10, 3)] = 0xd56414;
+  			blockColors[blockColorID(10, 4)] = 0xd46314;
+  			blockColors[blockColorID(10, 5)] = 0xd36314;
+  			blockColors[blockColorID(10, 6)] = 0xd26214;
+  			blockColors[blockColorID(11, 0)] = 0xd96514;
+  			blockColors[blockColorID(12, 0)] = 0xddd7a0;
+  			blockColors[blockColorID(13, 0)] = 0x747474;
+  			blockColors[blockColorID(14, 0)] = 0x747474;
+  			blockColors[blockColorID(15, 0)] = 0x747474;
+  			blockColors[blockColorID(16, 0)] = 0x747474;
+  			blockColors[blockColorID(17, 0)] = 0x342919;
+  			blockColors[blockColorID(17, 1)] = 0x342919;
+  			blockColors[blockColorID(17, 2)] = 0x342919;
+  			blockColors[blockColorID(18, 0)] = 0x164d0c;
+  			blockColors[blockColorID(18, 1)] = 0x164d0c;
+  			blockColors[blockColorID(18, 2)] = 0x164d0c;
+  			blockColors[blockColorID(18, 3)] = 0x164d0c;
+  			blockColors[blockColorID(19, 0)] = 0xe5e54e;
+  			blockColors[blockColorID(20, 0)] = 0xffffff;
+  			blockColors[blockColorID(21, 0)] = 0x677087;
+  			blockColors[blockColorID(22, 0)] = 0xd2eb2;
+  			blockColors[blockColorID(23, 0)] = 0x747474;
+  			blockColors[blockColorID(24, 0)] = 0xc6bd6d;
+  			blockColors[blockColorID(25, 0)] = 0xaadb74;
+  			blockColors[blockColorID(35, 0)] = 0xf4f4f4;
+  			blockColors[blockColorID(35, 1)] = 0xeb843e;
+  			blockColors[blockColorID(35, 2)] = 0xc55ccf;
+  			blockColors[blockColorID(35, 3)] = 0x7d9cda;
+  			blockColors[blockColorID(35, 4)] = 0xddd13a;
+  			blockColors[blockColorID(35, 5)] = 0x3ecb31;
+  			blockColors[blockColorID(35, 6)] = 0xe09aad;
+  			blockColors[blockColorID(35, 7)] = 0x434343;
+  			blockColors[blockColorID(35, 8)] = 0xafafaf;
+  			blockColors[blockColorID(35, 9)] = 0x2f8286;
+  			blockColors[blockColorID(35, 10)] = 0x9045d1;
+  			blockColors[blockColorID(35, 11)] = 0x2d3ba7;
+  			blockColors[blockColorID(35, 12)] = 0x573016;
+  			blockColors[blockColorID(35, 13)] = 0x41581f;
+  			blockColors[blockColorID(35, 14)] = 0xb22c27;
+  			blockColors[blockColorID(35, 15)] = 0x1b1717;
+  			blockColors[blockColorID(37, 0)] = 0xf1f902;
+  			blockColors[blockColorID(38, 0)] = 0xf7070f;
+  			blockColors[blockColorID(39, 0)] = 0x916d55;
+  			blockColors[blockColorID(40, 0)] = 0x9a171c;
+  			blockColors[blockColorID(41, 0)] = 0xfefb5d;
+  			blockColors[blockColorID(42, 0)] = 0xe9e9e9;
+  			blockColors[blockColorID(43, 0)] = 0xa8a8a8;
+  			blockColors[blockColorID(43, 1)] = 0xc6bd6d;
+  			blockColors[blockColorID(43, 2)] = 0xbc9862;
+  			blockColors[blockColorID(43, 3)] = 0x959595;
+  			blockColors[blockColorID(43, 4)] = 0xaa543b;
+  			blockColors[blockColorID(43, 5)] = 0x7a7a7a;
+  			blockColors[blockColorID(43, 6)] = 0xa8a8a8;
+  			blockColors[blockColorID(44, 0)] = 0xa8a8a8;
+  			blockColors[blockColorID(44, 1)] = 0xc6bd6d;
+  			blockColors[blockColorID(44, 2)] = 0xbc9862;
+  			blockColors[blockColorID(44, 3)] = 0x959595;
+  			blockColors[blockColorID(44, 4)] = 0xaa543b;
+  			blockColors[blockColorID(44, 5)] = 0x7a7a7a;
+  			blockColors[blockColorID(44, 6)] = 0xa8a8a8;
+  			blockColors[blockColorID(45, 0)] = 0xaa543b;
+  			blockColors[blockColorID(46, 0)] = 0xdb441a;
+  			blockColors[blockColorID(47, 0)] = 0xb4905a;
+  			blockColors[blockColorID(48, 0)] = 0x1f471f;
+  			blockColors[blockColorID(49, 0)] = 0x101018;
+  			blockColors[blockColorID(50, 0)] = 0xffd800;
+  			blockColors[blockColorID(51, 0)] = 0xc05a01;
+  			blockColors[blockColorID(52, 0)] = 0x265f87;
+  			blockColors[blockColorID(53, 0)] = 0xbc9862;
+  			blockColors[blockColorID(53, 1)] = 0xbc9862;
+  			blockColors[blockColorID(53, 2)] = 0xbc9862;
+  			blockColors[blockColorID(53, 3)] = 0xbc9862;
+  			blockColors[blockColorID(54, 0)] = 0x8f691d;
+  			blockColors[blockColorID(55, 0)] = 0x480000;
+  			blockColors[blockColorID(56, 0)] = 0x747474;
+  			blockColors[blockColorID(57, 0)] = 0x82e4e0;
+  			blockColors[blockColorID(58, 0)] = 0xa26b3e;
+  			blockColors[blockColorID(59, 0)] = 57872;
+  			blockColors[blockColorID(60, 0)] = 0x633f24;
+  			blockColors[blockColorID(61, 0)] = 0x747474;
+  			blockColors[blockColorID(62, 0)] = 0x747474;
+  			blockColors[blockColorID(63, 0)] = 0xb4905a;
+  			blockColors[blockColorID(64, 0)] = 0x7a5b2b;
+  			blockColors[blockColorID(65, 0)] = 0xac8852;
+  			blockColors[blockColorID(66, 0)] = 0xa4a4a4;
+  			blockColors[blockColorID(67, 0)] = 0x9e9e9e;
+  			blockColors[blockColorID(67, 1)] = 0x9e9e9e;
+  			blockColors[blockColorID(67, 2)] = 0x9e9e9e;
+  			blockColors[blockColorID(67, 3)] = 0x9e9e9e;
+  			blockColors[blockColorID(68, 0)] = 0x9f844d;
+  			blockColors[blockColorID(69, 0)] = 0x695433;
+  			blockColors[blockColorID(70, 0)] = 0x8f8f8f;
+  			blockColors[blockColorID(71, 0)] = 0xc1c1c1;
+  			blockColors[blockColorID(72, 0)] = 0xbc9862;
+  			blockColors[blockColorID(73, 0)] = 0x747474;
+  			blockColors[blockColorID(74, 0)] = 0x747474;
+  			blockColors[blockColorID(75, 0)] = 0x290000;
+  			blockColors[blockColorID(76, 0)] = 0xfd0000;
+  			blockColors[blockColorID(77, 0)] = 0x747474;
+  			blockColors[blockColorID(78, 0)] = 0xfbffff;
+  			blockColors[blockColorID(79, 0)] = 0x8ebfff;
+  			blockColors[blockColorID(80, 0)] = 0xffffff;
+  			blockColors[blockColorID(81, 0)] = 0x11801e;
+  			blockColors[blockColorID(82, 0)] = 0xffffff;
+  			blockColors[blockColorID(83, 0)] = 0xa1a7b2;
+  			blockColors[blockColorID(84, 0)] = 0xaadb74;
+  			blockColors[blockColorID(85, 0)] = 0x9b664b;
+  			blockColors[blockColorID(86, 0)] = 0xbc9862;
+  			blockColors[blockColorID(87, 0)] = 0x582218;
+  			blockColors[blockColorID(88, 0)] = 0x996731;
+  			blockColors[blockColorID(89, 0)] = 0xcda838;
+  			blockColors[blockColorID(90, 0)] = 0x732486;
+  			blockColors[blockColorID(91, 0)] = 0xffc88d;
+  			blockColors[blockColorID(92, 0)] = 0xe3cccd;
+  			blockColors[blockColorID(93, 0)] = 0x979393;
+  			blockColors[blockColorID(94, 0)] = 0xc09393;
+  			blockColors[blockColorID(95, 0)] = 0x8f691d;
+  			blockColors[blockColorID(96, 0)] = 0x7e5d2d;
+  			blockColors[blockColorID(97, 0)] = 0x686868;
+  			blockColors[blockColorID(98, 0)] = 0x7a7a7a;
+  			blockColors[blockColorID(98, 1)] = 0x1f471f;
+  			blockColors[blockColorID(98, 2)] = 0x7a7a7a;
+  			blockColors[blockColorID(99, 0)] = 0xcaab78;
+  			blockColors[blockColorID(100, 0)] = 0xcaab78;
+  			blockColors[blockColorID(101, 0)] = 0x6d6c6a;
+  			blockColors[blockColorID(102, 0)] = 0xffffff;
+  			blockColors[blockColorID(103, 0)] = 0x979924;
+  			blockColors[blockColorID(104, 0)] = 39168;
+  			blockColors[blockColorID(105, 0)] = 39168;
+  			blockColors[blockColorID(106, 0)] = 0x1f4e0a;
+  			blockColors[blockColorID(107, 0)] = 0xbc9862;
+  			blockColors[blockColorID(108, 0)] = 0xaa543b;
+  			blockColors[blockColorID(108, 1)] = 0xaa543b;
+  			blockColors[blockColorID(108, 2)] = 0xaa543b;
+  			blockColors[blockColorID(108, 3)] = 0xaa543b;
+  			blockColors[blockColorID(109, 0)] = 0x7a7a7a;
+  			blockColors[blockColorID(109, 1)] = 0x7a7a7a;
+  			blockColors[blockColorID(109, 2)] = 0x7a7a7a;
+  			blockColors[blockColorID(109, 3)] = 0x7a7a7a;
+			blockColors[blockColorID(110, 0)] = 0x3e1e6b; // mycelium
+			blockColors[blockColorID(112, 0)] = 0x571526; // netherbrick
+			blockColors[blockColorID(114, 0)] = 0x571526; // netherbrick stairs
+			blockColors[blockColorID(114, 1)] = 0x571526; // netherbrick stairs
+			blockColors[blockColorID(114, 2)] = 0x571526; // netherbrick stairs
+			blockColors[blockColorID(114, 3)] = 0x571526; // netherbrick stairs
+			blockColors[blockColorID(121, 0)] = 0x5f741e; // endstone
 			if(settingsFile.exists()) {
 				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
 				String sCurrentLine;
@@ -887,13 +926,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				while ((sCurrentLine = in.readLine()) != null) {
 					String[] curLine = sCurrentLine.split(":");
 					try{
-						if(curLine[0].equals("Block")&&curLine.length==3)
-						{
-							blockColors[Integer.parseInt(curLine[1])] = Integer.parseInt(curLine[2], 16);
-						}
-						if(curLine[0].equals("Cloth")&&curLine.length==3)
-						{
-							clothColors[Integer.parseInt(curLine[1])] = Integer.parseInt(curLine[2], 16);
+						if(curLine[0].equals("Block")&&curLine.length==4) {
+							int id = Integer.parseInt(curLine[1]);
+							int meta = Integer.parseInt(curLine[2]);
+							blockColors[blockColorID(id, meta)] = Integer.parseInt(curLine[3], 16);
 						}
 					} catch(NumberFormatException e)
 					{
@@ -907,17 +943,41 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
 			for(int i = 0; i<blockColors.length; i++)
-				if(blockColors[i] != 0xff00ff)
-					out.println("Block:"+i+":"+Integer.toHexString(blockColors[i]));
-			for(int i = 0; i<clothColors.length; i++)
-				if(clothColors[i] != 0xff00ff)
-					out.println("Cloth:"+i+":"+Integer.toHexString(clothColors[i]));
+				if(blockColors[i] != 0xff00ff) {
+					int meta = i >> 8;
+					int id = i & 0xff;
+					out.println("Block:"+id+":"+meta+":"+Integer.toHexString(blockColors[i]));
+				}
 			out.close();
 		} catch (Exception e) {e.printStackTrace();}
 
 		for (int t = 0; t <= 30; t++) {
 			pitch[t] = (float)(Math.pow(1.0188, (30 - t)));
 		}
+	}
+
+	private final int blockColorID(int blockid, int meta) {
+		return (blockid) | (meta << 8);
+	}
+
+	private final int getBlockColor(int blockid, int meta) {
+		try {
+			int col = blockColors[blockColorID(blockid, meta)];
+			if (col != 0xff01ff) 
+				return col;
+			col = blockColors[blockColorID(blockid, 0)];
+			if (col != 0xff01ff) 
+				return col;
+			col = blockColors[0];
+			if (col != 0xff01ff) 
+				return col;
+		}
+		catch (ArrayIndexOutOfBoundsException e) {
+//			System.err.println("BlockID: " + blockid + " - Meta: " + meta);
+			throw e;
+		}
+//		System.err.println("Unable to find a block color for blockid: " + blockid + " blockmeta: " + meta);
+		return 0xff01ff;
 	}
 
 	private boolean classExists (String className) {
