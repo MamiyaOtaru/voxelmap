@@ -14,9 +14,12 @@ public class Contact {
 	public String skinURL = "";
 	public int imageIndex = -1;
 	public Entity entity = null;
+	public int armorValue = -1;
+	public int armorColor = -1;
 
 	
-	public Contact(double x, double z, int y, int type) {
+	public Contact(Entity entity, double x, double z, int y, int type) {
+		this.entity = entity;
 		this.x = x;
 		this.z = z;
 		this.y =y;
@@ -27,8 +30,22 @@ public class Contact {
 		this.name = name;
 	}
 	
+	public void setArmor(int armorValue) {
+		this.armorValue = armorValue;
+	}
+	
+	public void setArmorColor(int armorColor) {
+		this.armorColor = armorColor;
+	}
+	
 	public void setEntity(Entity entity) {
 		this.entity = entity;
+	}
+
+	public void updateLocation() {
+		this.x = entity.posX;
+		this.y = (int)entity.posY;
+		this.z = entity.posZ;
 	}
 
 }

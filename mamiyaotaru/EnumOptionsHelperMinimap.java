@@ -125,7 +125,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.HIDERADAR.ordinal()] = 13;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.LOCATION.ordinal()] = 13;
         }
         catch (NoSuchFieldError var4)
         {
@@ -134,7 +134,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWHOSTILES.ordinal()] = 14;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SIZE.ordinal()] = 14;
         }
         catch (NoSuchFieldError var4)
         {
@@ -143,7 +143,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWPLAYERS.ordinal()] = 15;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.FILTERING.ordinal()] = 15;
         }
         catch (NoSuchFieldError var4)
         {
@@ -152,7 +152,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWNEUTRALS.ordinal()] = 16;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.WATERTRANSPARENCY.ordinal()] = 16;
         }
         catch (NoSuchFieldError var4)
         {
@@ -161,7 +161,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.LOCATION.ordinal()] = 17;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.BLOCKTRANSPARENCY.ordinal()] = 17;
         }
         catch (NoSuchFieldError var4)
         {
@@ -170,7 +170,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.FILTERING.ordinal()] = 18;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.BIOMES.ordinal()] = 18;
         }
         catch (NoSuchFieldError var4)
         {
@@ -179,7 +179,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.TRANSPARENCY.ordinal()] = 19;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.HIDERADAR.ordinal()] = 19;
         }
         catch (NoSuchFieldError var4)
         {
@@ -188,7 +188,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.BIOMES.ordinal()] = 20;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWHOSTILES.ordinal()] = 20;
         }
         catch (NoSuchFieldError var4)
         {
@@ -197,11 +197,41 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.SIZE.ordinal()] = 21;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWPLAYERS.ordinal()] = 21;
         }
         catch (NoSuchFieldError var4)
         {
             ;
         }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWNEUTRALS.ordinal()] = 22;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.RADARFILTERING.ordinal()] = 23;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWHELMETS.ordinal()] = 24;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+ 
+        
+
     }
 }

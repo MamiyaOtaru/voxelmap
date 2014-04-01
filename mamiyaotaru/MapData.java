@@ -29,17 +29,23 @@ public class MapData {
 	private int height;
 	private Object lock = new Object();
 	
-	private static int DATABITS = 9;
+	private static int DATABITS = 15;
 	
 	private static int HEIGHTPOS = 0;
-	private static int TINTPOS = 1;
-	private static int MATERIALPOS = 2;
-	private static int METADATAPOS = 3;
+	private static int MATERIALPOS = 1;
+	private static int METADATAPOS = 2;
+	private static int TINTPOS = 3;
 	private static int LIGHTPOS = 4;
 	private static int OCEANFLOORHEIGHTPOS = 5;
 	private static int OCEANFLOORMATERIALPOS = 6;
 	private static int OCEANFLOORMETADATAPOS = 7;
-	private static int OCEANFLOORLIGHTPOS = 8;
+	private static int OCEANFLOORTINTPOS = 8;
+	private static int OCEANFLOORLIGHTPOS = 9;
+	private static int TRANSPARENTHEIGHTPOS = 10;
+	private static int TRANSPARENTMATERIALPOS = 11;
+	private static int TRANSPARENTMETADATAPOS = 12;
+	private static int TRANSPARENTTINTPOS = 13;
+	private static int TRANSPARENTLIGHTPOS = 14;
 	
 	/*Array of blockHeights*/
 	private int[] data;
@@ -54,16 +60,16 @@ public class MapData {
 		return getData(x, z, HEIGHTPOS);
 	}
 	
-	public int getBiomeTint(int x, int z) {
-		return getData(x, z, TINTPOS);
-	}
-	
 	public int getMaterial(int x, int z) {
 		return getData(x, z, MATERIALPOS);
 	}
 	
 	public int getMetadata(int x, int z) {
 		return getData(x, z, METADATAPOS);
+	}
+	
+	public int getBiomeTint(int x, int z) {
+		return getData(x, z, TINTPOS);
 	}
 	
 	public int getLight(int x, int z) {
@@ -82,10 +88,33 @@ public class MapData {
 		return getData(x, z, OCEANFLOORMETADATAPOS);
 	}
 	
+	public int getOceanFloorBiomeTint(int x, int z) {
+		return getData(x, z, OCEANFLOORTINTPOS);
+	}
+	
 	public int getOceanFloorLight(int x, int z) {
 		return getData(x, z, OCEANFLOORLIGHTPOS);
 	}
-
+	
+	public int getTransparentHeight(int x, int z) {
+		return getData(x, z, TRANSPARENTHEIGHTPOS);
+	}
+	
+	public int getTransparentMaterial(int x, int z) {
+		return getData(x, z, TRANSPARENTMATERIALPOS);
+	}
+	
+	public int getTransparentMetadata(int x, int z) {
+		return getData(x, z, TRANSPARENTMETADATAPOS);
+	}
+	
+	public int getTransparentBiomeTint(int x, int z) {
+		return getData(x, z, TRANSPARENTTINTPOS);
+	}
+	
+	public int getTransparentLight(int x, int z) {
+		return getData(x, z, TRANSPARENTLIGHTPOS);
+	}
 
 	public int getData(int x, int z, int bit) {
 		int index = (x + z * this.width) * DATABITS + bit;
@@ -96,16 +125,16 @@ public class MapData {
 		setData(x, z, HEIGHTPOS, value);
 	}
 	
-	public void setBiomeTint(int x, int z, int value) {
-		setData(x, z, TINTPOS, value);
-	}
-	
 	public void setMaterial(int x, int z, int value) {
 		setData(x, z, MATERIALPOS, value);
 	}
 	
 	public void setMetadata(int x, int z, int value) {
 		setData(x, z, METADATAPOS, value);
+	}
+	
+	public void setBiomeTint(int x, int z, int value) {
+		setData(x, z, TINTPOS, value);
 	}
 	
 	public void setLight(int x, int z, int value) {
@@ -124,8 +153,32 @@ public class MapData {
 		setData(x, z, OCEANFLOORMETADATAPOS, value);
 	}
 	
+	public void setOceanFloorBiomeTint(int x, int z, int value) {
+		setData(x, z, OCEANFLOORTINTPOS, value);
+	}
+	
 	public void setOceanFloorLight(int x, int z, int value) {
 		setData(x, z, OCEANFLOORLIGHTPOS, value);
+	}
+	
+	public void setTransparentHeight(int x, int z, int value) {
+		setData(x, z, TRANSPARENTHEIGHTPOS, value);
+	}
+	
+	public void setTransparentMaterial(int x, int z, int value) {
+		setData(x, z, TRANSPARENTMATERIALPOS, value);
+	}
+	
+	public void setTransparentMetadata(int x, int z, int value) {
+		setData(x, z, TRANSPARENTMETADATAPOS, value);
+	}
+	
+	public void setTransparentBiomeTint(int x, int z, int value) {
+		setData(x, z, TRANSPARENTTINTPOS, value);
+	}
+	
+	public void setTransparentLight(int x, int z, int value) {
+		setData(x, z, TRANSPARENTLIGHTPOS, value);
 	}
 	
 	public void setData(int x, int z, int bit, int value) {
@@ -150,6 +203,7 @@ public class MapData {
 				System.arraycopy(this.data, 0, this.data, -offset*this.width*DATABITS, this.data.length+offset*this.width*DATABITS);
 		}
 	}
+
 	
 
 }

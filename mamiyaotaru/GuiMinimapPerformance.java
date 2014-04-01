@@ -15,7 +15,7 @@ public class GuiMinimapPerformance extends GuiScreen
     /**
      * An array of options that can be changed directly from the options GUI.
      */
-    private static final EnumOptionsMinimap[] relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.LIGHTING, EnumOptionsMinimap.TERRAIN, EnumOptionsMinimap.BIOMES, EnumOptionsMinimap.TRANSPARENCY, EnumOptionsMinimap.FILTERING};
+    private static final EnumOptionsMinimap[] relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.LIGHTING, EnumOptionsMinimap.TERRAIN, EnumOptionsMinimap.WATERTRANSPARENCY, EnumOptionsMinimap.BLOCKTRANSPARENCY, EnumOptionsMinimap.BIOMES, EnumOptionsMinimap.FILTERING};
     
     /**
      * A reference to the screen object that created this. Used for navigating between screens.
@@ -64,7 +64,7 @@ public class GuiMinimapPerformance extends GuiScreen
       //      else
       //      {
             String text = this.options.getKeyText(option);
-            if ((option.returnEnumOrdinal() == 19 || option.returnEnumOrdinal()== 20) && !options.multicore && options.getOptionBooleanValue(option))
+            if ((option.returnEnumOrdinal() == 19 || option.returnEnumOrdinal()== 20 || option.returnEnumOrdinal()== 21) && !options.multicore && options.getOptionBooleanValue(option))
             	text = "\u00a7c"+text;
             GuiSmallButtonMinimap var7 = new GuiSmallButtonMinimap(option.returnEnumOrdinal(), var1 + var2 % 2 * 160, this.height / 6 + 24 * (var2 >> 1), option, text);
 
@@ -93,7 +93,7 @@ public class GuiMinimapPerformance extends GuiScreen
         {
             this.options.setOptionValue(((GuiSmallButtonMinimap)par1GuiButton).returnEnumOptions(), 1);
             String perfBomb = "";
-            if ((par1GuiButton.id == 19 || par1GuiButton.id == 20) && !options.multicore && options.getOptionBooleanValue(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id)))
+            if ((par1GuiButton.id == 19 || par1GuiButton.id == 20 || par1GuiButton.id == 21) && !options.multicore && options.getOptionBooleanValue(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id)))
             	perfBomb = "\u00a7c";
             //System.out.println(par1GuiButton.id + " " + EnumOptionsMinimap.getEnumOptions(par1GuiButton.id).ordinal());
             par1GuiButton.displayString = perfBomb + this.options.getKeyText(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id));

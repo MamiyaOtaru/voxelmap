@@ -33,15 +33,19 @@ public enum EnumOptionsMinimap
 	THREADING("Threading", false, true, false),
 	ZOOM("option.minimapZoom", false, true, false),
 	MOTIONTRACKER("Motion Tracker", false, true, false),
+	LOCATION("Location", false, false, true),
+	SIZE("Size", false, false, true),
+	FILTERING("Filtering", false, true, false),
+	WATERTRANSPARENCY("Water Transparency", false, true, false),
+	BLOCKTRANSPARENCY("Block Transparency", false, true, false),
+	BIOMES("Biomes", false, true, false),
 	HIDERADAR("Hide Radar", false, true, false),
 	SHOWHOSTILES("Show Hostiles", false, true, false),
 	SHOWPLAYERS("Show Players", false, true, false),
-	SHOWNEUTRALS("Show Neutrals", false, true, false), 
-	LOCATION("Location", false, false, true),
-	FILTERING("Filtering", false, true, false),
-	TRANSPARENCY("Transparency", false, true, false),
-	BIOMES("Biomes", false, true, false),
-	SIZE("Size", false, false, true);
+	SHOWNEUTRALS("Show Neutrals", false, true, false),
+	RADARFILTERING("Icon Filtering", false, true, false), 
+	SHOWHELMETS("Show Helmets (MP)", false, true, false); 
+
 
 	
     private final boolean enumFloat;

@@ -232,7 +232,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
     	else {
     		if (par1 >= this.width / 2 -128 && par1 <= this.width / 2 + 128 && par2 >= this.height / 2 - 128 && par2 <= this.height / 2 + 128) { // clicked on the color picker
     			// check if color is chosen.  check x, y, get color of pixel at corresponding spot on color picker image
-    			int color = this.minimap.colorPicker.getRGB(par1 - (this.width / 2 - 128), par2 - (this.height / 2 - 128));
+    			int color = this.minimap.colorManager.colorPicker.getRGB(par1 - (this.width / 2 - 128), par2 - (this.height / 2 - 128));
     			waypoint.red = (float)(color >> 16 & 255)/255;
     			waypoint.green = (float)(color >> 8 & 255)/255;
     			waypoint.blue = (float)(color >> 0 & 255)/255;

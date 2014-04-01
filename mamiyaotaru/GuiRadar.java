@@ -14,7 +14,7 @@ public class GuiRadar extends GuiScreen
     /**
      * An array of options that can be changed directly from the options GUI.
      */
-    private static final EnumOptionsMinimap[] relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.HIDERADAR, EnumOptionsMinimap.SHOWHOSTILES, EnumOptionsMinimap.SHOWPLAYERS, EnumOptionsMinimap.SHOWNEUTRALS};
+    private static final EnumOptionsMinimap[] relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.HIDERADAR, EnumOptionsMinimap.SHOWHOSTILES, EnumOptionsMinimap.SHOWPLAYERS, EnumOptionsMinimap.SHOWNEUTRALS, EnumOptionsMinimap.RADARFILTERING, EnumOptionsMinimap.SHOWHELMETS};
 
     /**
      * A reference to the screen object that created this. Used for navigating between screens.

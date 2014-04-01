@@ -78,6 +78,13 @@ public class GLBufferedImage extends BufferedImage{
 		GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, this.getWidth(), this.getHeight(), 0, GL11.GL_RGBA, GL11.GL_UNSIGNED_BYTE, buffer);
 		//buffer.flip();
 	}
+	
+	public void blank() {
+		for (int t = 0; t < bytes.length; t++) {
+			bytes[t] = 0;
+		}
+		this.write();
+	}
 
 	public void setRGB(int x, int y, int color24) {
 		int index = (x + y * this.getWidth()) * 4;

@@ -63,11 +63,11 @@ public class GuiMinimap extends GuiScreen
             ++var2;
         }
 
-        this.controlList.add(new GuiButton(103, this.width / 2 + 5, this.height / 6 + 120 - 6, 150, 20, "Details/Performance...")); 
-        this.controlList.add(new GuiButton(102, this.width / 2 - 155, this.height / 6 + 120 - 6, 150, 20, stringTranslate.translateKey("options.controls"))); 
-        GuiButton radarOptionsButton = new GuiButton(101, this.width / 2 - 155, this.height / 6 + 144 - 6, 150, 20, "Radar Options...");
+        GuiButton radarOptionsButton = new GuiButton(101, this.width / 2 - 155, this.height / 6 + 120 - 6, 150, 20, "Radar Options...");
         radarOptionsButton.enabled = (this.minimap.radar != null && this.minimap.radarAllowed); // deactivate button if class is missing, or if radar is disabled
         this.controlList.add(radarOptionsButton);
+        this.controlList.add(new GuiButton(103, this.width / 2 + 5, this.height / 6 + 120 - 6, 150, 20, "Details/Performance...")); 
+        this.controlList.add(new GuiButton(102, this.width / 2 - 155, this.height / 6 + 144 - 6, 150, 20, stringTranslate.translateKey("options.controls"))); 
         this.controlList.add(new GuiButton(100, this.width / 2 + 5, this.height / 6 + 144 - 6, 150, 20, "Waypoints...")); 
         this.controlList.add(new GuiButton(200, this.width / 2 - 100, this.height / 6 + 168, stringTranslate.translateKey("menu.returnToGame")));
 

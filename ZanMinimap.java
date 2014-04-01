@@ -56,6 +56,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public Minecraft game; 
 	
 	private World world;
+	
+	/* TODO allow this to be higher */
+	private int worldHeight = 256;
 
 	/*motion tracker, may or may not exist*/
 //	private mod_MotionTracker motionTracker = null;
@@ -66,11 +69,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/* mob overlay */
 	public ZanRadar radar = null;
 	
-	/*whether radar is allowed*/
-	public Boolean radarAllowed = true;
-	
-	/*whether caves is allowed*/
-	public Boolean cavesAllowed = true;
+	public ZanColorManager colorManager = null;
 	
 	/*Stored data for each zoom level*/
 	private MapData[] mapData = new MapData[4];
@@ -84,29 +83,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/* has the image changed - if not we don't need to delete GLtex and allocate a new one */
 	private boolean imageChanged = true;
-	
-	/*color picker used by menu for waypoint color*/
-	public BufferedImage colorPicker;
-	
-	/*map Image, assembled in part from mapimage of texture pack*/
-	public BufferedImage mapImage;
-	
-	/*reference to it so I don't continually allocate it, and can delete it*/
-	private int mapImageInt = -1;
-	
-	/*watercolorX as a buffered image from which we can getRGB*/
-	private BufferedImage waterColorBuff;
 
-	/*Block colour array*/
-	private int[] blockColors = new int[65536]; // 4096 good enough for 256 blocks.  for 4096 blocks need 65536
-	
-	private static int COLOR_NOT_LOADED = 0xffff00ff;
-	
-	private static int COLOR_FAILED_LOAD = 0xffff01ff;
-	
-	/* blocks that are rendered as a cross (from above).  mostly plants.  Also fire.  Keep fire?*/
-	private Integer[] vegetationIDS = {6, 31, 32, 37, 38, 39, 40, 51, 59, 83, 104, 105, 141, 142};
-	
 	/*use internal linear scale or more logarithmic looking minecraft scale*/
 	private boolean useInternalLightTable = false;
 	
@@ -197,7 +174,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private int timer = 0;
 	
 	/*whether we need to do a full render*/
-	private boolean doFullRender = true;
+	public boolean doFullRender = true;
 	
 	/*Last X coordinate rendered*/
 	public int lastX = 0;
@@ -244,17 +221,20 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Name of World currently loaded*/
 	private String worldName = "";
 	
-	/*Current Texture Pack*/
-	private ITexturePack pack = null;
-	
-	private BufferedImage terrainBuff = null;
-	private BufferedImage terrainBuffTrans = null;
-	
     public KeyBinding keyBindZoom = new KeyBinding("Zoom", Keyboard.KEY_Z);
     public KeyBinding keyBindMenu = new KeyBinding("Menu", Keyboard.KEY_M);
     public KeyBinding keyBindWaypoint = new KeyBinding("Waypoint Hotkey", Keyboard.KEY_N);
     public KeyBinding keyBindMobToggle = new KeyBinding("Toggle Mobs", Keyboard.KEY_NONE);
     public KeyBinding[] keyBindings;
+    
+	/*set if we want to cooperate with world downloader mod*/
+	public boolean dlSafe = false;
+	
+	/*whether radar is allowed*/
+	public Boolean radarAllowed = true;
+	
+	/*whether caves is allowed*/
+	public Boolean cavesAllowed = true;
 	
 	/*Hide just the minimap*/
 	public boolean hide = false;
@@ -287,10 +267,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	boolean filtering = true;
 	
 	/*Transparency (water only ATM) toggle */
-	boolean waterTransparency = multicore;
+	public boolean waterTransparency = multicore;
+	
+	/*Transparency (water only ATM) toggle */
+	public boolean blockTransparency = multicore;
 	
 	/*Show biome colors*/
-	boolean biomes = multicore;
+	public boolean biomes = multicore;
 	
 	/*Square map toggle*/
 	public boolean squareMap = false;
@@ -364,6 +347,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		//		if (classExists("ZanRadar")) { // change to mod_ZanRadar if this ever becomes independent and modloader enabled
 			radar = new ZanRadar(this);		
 		//		}
+			
+		colorManager = new ZanColorManager(this);
 
 		this.keyBindings = new KeyBinding[] {this.keyBindZoom, this.keyBindMenu, this.keyBindWaypoint, this.keyBindMobToggle}; 
 
@@ -422,6 +407,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						filtering = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Water Transparency"))
 						waterTransparency = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Block Transparency"))
+						blockTransparency = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Biomes"))
 						biomes = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Square Map"))
@@ -434,6 +421,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						showWaypoints = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Welcome Message"))
 						welcome = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("World Download Compatibility"))
+						dlSafe = Boolean.parseBoolean(curLine[1]);	
 					else if(curLine[0].equals("Map Corner"))
 						mapCorner = Integer.parseInt(curLine[1]);
 					else if(curLine[0].equals("Map Size"))
@@ -457,6 +446,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						radar.showPlayers = Boolean.parseBoolean(curLine[1]);
 					else if((radar != null) && curLine[0].equals("Show Neutrals"))
 						radar.showNeutrals = Boolean.parseBoolean(curLine[1]);
+					else if((radar != null) && curLine[0].equals("Filter Mob Icons"))
+						radar.filtering = Boolean.parseBoolean(curLine[1]);
+					else if((radar != null) && curLine[0].equals("Show Helmets"))
+						radar.showHelmets = Boolean.parseBoolean(curLine[1]);
 				}
 				in.close();
 				doFullRender = true; // fullrender on initial load
@@ -466,9 +459,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			//}
 		} catch (Exception e) {}
 
-		for(int i = 0; i<blockColors.length; i++)
-			blockColors[i] = 0xff00ff;
-		//getDefaultBlockColors();
 		
 		Object renderManager = RenderManager.instance; 
 		if (renderManager == null) {
@@ -582,7 +572,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	public int xCoord() {
-		return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
+		return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX); // TODO defsck this off by one stuff
 	}
 
 	public int zCoord() {
@@ -617,7 +607,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			if(this.threading)
 			{
 				this.active = true;
-				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
+				while(this.enabled && this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
 					if (this.enabled && !this.hide) {
 						try {this.mapCalc(doFullRender);} catch (Exception local) {}
 						this.chunkCache[this.lZoom].drawChunks(oldNorth);
@@ -660,6 +650,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 
 		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMenu.keyCode)) {
+			Keyboard.next();
 			//this.iMenu = 2;
 			//this.game.displayGuiScreen(new GuiScreen());
 			this.iMenu = 0; // close welcome message
@@ -672,6 +663,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 		
 		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindWaypoint.keyCode)) {
+			Keyboard.next();
 			//this.iMenu = 2;
 			//this.game.displayGuiScreen(new GuiScreen());
 			this.iMenu = 0; // close welcome message
@@ -679,7 +671,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				welcome = false;
 				saveAll();
 			}
-			Keyboard.next();
 			float r, g, b;
 			if (this.wayPts.size() == 0) { // green for the first one
 				r = 0;
@@ -704,6 +695,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 		
 		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMobToggle.keyCode)) {
+			Keyboard.next();
 			if (welcome) {
 				welcome = false;
 				saveAll();
@@ -716,6 +708,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 
 		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindZoom.keyCode) && (this.showNether || this.game.thePlayer.dimension!=-1)) {
+			Keyboard.next();
 			if (welcome) {
 				welcome = false;
 				saveAll();
@@ -723,42 +716,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			this.SetZoom();
 		}
 		
-		//ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
-		//int scWidth = scSize.getScaledWidth();
-		//int scHeight = scSize.getScaledHeight();
-		//int scScale = scSize.getScaleFactor(); // do below to ignore gui scale;
-		
-		int scScale = 1;
-        while (game.displayWidth / (scScale + 1) >= 320 && game.displayHeight / (scScale + 1) >= 240)
-        {
-            ++scScale;
-        }
-        scScale = scScale + (this.fullscreenMap?0:sizeModifier); // don't adjust size if fullscreen map
-        
-        double scaledWidthD = (double)game.displayWidth / (double)scScale;
-        double scaledHeightD = (double)game.displayHeight / (double)scScale;
-        int scWidth = MathHelper.ceiling_double_int(scaledWidthD);
-        int scHeight = MathHelper.ceiling_double_int(scaledHeightD);
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glLoadIdentity();
-        GL11.glOrtho(0.0D, scaledWidthD, scaledHeightD, 0.0D, 1000.0D, 3000.0D);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glLoadIdentity();
-        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
-		int yText = 0;
-		if (this.mapCorner == 0 || this.mapCorner == 3)
-			mapX = 37;
-		else
-			mapX = scWidth - 37;
-		if (this.mapCorner == 0 || this.mapCorner == 1) {
-			mapY = 37;
-			yText = mapY + 32 + 4; // 32 being radius of map
-		}
-		else {
-			mapY = scHeight - 37;
-			yText = mapY - (32 + 4 + 9); // 32 radius of map.  4 offset, 5 offset between lines (this is coordinate of top line (x, z) y is rendered below.  If this is on the bottom, need two lines' width more to fit both lines under it (coord is top of where text is rendered)
-		}
-
 		checkForChanges();
 		if(/*deathMarker &&*/ this.game.currentScreen instanceof GuiGameOver && !(this.guiScreen instanceof GuiGameOver)) {
 			//tamis doid
@@ -828,6 +785,42 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 		
 		if (this.enabled) {
+			//ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
+			//int scWidth = scSize.getScaledWidth();
+			//int scHeight = scSize.getScaledHeight();
+			//int scScale = scSize.getScaleFactor(); // do below to ignore gui scale;
+			int scScale = 1;
+	        while (game.displayWidth / (scScale + 1) >= 320 && game.displayHeight / (scScale + 1) >= 240)
+	        {
+	            ++scScale;
+	        }
+	        scScale = scScale + (this.fullscreenMap?0:sizeModifier); // don't adjust size if fullscreen map
+	        
+	        double scaledWidthD = (double)game.displayWidth / (double)scScale;
+	        double scaledHeightD = (double)game.displayHeight / (double)scScale;
+	        int scWidth = MathHelper.ceiling_double_int(scaledWidthD);
+	        int scHeight = MathHelper.ceiling_double_int(scaledHeightD);
+	        GL11.glMatrixMode(GL11.GL_PROJECTION);
+	        GL11.glPushMatrix();
+	        GL11.glLoadIdentity();
+	        GL11.glOrtho(0.0D, scaledWidthD, scaledHeightD, 0.0D, 1000.0D, 3000.0D);
+	        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+	        GL11.glPushMatrix();
+	        GL11.glLoadIdentity();
+	        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+			int yText = 0;
+			if (this.mapCorner == 0 || this.mapCorner == 3)
+				mapX = 37;
+			else
+				mapX = scWidth - 37;
+			if (this.mapCorner == 0 || this.mapCorner == 1) {
+				mapY = 37;
+				yText = mapY + 32 + 4; // 32 being radius of map
+			}
+			else {
+				mapY = scHeight - 37;
+				yText = mapY - (32 + 4 + 9); // 32 radius of map.  4 offset, 5 offset between lines (this is coordinate of top line (x, z) y is rendered below.  If this is on the bottom, need two lines' width more to fit both lines under it (coord is top of where text is rendered)
+			}
 			
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
 			GL11.glEnable(GL11.GL_BLEND);
@@ -835,15 +828,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);//GL11.GL_ONE_MINUS_SRC_ALPHA);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 			float multi = 2f/(float)Math.pow(2, this.lZoom);
-			percentX = (float)this.xCoordDouble()-lastX;
+			//percentX = (float)this.xCoordDouble()-lastX;
+			percentX = (float)lastXDouble-lastX;
 			if (lastX < 0)
 				percentX = percentX + 1f;
 			percentX = percentX * multi;
-			percentY = (float)this.zCoordDouble()-lastZ;
+			//percentY = (float)this.zCoordDouble()-lastZ;
+			percentY = (float)lastZDouble-lastZ;
 			if (lastZ < 0)
-				percentY = percentY + 1;
+				percentY = percentY + 1f;
 			percentY = percentY * multi;
-			if (this.showNether || this.game.thePlayer.dimension!=-1) {
+			if ((this.showNether || this.game.thePlayer.dimension!=-1) && !this.hide) {
 				if(this.fullscreenMap) 
 					renderMapFull(scWidth,scHeight);
 				else 
@@ -855,20 +850,30 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 			if (this.iMenu>0) showMenu(scWidth, scHeight);
 
+			if (this.showNether || this.game.thePlayer.dimension!=-1) {
+				if (radar != null && this.radarAllowed && !this.hide  && !this.fullscreenMap)  
+					radar.OnTickInGame(mc);
+				if(coords) {
+					showCoords(mapX, yText);
+				}
+				if (squareMap && !this.hide) {
+					if (this.fullscreenMap)
+						drawArrow(scWidth/2, scHeight/2);
+					else
+						drawArrow(mapX, mapY);
+				}
+			}
 			GL11.glDepthMask(true);
 			GL11.glDisable(GL11.GL_BLEND);
 			GL11.glEnable(GL11.GL_DEPTH_TEST);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-
-			if (this.showNether || this.game.thePlayer.dimension!=-1) {
-				if(coords) {
-					showCoords(mapX, yText);
-				}
-				//if (radar != null && this.radarAllowed) // moved to middle of drawing map so arrow shows on top of mobs.  need to know which way I am facing in squaremap mode!
-				//	radar.OnTickInGame(mc);
-			}
+	        this.game.entityRenderer.setupOverlayRendering(); // set viewport back to GuiScale heeding version
+			// or just pop matrix instead
+	        GL11.glMatrixMode(GL11.GL_PROJECTION);
+	        GL11.glPopMatrix();
+	        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+	        GL11.glPopMatrix();
 		}
-        this.game.entityRenderer.setupOverlayRendering(); // set viewport back to GuiScale heeding version
 
         timer = (timer > 5000)?0:timer++;
 		if (this.timer == 5000 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
@@ -909,7 +914,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
             }
         }
 */
-		//this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(), -88, 64, 275));
 	}
 
 	private void checkForChanges() {
@@ -993,26 +997,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			this.chunkCache[this.lZoom].fillAllChunks(this.xCoord(), this.zCoord());
 		}
 		
-		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
+		if (colorManager.checkForChanges()) {
 			changed = true;
-			pack = game.texturePackList.getSelectedTexturePack();
-			loadColorPicker();
-			loadMapImage();
-			try {
-			//	new Thread(new Runnable() { // load in a thread so we aren't blocking, particularly for giant texture packs
-			//		public void run() {
-						loadTexturePackColors();
-						if (radar != null) {
-							radar.setTexturePack(pack);
-							radar.loadTexturePackIcons();
-						}
-
-			//		}
-			//	}).start();
-			}
-			catch (Exception e) {
-				//System.out.println("texture pack not ready yet");
-			}
 		}
 		
 		if (changed) {
@@ -1098,15 +1084,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			}
 			doFullRender = true;
 		}
-
+		this.map[this.zoom].blank();
 		this.inputFudge = 20;
 	}
 	
 	private void checkIfChunksChanged() {
-		//zoom 4 = 32 across
-		//zoom 2 = 64
-		//zoom 1 = 128
-		//zoom .5 = 256
 		//final long startTime = System.nanoTime();
 		this.chunkCache[this.lZoom].checkIfChunksChanged(this.xCoord(), this.zCoord());
 		//System.out.println(System.nanoTime()-startTime);
@@ -1295,8 +1277,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private int getPixelColor(boolean needHeight, boolean needMaterial, boolean needTint, boolean needLight, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY) {
 		int color24 = 0;
 		int height = 0;
+		boolean blockChangeForcedTint = false;
 		boolean solid = false;
-		needMaterial = true;
 		if (needHeight) {
 			height = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
 			mapData[this.lZoom].setHeight(imageX, imageY, height); 
@@ -1314,7 +1296,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockID = world.getBlockId(startX + imageX, height - 1, startZ + imageY);
 			metadata = world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY);
 			if (biomes && blockID != mapData[this.lZoom].getMaterial(imageX, imageY))
-				needTint = true;
+				blockChangeForcedTint = true;
 			mapData[this.lZoom].setMaterial(imageX, imageY, blockID);
 			mapData[this.lZoom].setMetadata(imageX, imageY, metadata);
 		}
@@ -1322,46 +1304,48 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockID = mapData[this.lZoom].getMaterial(imageX, imageY);
 			metadata = mapData[this.lZoom].getMetadata(imageX, imageY);
 		}
+		if (blockID == 11)
+			solid = false;
 		if (this.rc) {
 			if ((world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-				color24 = getBlockColor(80,0,false); // snow
+				color24 = colorManager.getBlockColor(80,0,false); // snow
 			else {
-				color24 = getBlockColor(blockID, metadata, false);
+				color24 = colorManager.getBlockColor(blockID, metadata, false);
 			}
 		} 
 		else 
 			color24 = 0xFFFFFFFF;
-		
-		if (color24 == this.COLOR_FAILED_LOAD)
+
+		if (color24 == colorManager.COLOR_FAILED_LOAD)
 			color24 = 0;
-		
+
 		if (biomes && blockID != -1) {
 			int tint = -1;
-			if (needTint) {
-				if (color24 != getBlockColor(80,0,false))
-					tint = getBiomeTint(blockID, metadata, startX + imageX, startZ + imageY);
+			if (needTint || blockChangeForcedTint) {
+				if (color24 != colorManager.getBlockColor(80,0,false))
+					tint = getBiomeTint(blockID, metadata, startX + imageX, height - 1, startZ + imageY);
 				mapData[this.lZoom].setBiomeTint(imageX, imageY, tint);
 			}
 			else
 				tint = mapData[this.lZoom].getBiomeTint(imageX, imageY);
 			if (tint != -1)
-				color24 = colorMultiplier(color24, tint);
+				color24 = colorManager.colorMultiplier(color24, tint);
 		}
 
-		color24 = applyHeight(color24, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, height, solid);
+		color24 = applyHeight(color24, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, height, solid, 1);
 		int light = 255;
 		if (needLight) {
-			light = getLight(color24, nether, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, height, solid);
+			light = getLight(color24, nether, caves, world, skylightsubtract, multi, startX + imageX, startZ + imageY, height, solid);
 			mapData[this.lZoom].setLight(imageX, imageY, light);	
-			}
+		}
 		else {
 			light = mapData[this.lZoom].getLight(imageX, imageY);
 		}
 		if (light != 255) {
-	    	int alpha = (color24 >> 24 & 255);
-	        int r = (color24 >> 16 & 255);
-	        int g = (color24 >> 8 & 255);
-	        int b = (color24 >> 0 & 255);
+			int alpha = (color24 >> 24 & 255);
+			int r = (color24 >> 16 & 255);
+			int g = (color24 >> 8 & 255);
+			int b = (color24 >> 0 & 255);
 			r=r*light/255;
 			g=g*light/255;
 			b=b*light/255;
@@ -1371,19 +1355,18 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (waterTransparency && world.getBlockMaterial(startX + imageX, height - 1, startZ + imageY) == Material.water) { // fuuu get color from seafloor
 			int seafloorHeight;
 			if (needHeight) {
-				seafloorHeight = height - 1; // start one down obviously don't check if it's water again
-				//while (!world.isBlockOpaqueCube(startX + imageX, seafloorHeight-1, startZ + imageY) && seafloorHeight > 1) // misses half slabs
-				while (Block.lightOpacity[world.getBlockId(startX + imageX, seafloorHeight-1, startZ + imageY)] < 5 && seafloorHeight > 1) 
-					seafloorHeight-=1;
+				seafloorHeight = getSeafloorHeight(world, startX + imageX, startZ + imageY, height);
 				mapData[this.lZoom].setOceanFloorHeight(imageX, imageY, seafloorHeight); 
 			}
 			else 
 				seafloorHeight = mapData[this.lZoom].getOceanFloorHeight(imageX, imageY);
-			
+
 			int seafloorColor = 0;
 			if (needMaterial) {
 				blockID = world.getBlockId(startX + imageX, seafloorHeight - 1, startZ + imageY);
 				metadata = world.getBlockMetadata(startX + imageX, seafloorHeight - 1, startZ + imageY);
+				if (biomes && blockID != mapData[this.lZoom].getOceanFloorMaterial(imageX, imageY))
+					blockChangeForcedTint = true;
 				mapData[this.lZoom].setOceanFloorMaterial(imageX, imageY, blockID);
 				mapData[this.lZoom].setOceanFloorMetadata(imageX, imageY, metadata);
 			}
@@ -1392,59 +1375,103 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				metadata = mapData[this.lZoom].getOceanFloorMetadata(imageX, imageY);
 			}
 			if (this.rc) {
-				seafloorColor = getBlockColor(blockID, metadata, false);
+				seafloorColor = colorManager.getBlockColor(blockID, metadata, false);
 			} else seafloorColor = 0xFFFFFF;
+			if (biomes && blockID != -1) {
+				int tint = -1;
+				if (needTint || blockChangeForcedTint) {
+					if (seafloorColor != colorManager.getBlockColor(80,0,false))
+						tint = getBiomeTint(blockID, metadata, startX + imageX, seafloorHeight - 1, startZ + imageY);
+					mapData[this.lZoom].setOceanFloorBiomeTint(imageX, imageY, tint);
+				}
+				else
+					tint = mapData[this.lZoom].getOceanFloorBiomeTint(imageX, imageY);
+				if (tint != -1)
+					seafloorColor = colorManager.colorMultiplier(seafloorColor, tint);
+			}
 			//System.out.println(color24 + " - " + seafloorColor);
-			seafloorColor = applyHeight(seafloorColor, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
+			seafloorColor = applyHeight(seafloorColor, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, seafloorHeight, solid, 0);
 			int seafloorLight = 255;
 			if (needLight) {
-				seafloorLight = getLight(seafloorColor, nether, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
+				seafloorLight = getLight(seafloorColor, nether, caves, world, skylightsubtract, multi, startX + imageX, startZ + imageY, seafloorHeight, solid);
 				mapData[this.lZoom].setOceanFloorLight(imageX, imageY, seafloorLight);
 			}
 			else {
 				seafloorLight = mapData[this.lZoom].getOceanFloorLight(imageX, imageY);
 			}
 			if (seafloorLight != 255) {
-		    	int alpha = (seafloorColor >> 24 & 255);
-		        int r = (seafloorColor >> 16 & 255);
-		        int g = (seafloorColor >> 8 & 255);
-		        int b = (seafloorColor >> 0 & 255);
+				int alpha = (seafloorColor >> 24 & 255);
+				int r = (seafloorColor >> 16 & 255);
+				int g = (seafloorColor >> 8 & 255);
+				int b = (seafloorColor >> 0 & 255);
 				r=r*seafloorLight/255;
 				g=g*seafloorLight/255;
 				b=b*seafloorLight/255;
 				seafloorColor = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
 			}
-			color24 = colorAdder(color24, seafloorColor);
+			color24 = colorManager.colorAdder(color24, seafloorColor);
 		}
-		
-		if (true /*blockTransparency*/) {
-			int transparentID = 0;
-			int transparentMetadata = 0;
-			Material material = world.getBlockMaterial(startX + imageX, height, startZ + imageY);
-			if (material != Material.snow && material != Material.air) { // apply colors
-				transparentID = world.getBlockId(startX + imageX, height, startZ + imageY);
-				transparentMetadata = world.getBlockMetadata(startX + imageX, height, startZ + imageY);
-				//if (Arrays.asList(vegetationIDS).contains(transparentID)) { // this is a plant
-					int color = getBlockColor(transparentID, transparentMetadata, true);
-					if (transparentID == 31) {
-						int tint = mapData[this.lZoom].getBiomeTint(imageX, imageY);
-						color = colorMultiplier(color, tint);
+
+		if (blockTransparency) {
+			int transparentHeight = -1;
+			if (needHeight) {
+				transparentHeight = getTransparentHeight(nether, netherPlayerInOpen, caves, world, startX + imageX, startZ + imageY, height); 
+				mapData[this.lZoom].setTransparentHeight(imageX, imageY, transparentHeight); 
+			}
+			else 
+				transparentHeight = mapData[this.lZoom].getTransparentHeight(imageX, imageY);
+			if (needMaterial) {
+				if (transparentHeight != -1 && transparentHeight != height) { // apply colors
+					blockID = world.getBlockId(startX + imageX, transparentHeight-1, startZ + imageY);
+					metadata = world.getBlockMetadata(startX + imageX, transparentHeight-1, startZ + imageY);
+				}
+				else {
+					blockID = 0;
+					metadata = 0;
+				}
+				if (biomes && blockID != mapData[this.lZoom].getTransparentMaterial(imageX, imageY))
+					blockChangeForcedTint = true;
+				mapData[this.lZoom].setTransparentMaterial(imageX, imageY, blockID);
+				mapData[this.lZoom].setTransparentMetadata(imageX, imageY, metadata);
+			}
+			else {
+				blockID = mapData[this.lZoom].getTransparentMaterial(imageX, imageY);
+				metadata = mapData[this.lZoom].getTransparentMetadata(imageX, imageY);
+			}
+			if (blockID != 0) {
+				int transparentColor = colorManager.getBlockColor(blockID, metadata, true);
+				if (biomes) {
+					int tint = -1;
+					if (needTint || blockChangeForcedTint) {
+						tint = getBiomeTint(blockID, metadata, startX + imageX, height, startZ + imageY);
+						mapData[this.lZoom].setTransparentBiomeTint(imageX, imageY, tint);
 					}
-					color = applyHeight(color, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, height, solid);
-					if (light != 255) {
-				    	int alpha = (color >> 24 & 255);
-				        int r = (color >> 16 & 255);
-				        int g = (color >> 8 & 255);
-				        int b = (color >> 0 & 255);
-						r=r*light/255;
-						g=g*light/255;
-						b=b*light/255;
-						color = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
-					}
-					
-					color24 = colorAdder(color, color24);
-					
-				//}
+					else
+						tint = mapData[this.lZoom].getTransparentBiomeTint(imageX, imageY);
+					if (tint != -1)
+						transparentColor = colorManager.colorMultiplier(transparentColor, tint);
+				}
+				transparentColor = applyHeight(transparentColor, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, transparentHeight, solid, 2);
+				int transparentLight = 255;
+				if (needLight) {
+					transparentLight = getLight(transparentColor, nether, caves, world, skylightsubtract, multi, startX + imageX, startZ + imageY, transparentHeight, solid);
+					mapData[this.lZoom].setTransparentLight(imageX, imageY, transparentLight);
+				}
+				else {
+					transparentLight = mapData[this.lZoom].getTransparentLight(imageX, imageY);
+				}
+				if (transparentLight != 255) {
+					int alpha = (transparentColor >> 24 & 255);
+					int r = (transparentColor >> 16 & 255);
+					int g = (transparentColor >> 8 & 255);
+					int b = (transparentColor >> 0 & 255);
+					r=r*transparentLight/255;
+					g=g*transparentLight/255;
+					b=b*transparentLight/255;
+					transparentColor = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
+				}
+
+				color24 = colorManager.colorAdder(transparentColor, color24);
 			}
 		}
 		/* transparency of plants etc
@@ -1467,21 +1494,32 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		 * 
 		 * 
 		 */
+		//color24 = colorManager.colorMultiplier(color24, world.getBiomeGenForCoords(startX + imageX, startZ + imageY).color) | 0xFF000000;
+		/*int bc = world.getBiomeGenForCoords(startX + imageX, startZ + imageY).color;
+    	int topAlpha = (int)((bc >> 24 & 255)) / 2;// * waterAlpha/256);
+        int red1 = (int)((bc >> 16 & 255));
+        int green1 = (int)((bc >> 8 & 255));
+        int blue1 = (int)((bc >> 0 & 255));
+        bc = 127 << 24 | (red1 & 255) << 16 | (green1 & 255) << 8 | blue1 & 255;
+		color24 = colorManager.colorAdder(bc, color24);
+		 */
 		return color24;
 	}
 	
-	private int getBiomeTint(int material, int metadata, int x, int z) {
+	private int getBiomeTint(int material, int metadata, int x, int y, int z) {
 		int tint = -1;
-        if (material == 2 && (metadata & 3) == 1)
+    /*    if (material == 2 && (metadata & 3) == 1)
         {
             tint = ColorizerFoliage.getFoliageColorPine();
         }
         else if (material == 2 && (metadata & 3) == 2)
         {
             tint = ColorizerFoliage.getFoliageColorBirch();
-        }
-		if (material == 2 || material == 18 || material ==8 || material == 9) {
-	        int r = 0;
+        }*/
+		if (material == 2 || material == 8 || material == 9 || material == 18 || material == 31 || material == 106 || this.colorManager.biomeTintsAvailable.contains(material)) {
+			tint = Block.blocksList[material].colorMultiplier(world, x, y, z) | 0xFF000000;
+			// below does the same.  hahaha
+/*	        int r = 0;
 	        int g = 0;
 	        int b = 0;
 
@@ -1516,78 +1554,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	        }
 
 	        tint = 255 << 24 | (r / 9 & 255) << 16 | (g / 9 & 255) << 8 | b / 9 & 255;
+			*/
 		}
 		return tint;
 	}
-	
-    private int colorAdder(int color1, int color2)
-    {
-    	int waterAlpha = (int)((color1 >> 24 & 255));// * waterAlpha/256);
-        int red1 = (int)((color1 >> 16 & 255) * waterAlpha/255);
-        int green1 = (int)((color1 >> 8 & 255) * waterAlpha/255);
-        int blue1 = (int)((color1 >> 0 & 255) * waterAlpha/255);
-
-        int red2 = (int)((color2 >> 16 & 255)* (255-waterAlpha)/255);
-        int green2 = (int)((color2 >> 8 & 255)* (255-waterAlpha)/255);
-        int blue2 = (int)((color2 >> 0 & 255)* (255-waterAlpha)/255);
-        
-        int red = red1 + red2;// / 2;
-        int green = green1 + green2;// / 2;
-        int blue = blue1 + blue2;// / 2;
-       
-        return 255 << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
-       // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
-       // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
-       // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
-        
-        /*// lighting in alpha
-    	int alpha1 = 0;
-    	int alpha2 = 0;
-    	if ((color1 >> 24 & 255) > (color2 >> 24 & 255)) {
-    		alpha1 = waterAlpha;
-    		alpha2 = (int)((float)(color2 >> 24 & 255) / (color1 >> 24 & 255) * (255-waterAlpha));
-    	}
-    	else { 
-    		alpha2 = (255-waterAlpha);
-    		alpha1 = (int)((float)(color1 >> 24 & 255) / (color2 >> 24 & 255) * waterAlpha);
-    	}
-        
-        int red1 = (int)((color1 >> 16 & 255) * alpha1/255);
-        int green1 = (int)((color1 >> 8 & 255) * alpha1/255);
-        int blue1 = (int)((color1 >> 0 & 255) * alpha1/255);
-
-        int red2 = (int)((color2 >> 16 & 255)* alpha2/255);
-        int green2 = (int)((color2 >> 8 & 255)* alpha2/255);
-        int blue2 = (int)((color2 >> 0 & 255)* alpha2/255);
-
-        int alpha = Math.max(0, Math.min(255, Math.max((color1 >> 24 & 255), (color2 >> 24 & 255))));
-        int red = Math.max(0, Math.min(255, (red1 + red2)));
-        int green = Math.max(0, Math.min(255, (green1 + green2)));
-        int blue = Math.max(0, Math.min(255, (blue1 + blue2)));
-
-        return (alpha) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
-        */
-    }
-    /*
-     * adder for when light is stored directly in colors instead of in alpha
-     */
-    /*
-    private int colorAdder(int color1, int color2)
-    {
-        int red1 = (int)((color1 >> 16 & 255) * waterAlpha/256);
-        int green1 = (int)((color1 >> 8 & 255) * waterAlpha/256);
-        int blue1 = (int)((color1 >> 0 & 255) * waterAlpha/256);
-
-        int red2 = (int)((color2 >> 16 & 255)* (255-waterAlpha)/256);
-        int green2 = (int)((color2 >> 8 & 255)* (255-waterAlpha)/256);
-        int blue2 = (int)((color2 >> 0 & 255)* (255-waterAlpha)/256);
-        
-        int red = red1 + red2;
-        int green = green1 + green2;
-        int blue = blue1 + blue2;
-       
-        return 255 << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
-    }*/
 
 	private final int getBlockHeight(boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int x, int z, int starty) 
 	{
@@ -1595,18 +1565,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		//int height = world.getChunkFromBlockCoords(x, z).getHeightValue(x & 0xf, z & 0xf); // replicate old way
 		//int height = data.getHeightValue(x, z); // new method in world that easily replicates old way
 		int height = world.getHeightValue(x, z);
-		// below is because we can't trust the heightmap.  Random chunks are frequently a block too low or high
+		// below is because we can't trust the heightmap.  see my bugreport
 		int heightCheck = (((height >> 4) + 1 ) * 16 - 1);
-		while (heightCheck < 256) {
+		while (heightCheck < 256) {	
 			if (Block.lightOpacity[world.getBlockId(x, heightCheck, z)] > 0)
 				height = heightCheck + 1;
 			heightCheck=heightCheck+16;
 		}
-//		while (height < 255 && Block.lightOpacity[world.getBlockId(x, height, z)] > 0)
-//			height++;
-//		while (height > 0 && Block.lightOpacity[world.getBlockId(x, height-1, z)] == 0) 
-//			height--;
-
 		if ((!nether && !caves) || height < starty || (nether && starty > 125 && (!showCaves || netherPlayerInOpen))) {  // do overworld style mapping for a pixel when nothing is above our height at that location, or when a nether player is above the bedrock and uncovered or showCaves is turned off  
 			return height;
 		}
@@ -1633,17 +1598,67 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 	}
 	
-	private int applyHeight(int color24, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid) {
-		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
+	private final int getSeafloorHeight(World world, int x, int z, int height) 
+	{
+		int seafloorHeight = height;
+		int id = world.getBlockId(x, seafloorHeight-1, z);
+		while (Block.lightOpacity[id] < 5 && id != Block.leaves.blockID && seafloorHeight > 1) { // could check that not water and not glass I guess
+			seafloorHeight-=1;
+			id = world.getBlockId(x, seafloorHeight-1, z);
+		}
+		return seafloorHeight;
+	}
+	
+	private final int getTransparentHeight(boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int x, int z, int height) 
+	{	
+		int transHeight = world.getPrecipitationHeight(x, z); // catches fences etc up in the air
+		if (transHeight == height) // if there is nothing up in the air, check one block above the ground for stuff like plants, redstone etc that doesn't affect precipitation height but should still show up
+			transHeight = height+1; 
+		if ((caves || nether) && (!nether || height <= 125 || (showCaves && !netherPlayerInOpen))) // if we are in a cave or nether (below 126 or showcaves is on and we are covered), can't use precip map, just check one above
+			transHeight = height+1;
+		Material material = world.getBlockMaterial(x, transHeight-1, z);
+		if (material == Material.snow || material == Material.air) 
+			transHeight = -1;
+		return transHeight;
+	}
+	
+	private int applyHeight(int color24, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid, int layer) {
+		if ((color24 != colorManager.blockColors[0]) && (color24 != 0)) {
 			int heightComp = 0;
 			if ((heightmap || slopemap) && !solid) {
 				int diff=0;
 				double sc = 0;
 				if (slopemap) {
-					if (((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi -1) // old north reverses X- to X+
-						heightComp = mapData[this.lZoom].getHeight(imageX-((oldNorth)?-1:1), imageY+1); // on full run, get stored height for neighboring pixels (if it exists)
-					else
-						heightComp = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, lastY);
+					if (((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi -1) {// old north reverses X- to X+
+						if (layer == 0)
+							heightComp = mapData[this.lZoom].getOceanFloorHeight(imageX-((oldNorth)?-1:1), imageY+1); // on full run, get stored height for neighboring pixels (if it exists)
+						if (layer == 1)
+							heightComp = mapData[this.lZoom].getHeight(imageX-((oldNorth)?-1:1), imageY+1); // on full run, get stored height for neighboring pixels (if it exists)
+						if (layer == 2) {
+							heightComp = mapData[this.lZoom].getTransparentHeight(imageX-((oldNorth)?-1:1), imageY+1); // on full run, get stored height for neighboring pixels (if it exists)
+							if (heightComp == -1) { // glass compares with non transparent materials
+								if (mapData[this.lZoom].getTransparentMaterial(imageX, imageY) == Block.glass.blockID)
+									heightComp = mapData[this.lZoom].getHeight(imageX-((oldNorth)?-1:1), imageY+1);
+							}
+						}
+					}
+					else {
+						if (layer == 0) {
+							int baseHeight = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, lastY);
+							heightComp = getSeafloorHeight(world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, baseHeight);
+						}
+						if (layer == 1) {
+							heightComp = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, lastY);
+						}
+						if (layer == 2) {
+							int baseHeight = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, lastY);
+							heightComp = getTransparentHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, baseHeight);
+							if (heightComp == -1) { // glass compares with non transparent materials
+								if (world.getBlockId(startX + imageX, height-1, startZ+imageY) == Block.glass.blockID) 
+									heightComp = baseHeight;
+							}
+						}
+					}
 					if (heightComp == -1) // if compared area is solid, don't bump the stuff next to it
 						heightComp = height;
 					diff = heightComp-height;
@@ -1692,26 +1707,25 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		return color24;
 	}
 
-	private int getLight(int color24, boolean nether, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid) {
+	private int getLight(int color24, boolean nether, boolean caves, World world, int skylightsubtract, int multi, int x, int z, int height, boolean solid) {
 		int i3 = 255;
-		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
+		if ((color24 != this.colorManager.blockColors[0]) && (color24 != 0)) {
 
-			if (this.lightmap) {
+			if (this.lightmap && !solid) {
 				//i3 = world.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
 				//i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract)* 17;
-				i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract);
-				if (!solid) {// don't let gamma lighten solid walls
-					if (useInternalLightTable) { // using our own.  Ours is affected by changes to theirs, but is linear
-						i3 = (int)(internalLightBrightnessTable[i3] * 17);
-					}
-					else { // using game's brightness table
-						i3 = (int)((world.provider.lightBrightnessTable[i3] + .125f * (1-world.provider.lightBrightnessTable[i3])) * 255);
-					}
-					i3=i3+(int)(this.game.gameSettings.gammaSetting*.4f*(255-i3));
+				i3 = calcLightSMPtoo(world, x, height, z, skylightsubtract);
+				if (useInternalLightTable) { // using our own.  Ours is affected by changes to theirs, but is linear
+					i3 = (int)(internalLightBrightnessTable[i3] * 17);
 				}
-			}
-			/*else*/ if (solid) 
-				i3 = 27; // needs to be at least 26 if storing light in the alpha channel
+				else { // using game's brightness table
+					i3 = (int)((world.provider.lightBrightnessTable[i3] + .125f * (1-world.provider.lightBrightnessTable[i3])) * 255);
+				}
+				i3=i3+(int)(this.game.gameSettings.gammaSetting*.4f*(255-i3));
+
+			} // TODO see if fullbright brightens up *completely* dark areas.  If not, can just stick the in game gamma adjustment in if (not solid)
+			if (solid) 
+				i3 = 0; // needs to be at least 26 if storing light in the alpha channel
 
 			if(i3 > 255) i3 = 255;
 
@@ -1756,6 +1770,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private int calcLightSMPtoo(World world, int x, int y, int z, int skylightsubtract) {
+		if (y >= this.worldHeight)
+			return 15; // brightest
 		// call calculate since the World's skylightsubtract isn't set every tick (WorldServer's is)
 		// int skylightsubtract = getWorld().calculateSkylightSubtracted(1.0F);
 		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
@@ -1765,583 +1781,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	//END UPDATE SECTION
-	
-	// colors, loading thereof
-
-	private final int blockColorID(int blockid, int meta) {
-		return (blockid) | (meta << 12);  //  8 is good enough for 256 blocks.  for 4096 blocks need to shift 12
-	}
-
-	private final int getBlockColor(int blockid, int meta, boolean transparency) {
-		try {
-			if (blockColors[blockColorID(blockid, meta)] == COLOR_NOT_LOADED)
-				if (transparency)
-					blockColors[blockColorID(blockid, meta)] = getColor(terrainBuffTrans, blockid, meta, true);
-				else
-					blockColors[blockColorID(blockid, meta)] = getColor(terrainBuff, blockid, meta);			
-			int col = blockColors[blockColorID(blockid, meta)];
-			if (col != COLOR_FAILED_LOAD) 
-				return col;
-			if (blockColors[blockColorID(blockid, 0)] == COLOR_NOT_LOADED) {
-				if (transparency)
-					blockColors[blockColorID(blockid, 0)] = getColor(terrainBuffTrans, blockid, 0, true);
-				else
-					blockColors[blockColorID(blockid, 0)] = getColor(terrainBuff, blockid, 0);
-			}
-			col = blockColors[blockColorID(blockid, 0)];
-			if (col != COLOR_FAILED_LOAD) 
-				return col;
-			col = blockColors[0];
-			if (col != COLOR_FAILED_LOAD) 
-				return col;
-		}
-		catch (ArrayIndexOutOfBoundsException e) {
-			//			System.err.println("BlockID: " + blockid + " - Meta: " + meta);
-			throw e;
-		}
-		//		System.err.println("Unable to find a block color for blockid: " + blockid + " blockmeta: " + meta);
-		return COLOR_FAILED_LOAD;
-	}
-	
-	// get texture pack data, includes CTM stuff
-	
-	private void loadColorPicker() {
-		try {
-			InputStream is = pack.getResourceAsStream("/mamiyaotaru/colorPicker.png");
-			java.awt.Image picker = ImageIO.read(is);
-			is.close();
-			colorPicker = new BufferedImage(picker.getWidth(null), picker.getHeight(null), BufferedImage.TYPE_INT_ARGB);
-			java.awt.Graphics gfx = colorPicker.createGraphics();
-			// Paint the image onto the buffered image
-			gfx.drawImage(picker, 0, 0, null);
-			gfx.dispose();
-		}
-		catch (Exception e) {
-			System.out.println(e);
-		}
-	}
-	
-	private void loadMapImage() {
-		if (this.mapImageInt != -1)
-			this.glah(mapImageInt);
-		try {
-			InputStream is = pack.getResourceAsStream("/misc/mapbg.png");
-			java.awt.Image tpMap = ImageIO.read(is);
-			is.close();
-			mapImage = new BufferedImage(tpMap.getWidth(null), tpMap.getHeight(null), BufferedImage.TYPE_INT_ARGB);
-			java.awt.Graphics2D gfx = mapImage.createGraphics();
-			gfx.setColor(Color.DARK_GRAY);
-			gfx.fillRect(0, 0, mapImage.getWidth(), mapImage.getHeight());
-			// Paint the image onto the buffered image
-			gfx.drawImage(tpMap, 0, 0, null);
-			int border;
-			//if (mapImage.getWidth() > 64) // bleed through with filtering fuuuu
-			//	border = mapImage.getWidth()*7/128;
-			//else
-				border = mapImage.getWidth()*8/128;
-			gfx.setComposite(AlphaComposite.Clear);
-			gfx.fillRect(border, border, mapImage.getWidth()-border*2, mapImage.getHeight()-border*2);
-			gfx.dispose();
-			this.mapImageInt = this.tex(mapImage);
-		}
-		catch (Exception e) {
-			System.out.println(e);
-		}
-	}
-	
-	private void loadTexturePackColors() {
-		try {
-			for(int i = 0; i<blockColors.length; i++)
-				blockColors[i] = COLOR_NOT_LOADED;
-			Icon icon = Block.blocksList[155].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
-			Texture texture = ((TextureStitched)icon).field_94228_a;
-
-			// gives name (minus /textures/blocks and .png) of the image used for this block/face/metadata
-			// can use to load block color.  Either all at once, or whenever we encounter a new block (or both)
-			//System.out.println(icon.func_94215_i()); 
-			//System.out.println(((TextureStitched)icon).func_94211_a() /*x*/ + " " + ((TextureStitched)icon).func_94216_b() + " " + ((TextureStitched)icon).func_94212_f() + " " + ((TextureStitched)icon).func_94210_h());
-			//icon = Block.blocksList[153].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
-			//System.out.println(icon.func_94215_i());
-			//System.out.println(((TextureStitched)icon).func_94211_a() /*x*/ + " " + ((TextureStitched)icon).func_94216_b() + " " + ((TextureStitched)icon).func_94212_f() + " " + ((TextureStitched)icon).func_94210_h());
-			
-			//Texture texture = ((TextureStitched)icon).field_94228_a;
-			//ByteBuffer buffer = texture.func_94273_h();
-			//GLBufferedImage bi = new GLBufferedImage(texture.func_94275_d(), texture.func_94276_e(), BufferedImage.TYPE_4BYTE_ABGR);
-			//bi.setBuffer(buffer);
-			
-
-		    // Read from a file
-		    //File file = new File("image.gif");
-		    //image = ImageIO.read(file);
-
-		    // Read from an input stream
-		    //InputStream is = new BufferedInputStream(
-		    //    new FileInputStream("image.gif"));
-		    //image = ImageIO.read(is);
-
-		    // Read from a URL
-		    //URL url = new URL("http://hostname.com/image.gif");
-		    //image = ImageIO.read(url);
-		
-			//File file = new File("c:/terrain.png");
-			//java.awt.Image terrain = ImageIO.read(file);
-			//InputStream is = pack.getResourceAsStream("/terrain.png");
-			//java.awt.Image terrain = ImageIO.read(is);
-			//is.close();
-			//terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
-			
-	        BufferedImage terrainStitched = new BufferedImage(texture.func_94275_d(), texture.func_94276_e(), BufferedImage.TYPE_4BYTE_ABGR);
-	        ByteBuffer var3 = texture.func_94273_h();
-	        byte[] var4 = new byte[texture.func_94275_d() * texture.func_94276_e() * 4];
-	        var3.position(0);
-	        var3.get(var4);
-
-	        for (int var5 = 0; var5 < texture.func_94275_d(); ++var5)
-	        {
-	            for (int var6 = 0; var6 < texture.func_94276_e(); ++var6)
-	            {
-	                int var7 = var6 * texture.func_94275_d() * 4 + var5 * 4;
-	                byte var8 = 0;
-	                int var10 = var8 | (var4[var7 + 2] & 255) << 0;
-	                var10 |= (var4[var7 + 1] & 255) << 8;
-	                var10 |= (var4[var7 + 0] & 255) << 16;
-	                var10 |= (var4[var7 + 3] & 255) << 24;
-	                terrainStitched.setRGB(var5, var6, var10);
-	            }
-	        }
-	        //java.awt.Image terrain = terrainStitched.getScaledInstance(32,16, java.awt.Image.SCALE_SMOOTH);
-
-			
-			terrainBuff = new BufferedImage(terrainStitched.getWidth(null), terrainStitched.getHeight(null), BufferedImage.TYPE_INT_RGB);
-			java.awt.Graphics gfx = terrainBuff.createGraphics();
-		    //Paint the image onto the buffered image
-		    gfx.drawImage(terrainStitched, 0, 0, null);
-		    gfx.dispose();
-
-		    /**taking into account transparency in the bufferedimage makes stuff like the cobwebs look right.
-		     * downside is it gets the actual RGB of water, which can be very bright.
-		     * we sort of expect it to be darker (ocean deep, seeing the bottom through it etc)
-		     * having non transparent bufferedimage bakes the transparency in, darkening the RGB  
-		     * baking it in on cobweb makes it way too dark.  We want the actual pixel color there.
-		     * experiment with leaves and ice - I think both look better with transparency baked in there too..
-		     * shadows in leaves, stuff under the ice, etc.  So basically of the transparent blocks only cobwebs need real RGB 
-		     */
-		    terrainBuffTrans = new BufferedImage(terrainStitched.getWidth(null), terrainStitched.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
-			gfx = terrainBuffTrans.createGraphics();
-		    //Paint the image onto the buffered image
-		    gfx.drawImage(terrainStitched, 0, 0, null);
-		    gfx.dispose();
-
-
-//			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
-			if (biomes)
-				blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 2, 0);
-			else // apply a default color
-				blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) | 0xFF000000;
-			getWaterColor(waterTransparency?terrainBuffTrans:terrainBuff);
-			getLavaColor(terrainBuff);
-			//blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 53); // leaves
-			//blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
-			//blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 53);
-			//blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 196);
-			if (biomes) {
-				blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 18, 0);
-				blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 18, 1);
-				blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 18, 2);
-				blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 18, 3);
-			}
-			else {
-				blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
-				blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) | 0xFF000000;
-				blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) | 0xFF000000;
-				blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
-			}
-			
-			getCTMcolors();
-
-			doFullRender = true; // force rerender with texture pack colors now that they are loaded
-		}
-		catch (Exception e) {
-			System.out.println("ERRRORRR " + e.getLocalizedMessage());
-			e.printStackTrace();
-		}
-		
-	}
-	
-	private void reloadBiomeColors(boolean biomes) {
-		if (biomes)
-			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 2, 0);
-		else // apply a default color
-			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) | 0xFF000000;
-
-		if (biomes) {
-			blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 18, 0);
-			blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 18, 1);
-			blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 18, 2);
-			blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 18, 3);
-		}
-		else {
-			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
-			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) | 0xFF000000;
-			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) | 0xFF000000;
-			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
-		}
-	}
-	
-	private void reloadWaterColor(boolean transparency) {
-		getWaterColor(transparency?terrainBuffTrans:terrainBuff);
-	}
-	
-	// default to not retaining transparency
-	private int getColor(BufferedImage image, int blockID, int metadata) {
-		return getColor(image, blockID, metadata, false);
-	}
-	
-	private int getColor(BufferedImage image, int blockID, int metadata, boolean retainTransparency) {
-		try {
-			int side = 1;
-			if (Arrays.asList(vegetationIDS).contains(blockID)) // if this is a plant, there is no top
-				side = 2;
-			if (blockID == 55)
-				System.out.println("here");
-			Icon icon = Block.blocksList[blockID].getBlockTextureFromSideAndMetadata(side, metadata); // 1 is top
-			if (blockID == 55)
-				System.out.println(icon.func_94215_i() + " " + icon.toString());
-			int left = (int)(icon.func_94209_e()*image.getWidth());
-			int right = (int)(icon.func_94212_f()*image.getWidth());
-			int top = (int)(icon.func_94206_g()*image.getHeight());
-			int bottom = (int)(icon.func_94210_h()*image.getHeight());
-
-			BufferedImage blockTexture = image.getSubimage(left, top, right-left, bottom-top);
-			//System.out.println(blockID + " " + metadata + " " + this.blockColorID(blockID, metadata));
-			//System.out.println("dims: " + blockTexture.getWidth() + " " + blockTexture.getHeight());
-			java.awt.Image singlePixel = blockTexture.getScaledInstance(1, 1, java.awt.Image.SCALE_SMOOTH);
-
-			//System.out.println(blockID + " " + left + " " + top);
-
-			BufferedImage singlePixelBuff = new BufferedImage(1, 1, image.getType());
-			java.awt.Graphics gfx = singlePixelBuff.createGraphics();
-			//Paint the image onto the buffered image
-			gfx.drawImage(singlePixel, 0, 0, null);
-			gfx.dispose();
-			
-			int color = singlePixelBuff.getRGB(0, 0);
-			if (retainTransparency)
-				return color;
-			else
-				return (color | 0xFF000000); // the or dumps the alpha, in hex the ff at the beginning (this sets it to 255, where the below sets it to 0)
-				//return (color & 0x00FFFFFF); // the and dumps the alpha, in hex the ff at the beginning
-		}
-		catch (Exception e) {
-			System.out.println("failed getting color: " + blockID + " " + metadata);
-			return COLOR_FAILED_LOAD;
-		}
-	}
-	
-	private int getColor(BufferedImage image, int textureID) {
-//		int texX = (textureID & 15) << 4; // 0 based horizontal offset in pixels from left of terrain.png (assumes each block is 16px)
-//		int texY = textureID & 240; // 0 based vertical offset in pixels from top of terrain.png (assumes each block is 16px)
-		int texX = textureID & 15; // 0 based column in terrain.png 
-		int texY = (textureID & 240) >> 4; // 0 based row in terrain.png
-//		System.out.println("int: " + image.getRGB(texX, texY));
-//		System.out.println("as hex: " +  java.lang.Integer.toHexString(image.getRGB(texX, texY)));
-//		System.out.println("22 int: " + (image.getRGB(texX, texY) & 0x00FFFFFF));
-//		System.out.println("22 hex: " +  java.lang.Integer.toHexString(image.getRGB(texX, texY) & 0x00FFFFFF));
-		
-		return (image.getRGB(texX, texY) | 0xFF000000); // the and dumps the alpha, in hex the ff at the beginning
-	}
-	
-    private int colorMultiplier(int color1, int color2)
-    {
-    	
-    	int alpha1 = (color1 >> 24 & 255);
-        int red1 = (color1 >> 16 & 255);
-        int green1 = (color1 >> 8 & 255);
-        int blue1 = (color1 >> 0 & 255);
-
-    	int alpha2 = (color2 >> 24 & 255);
-        int red2 = (color2 >> 16 & 255);
-        int green2 = (color2 >> 8 & 255);
-        int blue2 = (color2 >> 0 & 255);
-        
-        int alpha = alpha1 * alpha2 / 255;
-        int red = red1 * red2 / 255;
-        int green = green1 * green2 / 255;
-        int blue = blue1 * blue2 / 255;
-        
-        
-        return (alpha & 255) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
-       // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
-       // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
-       // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
-
-    }
-    
-    private void getWaterColor(BufferedImage image) {
-    	try {
-    		int waterBase;
-    		int waterRGB = -1;
-    		//int waterBase = -1;
-    		InputStream is = pack.getResourceAsStream("/anim/custom_water_still.png");
-    		if (is == null) { 
-    			is = pack.getResourceAsStream("/custom_water_still.png");
-    		}
-    		if (is == null) {
-    			if (this.waterTransparency) {
-        			Icon icon = Block.blocksList[9].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
-        		    int left = (int)(icon.func_94209_e()*image.getWidth());
-        		    int right = (int)(icon.func_94212_f()*image.getWidth());
-        		    int top = (int)(icon.func_94206_g()*image.getHeight());
-        		    int bottom = (int)(icon.func_94210_h()*image.getHeight());
-        		    		
-        		    BufferedImage blockTexture = image.getSubimage(left, top, right-left, bottom-top);
-        		    java.awt.Image singlePixel = blockTexture.getScaledInstance(1, 1, java.awt.Image.SCALE_SMOOTH);
-        		    
-        		    BufferedImage singlePixelBuff = new BufferedImage(1, 1, image.getType());
-        			java.awt.Graphics gfx = singlePixelBuff.createGraphics();
-        		    //Paint the image onto the buffered image
-        		    gfx.drawImage(singlePixel, 0, 0, null);
-        		    gfx.dispose();
-        		    
-    				waterBase = singlePixelBuff.getRGB(0, 0); // the and dumps the alpha, in hex the ff at the beginning
-    				//waterAlpha = waterBase >> 24 & 255;
-    				//waterBase = waterBase & 0x00FFFFFF;
-    			}
-    			else {
-        			waterBase = getColor(image, 9, 0);
-    				//waterAlpha = 180;
-    			}
-    		}
-    		else {
-    			java.awt.Image water = ImageIO.read(is);
-    			is.close();
-    			water = water.getScaledInstance(1,1, java.awt.Image.SCALE_SMOOTH);
-    			BufferedImage waterBuff = new BufferedImage(water.getWidth(null), water.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
-    			java.awt.Graphics gfx = waterBuff.createGraphics();
-    			// Paint the image onto the buffered image
-    			gfx.drawImage(water, 0, 0, null);
-    			gfx.dispose();
-    			waterBase = waterBuff.getRGB(0, 0);
-   				//waterAlpha = waterBase >> 24 & 255;
-    			//waterBase = waterBase & 0x00FFFFFF; 
-    		}
-    		int waterMult = -1;
-    		waterColorBuff = null;
-    		is = pack.getResourceAsStream("/misc/watercolorX.png");
-    		if (is != null) {
-    			java.awt.Image waterColor = ImageIO.read(is);
-    			is.close();
-    			waterColorBuff = new BufferedImage(waterColor.getWidth(null), waterColor.getHeight(null), BufferedImage.TYPE_INT_RGB);
-    			java.awt.Graphics gfx = waterColorBuff.createGraphics();
-    			// Paint the image onto the buffered image
-    			gfx.drawImage(waterColor, 0, 0, null);
-    			gfx.dispose();
-    			waterMult = waterColorBuff.getRGB(waterColorBuff.getWidth()*76/256, waterColorBuff.getHeight()*112/256) & 0x00FFFFFF;
-    		}
-    		if (waterMult != -1 && waterMult != 0 && !biomes) // && != 0 cause some packs (ravands!) have completely transparent areas in watercolorX (ie no multiplier applied at all most of the time)
-    			waterRGB = this.colorMultiplier(waterBase, waterMult);
-    		else
-    			waterRGB = waterBase;
-    		blockColors[blockColorID(8, 0)] = waterRGB;
-    		blockColors[blockColorID(9, 0)] = waterRGB;
-    	} 
-    	catch (Exception e) {
-			chatInfo("§EError Loading Water Color, using defaults");
-			blockColors[blockColorID(8, 0)] = 0x2f51ff;
-			blockColors[blockColorID(9, 0)] = 0x2f51ff;
-    	}
-    }
-    
-    private void getLavaColor(BufferedImage terrainBuff) {
-    	try {
-    		int lavaRGB = -1;
-    		InputStream is = pack.getResourceAsStream("/anim/custom_lava_still.png");
-    		if (is == null) { 
-    			is = pack.getResourceAsStream("/custom_lava_still.png");
-    		}
-    		if (is == null) {
-    			lavaRGB = getColor(terrainBuff, 11, 0);
-    		}
-    		else {
-    			java.awt.Image lava = ImageIO.read(is);
-    			is.close();
-    			lava = lava.getScaledInstance(1,1, java.awt.Image.SCALE_SMOOTH);
-    			BufferedImage lavaBuff = new BufferedImage(lava.getWidth(null), lava.getHeight(null), BufferedImage.TYPE_INT_RGB);
-    			java.awt.Graphics gfx = lavaBuff.createGraphics();
-    			// Paint the image onto the buffered image
-    			gfx.drawImage(lava, 0, 0, null);
-    			gfx.dispose();
-    			lavaRGB = lavaBuff.getRGB(0, 0) & 0x00FFFFFF;
-    		}
-    		blockColors[blockColorID(10, 0)] = lavaRGB;
-    		blockColors[blockColorID(11, 0)] = lavaRGB;
-    	} 
-    	catch (Exception e) {
-			chatInfo("§EError Loading Water Color, using defaults");
-			blockColors[blockColorID(8, 0)] = 0xecad41;
-			blockColors[blockColorID(9, 0)] = 0xecad41;
-    	}
-    }
-    
-    // ctm stuff
-    
-    private void getCTMcolors() {
-    	for (String s : listResources("/ctm", ".properties")) {
-    		try {
-    			loadCTM(s);
-    		}
-            catch (NumberFormatException e) {
-            	// nothing, continue loop
-            }
-    		catch (IllegalArgumentException e) {
-    			
-    		}
-    	}
-    }
-    
-    private void loadCTM(String filePath) {
-        if (filePath == null) {
-            return;
-        }
-        java.util.Properties properties = new java.util.Properties();
-        InputStream input = pack.getResourceAsStream(filePath);
-        try {
-        	if (input != null) {
-        		properties.load(input);
-                input.close();
-        	}
-        } 
-        catch (IOException e) {
-        	return;
-        }
-        
-        filePath = filePath.toLowerCase();
-        String blockNum = filePath.substring(filePath.lastIndexOf("block")+5, filePath.lastIndexOf(".properties"));
-        blockNum = blockNum.replaceAll("[^0-9.]", "");
-        int blockID = -1;
-        try {
-        	blockID = Integer.parseInt(blockNum);
-        }
-        catch (NumberFormatException e) {
-            return;
-        }
-
-        String method = properties.getProperty("method", "").trim().toLowerCase();
-        String faces = properties.getProperty("faces", "").trim().toLowerCase();
-        String filename = properties.getProperty("source", "").trim().toLowerCase();
-        String metadata = properties.getProperty("metadata", "0").trim().toLowerCase();
-        String tiles = properties.getProperty("tiles", "").trim().toLowerCase();
-
-        int metadataInt = Integer.parseInt( metadata);
-
-        int[] tilesInts = parseIntegerList(tiles, 0, 255);
-        int tilesInt = 0;
-        if (tilesInts.length > 0) {
-        	tilesInt = tilesInts[0];
-        }
-        //System.out.println("block: " + blockNum + ", metadata: " + metadata + ", tile: " + tilesInt);
-
-
-        if (method.equals("sandstone") || method.equals("top") || faces.contains("top")) {
-        	try {
-        		InputStream is = pack.getResourceAsStream(filename);
-        		java.awt.Image top = ImageIO.read(is);
-        		is.close();
-        		top = top.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
-        		BufferedImage topBuff = new BufferedImage(top.getWidth(null), top.getHeight(null), BufferedImage.TYPE_INT_RGB);
-        		java.awt.Graphics gfx = topBuff.createGraphics();
-        		// Paint the image onto the buffered image
-        		gfx.drawImage(top, 0, 0, null);
-        		gfx.dispose();
-        		int topRGB = getColor(topBuff, tilesInt);
-        		blockColors[blockColorID(blockID, metadataInt)] = topRGB;
-        	}
-        	catch (IOException e) {
-        	}
-        }
-    }
-    
-    private int[] parseIntegerList(String list, int minValue, int maxValue) {
-        ArrayList<Integer> tmpList = new ArrayList<Integer>();
-        for (String token : list.replace(',', ' ').split("\\s+")) {
-            token = token.trim();
-            try {
-                if (token.matches("^\\d+$")) {
-                    tmpList.add(Integer.parseInt(token));
-                } else if (token.matches("^\\d+-\\d+$")) {
-                    String[] t = token.split("-");
-                    int min = Integer.parseInt(t[0]);
-                    int max = Integer.parseInt(t[1]);
-                    for (int i = min; i <= max; i++) {
-                        tmpList.add(i);
-                    }
-                }
-            } catch (NumberFormatException e) {
-            }
-        }
-        if (minValue <= maxValue) {
-            for (int i = 0; i < tmpList.size(); ) {
-                if (tmpList.get(i) < minValue || tmpList.get(i) > maxValue) {
-                    tmpList.remove(i);
-                } else {
-                    i++;
-                }
-            }
-        }
-        int[] a = new int[tmpList.size()];
-        for (int i = 0; i < a.length; i++) {
-            a[i] = tmpList.get(i);
-        }
-        return a;
-    }
-    
-    private String[] listResources(String directory, String suffix) {
-        if (directory == null) {
-            directory = "";
-        }
-        if (directory.startsWith("/")) {
-            directory = directory.substring(1);
-        }
-        if (suffix == null) {
-            suffix = "";
-        }
-
-        ArrayList<String> resources = new ArrayList<String>();
-        if (pack instanceof TexturePackDefault) {
-            // nothing
-        } else if (pack instanceof TexturePackCustom) {
-        	try {
-        		java.util.zip.ZipFile zipFile = new java.util.zip.ZipFile(((TexturePackCustom) pack).texturePackFile);
-        		if (zipFile != null) {
-        			for (java.util.zip.ZipEntry entry : Collections.list(zipFile.entries())) {
-        				final String name = entry.getName();
-        				if (name.startsWith(directory) && name.endsWith(suffix)) {
-        					resources.add("/" + name);
-        				}
-        			}
-        		}
-        	}
-        	catch (java.util.zip.ZipException e) {
-        	}
-        	catch (IOException e) {
-        	}
-        } else if (pack instanceof TexturePackFolder) {
-            File folder = ((TexturePackFolder) pack).texturePackFile;
-            if (folder != null && folder.isDirectory()) {
-                String[] list = new File(folder, directory).list();
-                if (list != null) {
-                    for (String s : list) {
-                        if (s.endsWith(suffix)) {
-                            resources.add("/" + new File(new File(directory), s).getPath().replace('\\', '/'));
-                        }
-                    }
-                }
-            }
-        }
-
-        Collections.sort(resources);
-        return resources.toArray(new String[resources.size()]);
-    }
 
 	public void saveAll() {
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
@@ -2356,6 +1795,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			out.println("Slope Map:" + Boolean.toString(slopemap));
 			out.println("Filtering:" + Boolean.toString(filtering));
 			out.println("Water Transparency:" + Boolean.toString(waterTransparency));
+			out.println("Block Transparency:" + Boolean.toString(blockTransparency));
 			out.println("Biomes:" + Boolean.toString(biomes));
 			out.println("Square Map:" + Boolean.toString(squareMap));
 			out.println("Old North:" + Boolean.toString(oldNorth));
@@ -2621,156 +2061,135 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	} */
 		
 	private void renderMap (int x, int y, int scScale) {
-		if (!this.hide && !this.fullscreenMap) {
-			boolean scaleChanged = (this.scScale != scScale || this.squareMap != this.lastSquareMap);
-			this.scScale = scScale;
-			this.lastSquareMap = this.squareMap;
+		boolean scaleChanged = (this.scScale != scScale || this.squareMap != this.lastSquareMap);
+		this.scScale = scScale;
+		this.lastSquareMap = this.squareMap;
 
-			if (squareMap) { // square map
-				// shifted stuff is to keep squaremap from bleeding over with filtering on, zoomed all the way in.  Redraw image (redraw checcks if it needs to omit 2 lines instead of 1)
-				boolean shifted = false;;
-				if (this.filtering && this.lZoom == 0 && this.lastPercentXOver != (percentX > 1)) {
-					this.lastPercentXOver = (percentX > 1);
-					shifted = true;
-				}
-				if (this.filtering && this.lZoom == 0 && this.lastPercentYOver != (percentY > 1)) {
-					this.lastPercentYOver = (percentY > 1);
-					shifted = true;
-				}
-				if (imageChanged || shifted) {
-					this.map[this.lZoom].write();
-					imageChanged = false;
-				}
-				if (this.zoom == 3) {
-					GL11.glPushMatrix();
-					GL11.glScalef(0.5f, 0.5f, 1.0f);
-					this.disp(this.map[this.lZoom].index); 
-					GL11.glPopMatrix();
-				} else {
-					this.disp(this.map[this.lZoom].index);
-				}
-				if (filtering) {
-					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-				}
-				// from here
+		if (squareMap) { // square map
+			// shifted stuff is to keep squaremap from bleeding over with filtering on, zoomed all the way in.  Redraw image (redraw checcks if it needs to omit 2 lines instead of 1)
+			boolean shifted = false;;
+			if (this.filtering && this.lZoom == 0 && this.lastPercentXOver != (percentX > 1)) {
+				this.lastPercentXOver = (percentX > 1);
+				shifted = true;
+			}
+			if (this.filtering && this.lZoom == 0 && this.lastPercentYOver != (percentY > 1)) {
+				this.lastPercentYOver = (percentY > 1);
+				shifted = true;
+			}
+			if (imageChanged || shifted) {
+				this.map[this.lZoom].write();
+				imageChanged = false;
+			}
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);//GL11.GL_ONE_MINUS_SRC_ALPHA);
+			if (this.zoom == 3) {
 				GL11.glPushMatrix();
-				GL11.glTranslatef(x, y, 0.0F);
-				GL11.glRotatef(northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
-				GL11.glTranslatef(-x, -y, 0.0F);
-				// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
-				GL11.glTranslatef(-percentX, -percentY, 0.0f);
+				GL11.glScalef(0.5f, 0.5f, 1.0f);
+				this.disp(this.map[this.lZoom].index); 
+				GL11.glPopMatrix();
+			} else {
+				this.disp(this.map[this.lZoom].index);
+			}
+			if (filtering) {
+				GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+				GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+			}
+			// from here
+			GL11.glPushMatrix();
+			GL11.glTranslatef(x, y, 0.0F);
+			GL11.glRotatef(northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
+			GL11.glTranslatef(-x, -y, 0.0F);
+			// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
+			GL11.glTranslatef(-percentX, -percentY, 0.0f);
+			drawPre();
+			this.setMap(x, y);
+			drawPost();
+
+			GL11.glPopMatrix();
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			try {
+				//this.disp(this.img("/mamiyaotaru/minimap.png"));
+				this.disp(colorManager.mapImageInt);
 				drawPre();
 				this.setMap(x, y);
 				drawPost();
+			} catch (Exception localException) {
+				this.error = "error: minimap overlay not found!";
+			}
+			this.drawDirections(x, y);
 
-				GL11.glPopMatrix();
-
-				try {
-					//this.disp(this.img("/mamiyaotaru/minimap.png"));
-					this.disp(mapImageInt);
-					drawPre();
-					this.setMap(x, y);
-					drawPost();
-				} catch (Exception localException) {
-					this.error = "error: minimap overlay not found!";
-				}
-				this.drawDirections(x, y);
-
-				for(Waypoint pt:wayPts) {
-					if(pt.enabled) {
-						double wayX = 0;
-						double wayY = 0;
-						if (this.game.thePlayer.dimension!=-1) {
-							wayX = this.lastXDouble - pt.x;
-							wayY = this.lastZDouble - pt.z;
+			for(Waypoint pt:wayPts) {
+				if(pt.enabled) {
+					double wayX = 0;
+					double wayY = 0;
+					if (this.game.thePlayer.dimension!=-1) {
+						wayX = this.lastXDouble - pt.x + (lastXDouble>0?-.5:.5);
+						wayY = this.lastZDouble - pt.z + (lastZDouble>0?-.5:.5);
+					}
+					else {
+						wayX = this.lastXDouble - (pt.x / 8) + (lastXDouble>0?-.5:.5);
+						wayY = this.lastZDouble - (pt.z / 8) + (lastZDouble>0?-.5:.5);
+					}
+					if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 28.5 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 28.5) {
+						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY));
+						hypot = hypot / Math.max(Math.abs(wayX), Math.abs(wayY)) * 30;
+						try {
+							GL11.glPushMatrix();
+							GL11.glColor3f(pt.red, pt.green, pt.blue);
+							//this.disp(this.img("/marker.png"));
+							this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + "Small.png"));
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+							GL11.glTranslatef(x, y, 0.0F);
+							GL11.glRotatef(-locate + northRotate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
+							GL11.glTranslatef(-x, -y, 0.0F);
+							GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
+							drawPre();
+							this.setMap(x, y, 16);
+							drawPost();
+						} catch (Exception localException) {
+							this.error = "Error: marker overlay not found!";
+						} finally {
+							GL11.glPopMatrix();
 						}
-						else {
-							wayX = this.lastXDouble - (pt.x / 8);
-							wayY = this.lastZDouble - (pt.z / 8);
-						}
-						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 28.5 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 28.5) {
-							float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-							double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY));
-							hypot = hypot / Math.max(Math.abs(wayX), Math.abs(wayY)) * 30;
-							try {
-								GL11.glPushMatrix();
-								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								//this.disp(this.img("/marker.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + "Small.png"));
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-								GL11.glTranslatef(x, y, 0.0F);
-								GL11.glRotatef(-locate + northRotate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
-								GL11.glTranslatef(-x, -y, 0.0F);
-								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
-								drawPre();
-								this.setMap(x, y, 16);
-								drawPost();
-							} catch (Exception localException) {
-								this.error = "Error: marker overlay not found!";
-							} finally {
-								GL11.glPopMatrix();
-							}
-						} // end if waypoint is far away and drawn as an arrow on the edge
-						else { // else waypoint is close enough to be on the map
-							float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-							double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
-							try 
-							{
-								GL11.glPushMatrix();
-								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								//this.disp(this.img("/waypoint.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+					} // end if waypoint is far away and drawn as an arrow on the edge
+					else { // else waypoint is close enough to be on the map
+						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
+						try 
+						{
+							GL11.glPushMatrix();
+							GL11.glColor3f(pt.red, pt.green, pt.blue);
+							//this.disp(this.img("/waypoint.png"));
+							this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 							//	GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
-								// from here
-								GL11.glTranslatef(x, y, 0.0F);
-								GL11.glRotatef(-locate + northRotate, 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
-								GL11.glTranslated(0.0D,-hypot,0.0D);
-								GL11.glRotatef(-(-locate + northRotate), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
-								GL11.glTranslated(0.0D,hypot,0.0D);
-								GL11.glTranslatef(-x, -y, 0.0F);
-								GL11.glTranslated(0.0D,-hypot,0.0D);
-								// to here only necessary with variable north, and no if/else statements in mapcalc.  otherwise uncomment the translated above this block
-								drawPre();
-								this.setMap(x, y, 16);
-								drawPost();
-							} catch (Exception localException) 
-							{
-								this.error = "Error: waypoint overlay not found!";
-							} finally 
-							{
-								GL11.glPopMatrix();
-							}
-						} // end waypoint is on current map
-					} // end if pt enabled
-				} // end for waypoints
-				if (radar != null && this.radarAllowed) // after map drawn, before arrow so they aren't on top of that stuff.  After waypoitns though don't want a creeper under a waypoint symbol
-					radar.OnTickInGame(game);
-				try { // draw arrow last.  Always want to see it above things so we know which direction we are facing on the map
-					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-					GL11.glPushMatrix();
-					//this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow.png"):this.img("/mamiyaotaru/mmarrowSmall.png"));
-					this.disp(this.img("/mamiyaotaru/mmarrow.png"));
-					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-					GL11.glTranslatef(x, y, 0.0F); 
-					GL11.glRotatef(this.direction, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
-					GL11.glTranslatef(-x, -y, 0.0F);
-					drawPre();
-					this.setMap(x, y, 16);
-					drawPost();
-				} catch (Exception localException) {
-					this.error = "Error: minimap arrow not found!";
-				} finally {
-					GL11.glPopMatrix();
-				}
-			} // end if squaremap
-			else { // else roundmap
-			//	final long startTime = System.nanoTime();
+							// from here
+							//GL11.glTranslatef(x, y, 0.0F);
+							GL11.glRotatef(-locate + northRotate, 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+							GL11.glTranslated(0.0D,-hypot,0.0D);
+							GL11.glRotatef(-(-locate + northRotate), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+							//GL11.glTranslated(0.0D,hypot,0.0D);
+							//GL11.glTranslatef(-x, -y, 0.0F);
+							//GL11.glTranslated(0.0D,-hypot,0.0D);
+							// to here only necessary with variable north, and no if/else statements in mapcalc.  otherwise uncomment the translated above this block
+							drawPre();
+							this.setMap(x, y, 16);
+							drawPost();
+						} catch (Exception localException) 
+						{
+							this.error = "Error: waypoint overlay not found!";
+						} finally 
+						{
+							GL11.glPopMatrix();
+						}
+					} // end waypoint is on current map
+				} // end if pt enabled
+			} // end for waypoints
+		} // end if squaremap
+		else { // else roundmap
+		//	final long startTime = System.nanoTime();
 
 /*				
 				// do with opengl.  Faster.  Uses alpha channel, have to set lighting in actual RGB instead of alpha.
@@ -2829,238 +2248,259 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
 */
 				
-				if (fboEnabled) {
-					// FBO render pass
-					GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0); // unlink textures because if we dont it all is gonna fail
+			if (fboEnabled) {
+				// FBO render pass
+				GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0); // unlink textures because if we dont it all is gonna fail
 
-					GL11.glPushAttrib(GL11.GL_VIEWPORT_BIT | GL11.GL_TRANSFORM_BIT | GL11.GL_COLOR_BUFFER_BIT);
-					GL11.glViewport (0, 0, 256, 256); // set The Current Viewport to the fbo size
-					GL11.glMatrixMode(GL11.GL_PROJECTION);
-					GL11.glPushMatrix();
-					GL11.glLoadIdentity();
-					GL11.glOrtho(0.0, 256.0, 256.0, 0.0, 1000.0, 3000.0);
-					GL11.glMatrixMode(GL11.GL_MODELVIEW);
-					GL11.glPushMatrix();
-					// Reset The Modelview Matrix
-					GL11.glLoadIdentity ();  
-					GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+				GL11.glPushAttrib(GL11.GL_VIEWPORT_BIT | GL11.GL_TRANSFORM_BIT | GL11.GL_COLOR_BUFFER_BIT);
+				GL11.glViewport (0, 0, 256, 256); // set The Current Viewport to the fbo size
+				GL11.glMatrixMode(GL11.GL_PROJECTION);
+				GL11.glPushMatrix();
+				GL11.glLoadIdentity();
+				GL11.glOrtho(0.0, 256.0, 256.0, 0.0, 1000.0, 3000.0);
+				GL11.glMatrixMode(GL11.GL_MODELVIEW);
+				GL11.glPushMatrix();
+				// Reset The Modelview Matrix
+				GL11.glLoadIdentity ();  
+				GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
 
-					EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, fboID); // draw to the FBO
+				EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, fboID); // draw to the FBO
 
-					// Clear Screen And Depth Buffer on the fbo to black.  We draw same circle each time, so only need to do it on scale change (when we start drawing a new circle)
-					if (scaleChanged) {
-						System.out.println("clearing");
-						GL11.glClearColor (0.0f, 0.0f, 0.0f, 0.0f);
-						GL11.glClear (GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);            
-						// "draw same circle each time" means we only need to draw the circle when the scale changes: move it inside the if block
-						// this works beccause the blendfuncseparate that sets source alpha to dst color doesn't seem to care what that color is.  Anything but see through means it's drawn on
-						// so last tick's round map serves fine as the stencil for the next one
-						// except when not all local chunks are loaded, then we get artifacts when turning.  It's only right at the start, but looks bad man.  back out
-					}
-					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);  
-					//this.disp(scScale>=3?this.img("/mamiyaotaru/circle.png"):this.img("/mamiyaotaru/circleSmall.png")); 
-					this.disp(this.img("/mamiyaotaru/circle.png"));
-					drawPre();
-					ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
-					ldrawthree(256, 256, 1.0D, 1.0D, 0.0D);
-					ldrawthree(256, 0, 1.0D, 1.0D, 1.0D);
-					ldrawthree(0, 0, 1.0D, 0.0D, 1.0D);
-					drawPost();
-
-					// brightness baked into RGB
-					GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ZERO); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
-					// brightness as alpha channel
-					//GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ONE); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
-					if (imageChanged) {
-						this.map[this.lZoom].write();
-						imageChanged = false;
-					}
-					if (this.zoom == 3) {
-						GL11.glPushMatrix();
-						GL11.glScalef(0.5f, 0.5f, 1.0f);
-						this.disp(this.map[this.lZoom].index); 
-						GL11.glPopMatrix();
-					} else {
-						this.disp(this.map[this.lZoom].index);
-					}
-					if (filtering) {
-						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-					}
-					GL11.glTranslatef(128, 128, 0.0F); 
-					GL11.glRotatef(this.direction-this.northRotate, 0.0F, 0.0F, 1.0F); 
-					GL11.glTranslatef(-(128), -128F, 0.0F);
-					// float precision
-					GL11.glTranslatef(-percentX*4, percentY*4, 0.0f);
-					
-					drawPre();
-					// position of the texture to put on the vertexes is flipped in Y (ie last number is 1 instead of 0 and vice versa) because minecraft has things upside down in the ortho.  Upside down FBO makes it upside down twice, aka out of whack with minecraft 
-					ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
-					ldrawthree(256, 256, 1.0D, 1.0D, 0.0D);
-					ldrawthree(256, 0, 1.0D, 1.0D, 1.0D);  
-					ldrawthree(0, 0, 1.0D, 0.0D, 1.0D);
-					drawPost();
-
-
-					EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // stop drawing to FBO
-
-					// restore viewport settings
-					GL11.glMatrixMode(GL11.GL_PROJECTION);
-					GL11.glPopMatrix();
-					GL11.glMatrixMode(GL11.GL_MODELVIEW);
-					GL11.glPopMatrix();
-					GL11.glPopAttrib();		        
-
-
-					GL11.glPushMatrix();
-					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-					this.disp(fboTextureID);
+				// Clear Screen And Depth Buffer on the fbo to black.  We draw same circle each time, so only need to do it on scale change (when we start drawing a new circle)
+				if (scaleChanged) {
+					System.out.println("clearing");
+					GL11.glClearColor (0.0f, 0.0f, 0.0f, 0.0f);
+					GL11.glClear (GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);            
+					// "draw same circle each time" means we only need to draw the circle when the scale changes: move it inside the if block
+					// this works beccause the blendfuncseparate that sets source alpha to dst color doesn't seem to care what that color is.  Anything but see through means it's drawn on
+					// so last tick's round map serves fine as the stencil for the next one
+					// except when not all local chunks are loaded, then we get artifacts when turning.  It's only right at the start, but looks bad man.  back out
 				}
-				else { // do in 2d
+				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);  
+				//this.disp(scScale>=3?this.img("/mamiyaotaru/circle.png"):this.img("/mamiyaotaru/circleSmall.png")); 
+				this.disp(this.img("/mamiyaotaru/circle.png"));
+				drawPre();
+				ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
+				ldrawthree(256, 256, 1.0D, 1.0D, 0.0D);
+				ldrawthree(256, 0, 1.0D, 1.0D, 1.0D);
+				ldrawthree(0, 0, 1.0D, 0.0D, 1.0D);
+				drawPost();
 
-					// have to convert square image into a circle here now that we don't redraw the image from scratch every frame.  Can't just draw it round from the start, makes it impossible to know which ones are new
-					// make into a circle with java2d. slightly slower
+				// brightness baked into RGB
+				GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ZERO); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
+				// brightness as alpha channel
+				//GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ONE); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
+				if (imageChanged) {
+					this.map[this.lZoom].write();
+					imageChanged = false;
+				}
+				if (this.zoom == 3) {
+					GL11.glPushMatrix();
+					GL11.glScalef(0.5f, 0.5f, 1.0f);
+					this.disp(this.map[this.lZoom].index); 
+					GL11.glPopMatrix();
+				} else {
+					this.disp(this.map[this.lZoom].index);
+				}
+				if (filtering) {
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+				}
+				GL11.glTranslatef(128, 128, 0.0F); 
+				GL11.glRotatef(this.direction-this.northRotate, 0.0F, 0.0F, 1.0F); 
+				GL11.glTranslatef(-(128), -128F, 0.0F);
+				// float precision
+				GL11.glTranslatef(-percentX*4, percentY*4, 0.0f);
+				//System.out.println(percentX + " " + percentY);
+
+				drawPre();
+				// position of the texture to put on the vertexes is flipped in Y (ie last number is 1 instead of 0 and vice versa) because minecraft has things upside down in the ortho.  Upside down FBO makes it upside down twice, aka out of whack with minecraft 
+				ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
+				ldrawthree(256, 256, 1.0D, 1.0D, 0.0D);
+				ldrawthree(256, 0, 1.0D, 1.0D, 1.0D);  
+				ldrawthree(0, 0, 1.0D, 0.0D, 1.0D);
+				drawPost();
+
+
+				EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // stop drawing to FBO
+
+				// restore viewport settings
+				GL11.glMatrixMode(GL11.GL_PROJECTION);
+				GL11.glPopMatrix();
+				GL11.glMatrixMode(GL11.GL_MODELVIEW);
+				GL11.glPopMatrix();
+				GL11.glPopAttrib();		        
+
+
+				GL11.glPushMatrix();
+				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);  
+				this.disp(fboTextureID);
+			}
+			else { // do in 2d
+
+				// have to convert square image into a circle here now that we don't redraw the image from scratch every frame.  Can't just draw it round from the start, makes it impossible to know which ones are new
+				// make into a circle with java2d. slightly slower
 				//	if (imageChanged) {
 				//		this.map[this.lZoom].write();
 				//		imageChanged = false;
 				//	}
-					if (this.imageChanged){ 
-						int diameter = this.map[this.lZoom].getWidth();
-						if (roundImage != null)
-							roundImage.baleet();
-						roundImage = new GLBufferedImage(diameter, diameter,BufferedImage.TYPE_4BYTE_ABGR);
-						java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double((this.lZoom*10/6),(this.lZoom*10/6),diameter-(this.lZoom*2),diameter-(this.lZoom*2));
-						//java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(0,0,diameter,diameter);
-						java.awt.Graphics2D gfx = roundImage.createGraphics();
-						gfx.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-						gfx.setClip(ellipse);
-						//gfx.drawImage((this.map[this.zoom]).getScaledInstance(diameter, diameter, BufferedImage.SCALE_REPLICATE),0,0,null);
-						// just draw it enlarged instead of creating a new scaled instance every time
-						//gfx.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-						//gfx.drawImage(this.map[this.zoom],0,0,diameter,diameter,null); 
-						// why enlarge it here at all?  opengl should do it faster.. but it will enlarge (in the case of the smaller ones) the massively aliased clipped one, with huge multi pixel jaggies around the edge.  Enlarge here into a larger (less aliased) clip for smoother edges even while the "pixels" are large
-						// deal with it, it is faster
-						gfx.drawImage(this.map[this.zoom],0,0,null); //(let opengl do it)
-						gfx.dispose();
-						roundImage.write();
-						this.imageChanged = false;
-					}
-					
-					//GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // used for light info stored in alpha channel
-					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); 
-					if (this.zoom == 3) {
-						GL11.glPushMatrix();
-						GL11.glScalef(0.5f, 0.5f, 1.0f);
-						this.disp(roundImage.index); 
-						GL11.glPopMatrix();
-					} else {
-						this.disp(roundImage.index);
-					}
-					if (filtering) {
-						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-					}
-					
-					// This is for rotating the whole map image.  Was fine when transparency stencil was drawn, then map and we rotated the map
-					// now we are drawing FBO, that has the transparency baked in.  Can't rotate that.  Instead rotate the map in the FBO.  Note the differences (in rotation, translation, and normal locations) due to Minecraft doing it backwards
-					GL11.glPushMatrix();
-			    	GL11.glTranslatef(x, y, 0.0F); 
-					GL11.glRotatef(-this.direction+this.northRotate, 0.0F, 0.0F, 1.0F); 
-					GL11.glTranslatef(-x, -y, 0.0F);
-
-					// float precision
-					GL11.glTranslatef(-percentX, -percentY, 0.0f);
+				if (this.imageChanged){ 
+					int diameter = this.map[this.lZoom].getWidth();
+					if (roundImage != null)
+						roundImage.baleet();
+					roundImage = new GLBufferedImage(diameter, diameter,BufferedImage.TYPE_4BYTE_ABGR);
+					java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double((this.lZoom*10/6),(this.lZoom*10/6),diameter-(this.lZoom*2),diameter-(this.lZoom*2));
+					//java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(0,0,diameter,diameter);
+					java.awt.Graphics2D gfx = roundImage.createGraphics();
+					gfx.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
+					gfx.setClip(ellipse);
+					//gfx.drawImage((this.map[this.zoom]).getScaledInstance(diameter, diameter, BufferedImage.SCALE_REPLICATE),0,0,null);
+					// just draw it enlarged instead of creating a new scaled instance every time
+					//gfx.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+					//gfx.drawImage(this.map[this.zoom],0,0,diameter,diameter,null); 
+					// why enlarge it here at all?  opengl should do it faster.. but it will enlarge (in the case of the smaller ones) the massively aliased clipped one, with huge multi pixel jaggies around the edge.  Enlarge here into a larger (less aliased) clip for smoother edges even while the "pixels" are large
+					// deal with it, it is faster
+					gfx.drawImage(this.map[this.zoom],0,0,null); //(let opengl do it)
+					gfx.dispose();
+					roundImage.write();
+					this.imageChanged = false;
 				}
-				
 
-		//		System.out.println("time: " + (System.nanoTime()-startTime));
-				drawPre();
-				this.setMap(x, y);
-				drawPost();
-				GL11.glPopMatrix();
-				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-				//GL11.glDisable(GL11.GL_BLEND);                         // Disable Blending
-				//GL11.glEnable(GL11.GL_DEPTH_TEST); 
+				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // used for light info stored in alpha channel
+				//GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); 
+				if (this.zoom == 3) {
+					GL11.glPushMatrix();
+					GL11.glScalef(0.5f, 0.5f, 1.0f);
+					this.disp(roundImage.index); 
+					GL11.glPopMatrix();
+				} else {
+					this.disp(roundImage.index);
+				}
+				if (filtering) {
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+				}
 
-				GL11.glColor3f(1.0F, 1.0F, 1.0F);
-				this.drawRound(x, y, scScale);
-				this.drawDirections(x, y);
-				
-				for(Waypoint pt:wayPts) {
-					if(pt.enabled) {
-						double wayX = 0;
-						double wayY = 0;
-						if (this.game.thePlayer.dimension!=-1) {
-							wayX = this.lastXDouble - pt.x;
-							wayY = this.lastZDouble - pt.z;
-						}
-						else {
-							wayX = this.lastXDouble - (pt.x / 8);
-							wayY = this.lastZDouble - (pt.z / 8);
-						}
-						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
+				// This is for rotating the whole map image.  Was fine when transparency stencil was drawn, then map and we rotated the map
+				// now we are drawing FBO, that has the transparency baked in.  Can't rotate that.  Instead rotate the map in the FBO.  Note the differences (in rotation, translation, and normal locations) due to Minecraft doing it backwards
+				GL11.glPushMatrix();
+				GL11.glTranslatef(x, y, 0.0F); 
+				GL11.glRotatef(-this.direction+this.northRotate, 0.0F, 0.0F, 1.0F); 
+				GL11.glTranslatef(-x, -y, 0.0F);
 
-						if (hypot >= 31.0D) {
-							try {
-								GL11.glPushMatrix();
-								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								//this.disp(this.img("/marker.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + "Small.png"));
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-								GL11.glTranslatef(x, y, 0.0F);
-								GL11.glRotatef(-locate - this.direction+this.northRotate, 0.0F, 0.0F, 1.0F);
-								GL11.glTranslatef(-x, -y, 0.0F);
-								GL11.glTranslated(0.0D,-34.0D,0.0D);
-								drawPre();
-								this.setMap(x, y, 16);
-								drawPost();
-							} catch (Exception localException) {
-								this.error = "Error: marker overlay not found!";
-							} finally {
-								GL11.glPopMatrix();
-							}
-						}
-						else {
-							try 
-							{
-								GL11.glPushMatrix();
-								GL11.glColor3f(pt.red, pt.green, pt.blue);
-								//this.disp(this.img("/waypoint.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-								GL11.glTranslatef(x, y, 0.0F);
-								GL11.glRotatef(-locate -this.direction+this.northRotate, 0.0F, 0.0F, 1.0F);
-								GL11.glTranslated(0.0D,-hypot,0.0D);
-								GL11.glRotatef(-(-locate - this.direction+this.northRotate), 0.0F, 0.0F, 1.0F);
-								GL11.glTranslated(0.0D,hypot,0.0D);
-								GL11.glTranslatef(-x, -y, 0.0F);
-								GL11.glTranslated(0.0D,-hypot,0.0D);
-								drawPre();
-								this.setMap(x, y, 16);
-								drawPost();
-							} catch (Exception localException) 
-							{
-								this.error = "Error: waypoint overlay not found!";
-							} finally 
-							{
-								GL11.glPopMatrix();
-							}
+				// float precision
+				GL11.glTranslatef(-percentX, -percentY, 0.0f);
+			}
+
+
+			//		System.out.println("time: " + (System.nanoTime()-startTime));
+			drawPre();
+			this.setMap(x, y);
+			drawPost();
+			GL11.glPopMatrix();
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			//GL11.glDisable(GL11.GL_BLEND);                         // Disable Blending
+			//GL11.glEnable(GL11.GL_DEPTH_TEST); 
+
+			GL11.glColor3f(1.0F, 1.0F, 1.0F);
+			this.drawRound(x, y, scScale);
+			this.drawDirections(x, y);
+
+			for(Waypoint pt:wayPts) {
+				if(pt.enabled) {
+					double wayX = 0;
+					double wayY = 0;
+					if (this.game.thePlayer.dimension!=-1) {
+						wayX = this.lastXDouble - pt.x + (lastXDouble>0?-.5:.5);
+						wayY = this.lastZDouble - pt.z + (lastZDouble>0?-.5:.5);
+					}
+					else {
+						wayX = this.lastXDouble - (pt.x / 8) + (lastXDouble>0?-.5:.5);
+						wayY = this.lastZDouble - (pt.z / 8) + (lastZDouble>0?-.5:.5);
+					}
+					float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+					double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
+
+					if (hypot >= 31.0D) {
+						try {
+							GL11.glPushMatrix();
+							GL11.glColor3f(pt.red, pt.green, pt.blue);
+							//this.disp(this.img("/marker.png"));
+							this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + "Small.png"));
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+							GL11.glTranslatef(x, y, 0.0F);
+							GL11.glRotatef(-locate - this.direction+this.northRotate, 0.0F, 0.0F, 1.0F);
+							GL11.glTranslatef(-x, -y, 0.0F);
+							GL11.glTranslated(0.0D,-34.0D,0.0D);
+
+							drawPre();
+							this.setMap(x, y, 16);
+							drawPost();
+						} catch (Exception localException) {
+							this.error = "Error: marker overlay not found!";
+						} finally {
+							GL11.glPopMatrix();
 						}
 					}
-				} // end for waypoints
-				GL11.glColor3f(1,1,1);
-				if (radar != null && this.radarAllowed)
-					radar.OnTickInGame(game);
-			} // end roundmap
-			if (tf) {
-				this.disp(this.img("/mamiyaotaru/i18u.txt"));
-				this.drawPre();
-				this.setMap(x, y);
-				this.drawPost();
-			}		
+					else {
+						try 
+						{
+							GL11.glPushMatrix();
+							GL11.glColor3f(pt.red, pt.green, pt.blue);
+							//this.disp(this.img("/waypoint.png"));
+							this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+							//GL11.glTranslatef(x, y, 0.0F);
+							GL11.glRotatef(-locate -this.direction+this.northRotate, 0.0F, 0.0F, 1.0F);
+							GL11.glTranslated(0.0D,-hypot,0.0D);
+							GL11.glRotatef(-(-locate - this.direction+this.northRotate), 0.0F, 0.0F, 1.0F);
+							//GL11.glTranslated(0.0D,hypot,0.0D);
+							//GL11.glTranslatef(-x, -y, 0.0F);
+							//GL11.glTranslated(0.0D,-hypot,0.0D);
+							drawPre();
+							this.setMap(x, y, 16);
+							drawPost();
+						} catch (Exception localException) 
+						{
+							this.error = "Error: waypoint overlay not found!";
+						} finally 
+						{
+							GL11.glPopMatrix();
+						}
+					}
+				}
+			} // end for waypoints
+			GL11.glColor3f(1,1,1);
+		} // end roundmap
+		if (tf) {
+			this.disp(this.img("/mamiyaotaru/i18u.txt"));
+			this.drawPre();
+			this.setMap(x, y);
+			this.drawPost();
+		}		
+	}
+	
+	private void drawArrow(int x, int y) {
+		try { // draw arrow last.  Always want to see it above things so we know which direction we are facing on the map
+			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			GL11.glPushMatrix();
+			//this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow.png"):this.img("/mamiyaotaru/mmarrowSmall.png"));
+			this.disp(this.img("/mamiyaotaru/mmarrow.png"));
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+			GL11.glTranslatef(x, y, 0.0F); 
+			GL11.glRotatef(this.direction, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
+			GL11.glTranslatef(-x, -y, 0.0F);
+			drawPre();
+			this.setMap(x, y, 16);
+			drawPost();
+		} catch (Exception localException) {
+			this.error = "Error: minimap arrow not found!";
+		} finally {
+			GL11.glPopMatrix();
 		}
 	}
 
@@ -3090,28 +2530,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		ldrawone(scWidth/2-128, scHeight/2-128, 1.0D, 0.0D, 0.0D);
 		drawPost();
 		GL11.glPopMatrix();
-
-		try {
-			GL11.glPushMatrix();
-			this.disp(this.img("/mamiyaotaru/mmarrow.png"));
-			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-		    GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-		//	GL11.glTranslatef(0f, 0f, -2f);
-			GL11.glTranslatef(scWidth/2, scHeight/2, 0.0F);
-			GL11.glRotatef(this.direction, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
-			GL11.glTranslatef(-(scWidth/2), -(scHeight/2), 0.0F);
-			drawPre();
-			//ldrawone((scWidth+5)/2-32, (scHeight+5)/2+32, 1.0D, 0.0D, 1.0D); // the old, 128-ified arrow
-			ldrawone(scWidth/2-4, scHeight/2+4, 1.0D, 0.0D, 1.0D);
-			ldrawone(scWidth/2+4, scHeight/2+4, 1.0D, 1.0D, 1.0D);
-			ldrawone(scWidth/2+4, scHeight/2-4, 1.0D, 1.0D, 0.0D);
-			ldrawone(scWidth/2-4, scHeight/2-4, 1.0D, 0.0D, 0.0D);
-			drawPost();
-		} catch (Exception localException) {
-			this.error = "Error: minimap arrow not found!";
-		} finally {
-			GL11.glPopMatrix();
-		}
 	}
 	
 	private void setupFBO () {
@@ -3178,7 +2596,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		ldrawthree(x-scale, y-scale, 1.0D, 0.0D, 0.0D);
 	}
 	
-	private int tex(BufferedImage paramImg) {
+	public int tex(BufferedImage paramImg) {
 		return this.renderEngine.allocateAndSetupTexture(paramImg);
 	}
 
@@ -3290,7 +2708,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private void showCoords (int x, int y) { // x and y for drawing are counted from top left, not from 0,0 origina at center
-		if(!this.hide) {
+		if(!this.hide && !this.fullscreenMap) {
 			GL11.glPushMatrix();
 			GL11.glScalef(0.5f, 0.5f, 1.0f);
 			String xy ="";
@@ -3313,9 +2731,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	private String dCoord(int paramInt1) {
 		if(paramInt1 < 0)
-			return "-" + Math.abs(paramInt1+1);
-		else
+			return "-" + Math.abs(paramInt1); // +1
+		else if(paramInt1 > 0)
 			return "+" + paramInt1;
+		else 
+			return " " + paramInt1;
 	}
 	
 	private int chkLen(String paramStr) {
@@ -3501,13 +2921,16 @@ public class ZanMinimap implements Runnable { // implements Runnable
             case 10:
                 return this.threading;
                 
-            case 18:
+            case 15:
                 return this.filtering;
                 
-            case 19:
+            case 16:
                 return this.waterTransparency;
                 
-            case 20:
+            case 17:
+                return this.blockTransparency;
+                
+            case 18:
                 return this.biomes;
         }
 
@@ -3649,27 +3072,30 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			}
             	break;*/
             
-            case 17:
+            case 13:
             	this.mapCorner = (mapCorner >= 3)?0:mapCorner+1;
             	break;
             	
-            case 18:
+            case 14: 
+            	this.sizeModifier = (this.sizeModifier >=1)?-1:this.sizeModifier+1;
+            	
+            case 15:
             	this.filtering = !filtering;
             	break;
             	
-            case 19:
+            case 16:
             	this.waterTransparency = !waterTransparency;
-            	reloadWaterColor(waterTransparency);
+            	colorManager.loadWaterColor(waterTransparency, biomes);
             	break;
             	
-            case 20:
+            case 17:
+            	this.blockTransparency = !blockTransparency;
+            	break;
+            	
+            case 18:
             	this.biomes = !biomes;
-            	reloadBiomeColors(biomes);
-            	reloadWaterColor(waterTransparency);
+            	colorManager.loadBiomeColors(biomes);
             	break;
-            	
-            case 21: 
-            	this.sizeModifier = (this.sizeModifier >=1)?-1:this.sizeModifier+1;
             	
         }
         doFullRender = true; // re-render immediately for new options

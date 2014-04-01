@@ -1,6 +1,7 @@
 package net.minecraft.src;
 
 import java.awt.Color;
+import java.awt.Graphics;
 import java.awt.Graphics2D; //
 import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
@@ -14,6 +15,7 @@ import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
 import java.util.TreeMap;
 import java.util.zip.ZipFile;
 
@@ -21,6 +23,7 @@ import javax.imageio.ImageIO;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
+import org.lwjgl.opengl.GL12;
 
 import net.minecraft.client.Minecraft;
 import net.minecraft.src.mamiyaotaru.Contact;
@@ -31,7 +34,7 @@ public class ZanRadar {
 	
 	private Minecraft game; 
 	
-	private Tessellator lDraw = Tessellator.instance;
+	private Tessellator tesselator = Tessellator.instance;
 	
 	/*Render texture*/
 	private RenderEngine renderEngine;
@@ -52,6 +55,10 @@ public class ZanRadar {
 	public boolean showPlayers = true;
 	
 	public boolean showNeutrals = false;
+	
+	public boolean filtering = false;
+	
+	public boolean showHelmets = false;
 	
 	/*Have we finished loading icons (done in thread)*/
 	private boolean completedLoading = false;
@@ -138,15 +145,37 @@ public class ZanRadar {
 	 * 	currently full screen is showing icons at double their resolution.  Can allow higher.  Reading size then would just
 	 * display them even bigger, and still double their resolution.  Code here what they should be, then can worry about resolution later
 	 */
-	private int[] size = {2, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 16, 8, 32, 8, 16, 16, 16, 8, 16, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 16, 8, 16, 16, 32, 32, 8, 8, 8, 8, 16};//new int[26]; 
+	// size with smallest power of two that leaves blank area on all sides
+	private int[] size = {4, 16, 16, 16, 16, 16, 8, 8, 8, 16, 8, 16, 16, 32, 16, 32, 32, 16, 16, 16, 8, 16, 16, 16, 8, 8, 16, 16, 16, 16, 16, 32, 32, 16, 16, 16, 32, 32, 16, 16, 16, 16, 16};
+	// size before squarifying
+	private int[] sizeBase = {2, 8, 8, 8, 8, 8, 5, 5, 5, 8, 6, 10, 8, 16, 8, 16, 16, 8, 8, 10, 5, 8, 8, 8, 6, 6, 8, 8, 8, 8, 8, 8, 8, 6, 8, 10, 24, 24, 6, 6, 6, 8, 8};
+	// size with smallest power of two that holds the image.  Image can be right up to the edge - possibly less desirable for filtering
+	//private int[] size = {2, 8, 8, 8, 16, 8, 8, 8, 8, 8, 8, 16, 8, 32, 8, 16, 16, 16, 8, 16, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 16, 8, 16, 16, 32, 32, 8, 8, 8, 8, 16};//new int[26]; 
 	// bat is 8 without ears 16 with.  cow (and mooshroom) is 8 without horns 16 with.  dragon is 16 without crests 32 with
 	
+	private final int CLOTH = 0;
+	//private final int CLOTHOVERLAY = 1;
+	//private final int CLOTHOUTER = 2;
+	//private final int CLOTHOVERLAYOUTER = 3;
+	private final int CHAIN = 4;
+	private final int IRON = 6;
+	private final int GOLD = 8;
+	private final int DIAMOND = 10;
+	
+	private BufferedImage[][] armorIcons = new BufferedImage[12][2];
+	
+	private int[][] armorImageRef = new int[12][2];
+
 	public ZanRadar(ZanMinimap minimap) {
 		this.minimap = minimap;
 		this.renderEngine = minimap.renderEngine;
 		for (int t = 0; t < icons.length; t++) {
 			imageRef[t][0]=-1;
 			imageRef[t][1]=-1;
+		}
+		for (int t = 0; t < armorIcons.length; t++) {
+			armorImageRef[t][0]=-1;
+			armorImageRef[t][1]=-1;
 		}
 		loadDefaultIcons();
 	//	loadTexturePackIcons();
@@ -220,7 +249,7 @@ public class ZanRadar {
 			icons[OCELOT][0] = addImages(addImages(addImages(addImages(blankImage("ozelot", 5, 5), loadImage("ozelot", 5, 5, 5, 4), 0, 1, 5, 5), loadImage("ozelot", 2, 26, 3, 2), 1, 3, 5, 5), loadImage("ozelot", 2, 12, 1, 1), 1, 0, 5, 5), loadImage("ozelot", 8, 12, 1, 1), 3, 0, 5, 5);;
 			icons[PIG][0] = addImages(loadImage("pig", 8, 8, 8, 8), loadImage("pig", 16, 17, 6, 3), 1, 4, 8, 8);
 			icons[PIGZOMBIE][0] = addImages(loadImage("pigzombie", 8, 8, 8, 8), loadImage("pigzombie", 40, 8, 8, 8), 0, 0, 8, 8);
-			icons[PLAYER][0] = loadImage("char", 8, 8, 8, 8);
+			icons[PLAYER][0] = addImages(loadImage("char", 8, 8, 8, 8), loadImage("char", 40, 8, 8, 8), 0, 0, 8, 8);
 			icons[SHEEP][0] = loadImage("sheep", 8, 8, 6, 6);
 			icons[SILVERFISH][0] = addImages(loadImage("silverfish", 22, 20, 6, 6), loadImage("silverfish", 2, 2, 3, 2), 2, 2, 6, 6);
 			icons[SKELETON][0] = addImages(loadImage("skeleton", 8, 8, 8, 8), loadImage("skeleton", 40, 8, 8, 8), 0, 0, 8, 8);
@@ -246,19 +275,28 @@ public class ZanRadar {
 			//icons[ZOMBIEVILLAGER][0] = addImages(loadImage("zombie_villager", 8, 40, 8, 10, 64, 64), loadImage("zombie_villager", 26, 34, 2, 3, 64, 64), 3, 7, 8, 10); // pre blank image for protruding nose
 			icons[ZOMBIEVILLAGER][0] = addImages(addImages(blankImage("zombie_villager", 8, 12, 64, 64), loadImage("zombie_villager", 8, 40, 8, 10, 64, 64), 0, 1, 8, 12), loadImage("zombie_villager", 26, 34, 2, 4, 64, 64), 3, 8, 8, 12); 
 			
+			int oldGenericPlayerRef = imageRef[PLAYER][1];
 			for (int t = 0; t < icons.length; t++) {
 				if (imageRef[t][0] != -1)
 					glah(imageRef[t][0]);
 				if (imageRef[t][1] != -1 && imageRef[t][1] != imageRef[t][0])
 					glah(imageRef[t][1]);
 				//icons[t]=into128(icons[t]);
-				icons[t][0]=intoSquare(icons[t][0]); // this is actually faster.  180000 to 140000 or so
 				icons[t][1]=icons[t][0];
-				float scale = icons[t][0].getWidth()/size[t];
-				if (scale>2)
-					icons[t][1] = scaleImage(icons[t][0], (1/scale)*2); // if icons are more than double, reduce to double for hidef icons
-				if (scale>1)
-					icons[t][0] = scaleImage(icons[t][0], (1/scale)); // if icons are more than default, reduce to default
+				float scale = icons[t][0].getWidth()/sizeBase[t];
+				//if (t==BAT) System.out.println("bat scale " + icons[t][0].getWidth() + " " + sizeBase[t] + " " + scale);
+				if (scale>2) {
+					icons[t][1] = fillOutline(intoSquare(scaleImage(icons[t][0], (1/scale)*2))); // if icons are more than double, reduce to double for hidef icons
+					icons[t][0] = fillOutline(intoSquare(scaleImage(icons[t][0], (1/scale)))); // if icons are more than default, reduce to default
+				}
+				else if (scale>1) {
+					icons[t][1] = fillOutline(intoSquare(icons[t][0])); // otherwise just fill (assuming they won't end up the same as lodef icons)
+					icons[t][0] = fillOutline(intoSquare(scaleImage(icons[t][0], (1/scale)))); // if icons are more than default, reduce to default
+				}
+				else {
+					icons[t][0] = fillOutline(intoSquare(icons[t][0]));
+					icons[t][1] = icons[t][0];
+				}
 				if (renderEngine!=null) { 
 					imageRef[t][0]=this.tex(icons[t][0]);
 					if (icons[t][1].equals(icons[t][0]))
@@ -271,39 +309,67 @@ public class ZanRadar {
 					imageRef[t][1]=-1;
 				}
 			}
+			int newGenericPlayerRef = imageRef[PLAYER][1];
+			replaceGenericPlayerRefs(oldGenericPlayerRef, newGenericPlayerRef);
 			
-		/*	String[] names = new String[25];
-			names[BLAZE] = "fire";
-			names[CAVESPIDER] = "cavespider";
-			names[CHICKEN] = "chicken";
-			names[COW] = "cow";
-			names[CREEPER] = "creeper";
-			names[ENDERDRAGON] = "enderdragon/ender";
-			names[ENDERMAN] = "enderman";
-			names[GHAST] = "ghast";
-			names[IRONGOLEM] = "villager_golem";
-			names[MAGMA] = "lava";
-			names[MOOSHROOM] = "redcow";
-			names[OCELOT] = "ozelot";
-			names[PIG] = "pig";
-			names[PIGZOMBIE] = "pigzombie";
-			names[PLAYER] = "char";
-			names[SHEEP] = "sheep";
-			names[SILVERFISH] = "silverfish";
-			names[SKELETON] = "skeleton";
-			names[SLIME] = "slime";
-			names[SNOWGOLEM] = "snowman";
-			names[SPIDER] = "cavespider";
-			names[SQUID] = "squid";
-			names[VILLAGER] = "villager/farmer";
-			names[WOLF] = "wolf";
-			names[ZOMBIE] = "zombie";
-
-			for (int t = 0; t < 25; t++) {
-				File outFile = new File("j:/" + names[t] + ".png");
-				outFile.createNewFile();
-				ImageIO.write(icons[t], "png", outFile);
-			}*/
+			armorIcons[CLOTH][0] = loadImage("/armor/", "cloth_1", 8, 8, 8, 8);
+			armorIcons[CLOTH+1][0] = loadImage("/armor/", "cloth_1", 40, 8, 8, 8);
+			armorIcons[CLOTH+2][0] = loadImage("/armor/", "cloth_1_b", 8, 8, 8, 8);
+			armorIcons[CLOTH+3][0] = loadImage("/armor/", "cloth_1_b", 40, 8, 8, 8);
+			
+			/*
+			armorIcons[CHAIN][0] = loadImage("/armor/", "chain_1", 8, 8, 8, 8);
+			armorIcons[CHAIN+1][0] = loadImage("/armor/", "chain_1", 40, 8, 8, 8);
+			armorIcons[IRON][0] = loadImage("/armor/", "iron_1", 8, 8, 8, 8);
+			armorIcons[IRON+1][0] = loadImage("/armor/", "iron_1", 40, 8, 8, 8);
+			armorIcons[GOLD][0] = loadImage("/armor/", "gold_1", 8, 8, 8, 8);
+			armorIcons[GOLD+1][0] = loadImage("/armor/", "gold_1", 40, 8, 8, 8);
+			armorIcons[DIAMOND][0] = loadImage("/armor/", "diamond_1", 8, 8, 8, 8);
+			armorIcons[DIAMOND+1][0] = loadImage("/armor/", "diamond_1", 40, 8, 8, 8);
+			*/
+			
+			armorIcons[CHAIN][0] = addImages(loadImage("/armor/", "chain_1", 8, 8, 8, 8), loadImage("/armor/", "chain_1", 40, 8, 8, 8), 0, 0, 8, 8);;
+			armorIcons[IRON][0] = addImages(loadImage("/armor/", "iron_1", 8, 8, 8, 8), loadImage("/armor/", "iron_1", 40, 8, 8, 8), 0, 0, 8, 8);;
+			armorIcons[GOLD][0] = addImages(loadImage("/armor/", "gold_1", 8, 8, 8, 8), loadImage("/armor/", "gold_1", 40, 8, 8, 8), 0, 0, 8, 8);;
+			armorIcons[DIAMOND][0] = addImages(loadImage("/armor/", "diamond_1", 8, 8, 8, 8), loadImage("/armor/", "diamond_1", 40, 8, 8, 8), 0, 0, 8, 8);;
+			armorIcons[CHAIN+1][0] = icons[BLANK][0];
+			armorIcons[IRON+1][0] = icons[BLANK][0];
+			armorIcons[GOLD+1][0] = icons[BLANK][0];
+			armorIcons[DIAMOND+1][0] = icons[BLANK][0];
+			
+			for (int t = 0; t < armorIcons.length; t++) {
+				if (armorImageRef[t][0] != -1)
+					glah(armorImageRef[t][0]);
+				if (armorImageRef[t][1] != -1 && armorImageRef[t][1] != armorImageRef[t][0])
+					glah(armorImageRef[t][1]);
+				//icons[t]=into128(icons[t]);
+				armorIcons[t][1]=armorIcons[t][0];
+				float scale = armorIcons[t][0].getWidth()/8;
+				if (scale>2) {
+					armorIcons[t][1] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], (1/scale)*2))); // if icons are more than double, reduce to double for hidef icons
+					armorIcons[t][0] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], (1/scale)))); // if icons are more than default, reduce to default
+				}
+				else if (scale>1) {
+					armorIcons[t][1] = fillOutline(intoSquare(armorIcons[t][0])); // otherwise just fill (assuming they won't end up the same as lodef icons)
+					armorIcons[t][0] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], (1/scale)))); // if icons are more than default, reduce to default
+				}
+				else {
+					armorIcons[t][0] = fillOutline(intoSquare(armorIcons[t][0]));
+					armorIcons[t][1] = armorIcons[t][0];
+				}
+				if (renderEngine!=null) { 
+					armorImageRef[t][0]=this.tex(armorIcons[t][0]);
+					if (armorIcons[t][1].equals(armorIcons[t][0]))
+						armorImageRef[t][1] = armorImageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
+					else
+						armorImageRef[t][1]=this.tex(armorIcons[t][1]);
+				}
+				else {
+					armorImageRef[t][0]=-1;
+					armorImageRef[t][1]=-1;
+				}
+			}
+			
 			completedLoading = true;
 
 		}
@@ -357,14 +423,25 @@ public class ZanRadar {
 		return image;
 	}
 	
-	// load image with the default dimensions (most common anyway, 64x32 in default)
-	private BufferedImage loadImage(String path, int x, int y, int w, int h) {
-		return loadImage(path, x, y, w, h, 64, 32);
+	
+	// load image with the default path (mob)
+	private BufferedImage loadImage(String name, int x, int y, int w, int h, int imageWidth, int imageHeight) {
+		return loadImage("/mob/", name, x, y, w, h, imageWidth, imageHeight);
 	}
 	
-	private BufferedImage loadImage(String path, int x, int y, int w, int h, int imageWidth, int imageHeight) {
+	// load image with the default dimensions (most common anyway, 64x32 in default)
+	private BufferedImage loadImage(String path, String name, int x, int y, int w, int h) {
+		return loadImage(path, name, x, y, w, h, 64, 32);
+	}
+	
+	// load image with the default path (mob) and dimensions (most common anyway, 64x32 in default)
+	private BufferedImage loadImage(String name, int x, int y, int w, int h) {
+		return loadImage("/mob/", name, x, y, w, h, 64, 32);
+	}
+	
+	private BufferedImage loadImage(String path, String name, int x, int y, int w, int h, int imageWidth, int imageHeight) {
 		try {
-			String fullPath = "/mob/" + path + ".png";
+			String fullPath = path + name + ".png";
 			InputStream is = pack.getResourceAsStream(fullPath);
 			BufferedImage mobSkin = ImageIO.read(is);
 			is.close();
@@ -376,7 +453,7 @@ public class ZanRadar {
 
 		}
 		catch (Exception e) {
-			System.out.println("Failed getting mob: " + path + " - " + e.getLocalizedMessage());
+			System.out.println("Failed getting mob: " + name + " - " + e.getLocalizedMessage());
 			return null;
 		}
 		
@@ -407,7 +484,7 @@ public class ZanRadar {
 	
 	private BufferedImage addImages(BufferedImage base, BufferedImage overlay, float x, int y, int baseWidth, int baseHeight) {
 		int scale = base.getWidth()/baseWidth;
-		java.awt.Graphics gfx = base.getGraphics();
+		Graphics gfx = base.getGraphics();
 		gfx.drawImage(overlay, (int)(x*scale), y*scale, null); // float for x here simply allows us to center the wolf nose in double and higher resolution packs (witch hat too)
 		gfx.dispose();
 		return base;
@@ -416,7 +493,7 @@ public class ZanRadar {
 	private BufferedImage scaleImage(BufferedImage image, float scaleBy) {
 		BufferedImage tmp = new BufferedImage((int)(image.getWidth()*scaleBy), (int)(image.getHeight()*scaleBy), image.getType());
 		Graphics2D g2 = tmp.createGraphics();
-		g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+		//g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
 		g2.drawImage(image, 0, 0, (int)(image.getWidth()*scaleBy), (int)(image.getHeight()*scaleBy), null);
 		g2.dispose();
 		image = tmp;
@@ -432,7 +509,7 @@ public class ZanRadar {
 	
 	private BufferedImage into128(BufferedImage base) {
 		BufferedImage frame = new BufferedImage(128, 128, base.getType());
-		java.awt.Graphics gfx = frame.getGraphics();
+		Graphics gfx = frame.getGraphics();
 		gfx.drawImage(base, 64-base.getWidth()/2, 64-base.getHeight()/2, base.getWidth(), base.getHeight(), null);
 		gfx.dispose();
 		return frame;
@@ -441,15 +518,137 @@ public class ZanRadar {
 	private BufferedImage intoSquare(BufferedImage base) {
 		int dim = Math.max(base.getWidth(), base.getHeight());
 		int t = 0;
-		while (Math.pow(2, t) < dim)
+		while (Math.pow(2, t) <= dim)
 			t++;
 		int size = (int)Math.pow(2, t);
 		
 		BufferedImage frame = new BufferedImage(size, size, base.getType());
-		java.awt.Graphics gfx = frame.getGraphics();
+		Graphics gfx = frame.getGraphics();
 		gfx.drawImage(base, (size-base.getWidth())/2, (size-base.getHeight())/2, base.getWidth(), base.getHeight(), null);
 		gfx.dispose();
 		return frame;
+	}
+	
+	private BufferedImage fillOutline(BufferedImage image) {
+		BufferedImage temp = new BufferedImage(image.getWidth(), image.getHeight(), image.getType());
+		java.awt.Graphics gfx = temp.getGraphics();
+		gfx.drawImage(image, 0, 0, null);
+		gfx.dispose();
+		for (int t = 0; t < image.getWidth(); t++) {
+			for (int s = 0; s < image.getHeight(); s++) {
+				int color = image.getRGB(s, t);
+				if ((color >> 24 & 255) == 0) { // clear pixel
+					int newColor = getNonTransparentPixel(s, t, temp);
+					if (newColor != 0 << 24) {
+						int alpha = (newColor >> 24 & 255);
+						int red = (newColor >> 16 & 255);
+						int green = (newColor >> 8 & 255);
+						int blue = (newColor >> 0 & 255);
+						newColor = (0) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+						image.setRGB(s, t, newColor);
+					}
+				}
+			}
+		}
+		return image;
+	}
+	
+	/*// optional version to get more than one pixel out.  not needed if we run it after scaling
+	private BufferedImage fillOutline(BufferedImage image) {
+		BufferedImage orig = new BufferedImage(image.getWidth(), image.getHeight(), image.getType());
+		Graphics gfx = orig.getGraphics();
+		gfx.drawImage(image, 0, 0, null);
+		gfx.dispose();
+		for (int iter = 0; iter < 6; iter++) {
+			BufferedImage temp = new BufferedImage(image.getWidth(), image.getHeight(), image.getType());
+			gfx = temp.getGraphics();
+			gfx.drawImage(image, 0, 0, null);
+			gfx.dispose();
+			for (int t = 0; t < image.getWidth(); t++) {
+				for (int s = 0; s < image.getHeight(); s++) {
+					int color = image.getRGB(s, t);
+					if ((color >> 24 & 255) == 0) { // clear pixel
+						int newColor = getNonTransparentPixel(s, t, temp);
+						if (newColor != -1) {
+						//	int alpha = (newColor >> 24 & 255);
+						//	int red = (newColor >> 16 & 255);
+						//	int green = (newColor >> 8 & 255);
+						//	int blue = (newColor >> 0 & 255);
+						//	newColor = (255) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+							image.setRGB(s, t, newColor);
+						}
+					}
+				}
+			}
+		}
+		
+		for (int t = 0; t < image.getWidth(); t++) {
+			for (int s = 0; s < image.getHeight(); s++) {
+				int color = image.getRGB(s, t);
+				int origColor = orig.getRGB(s, t);
+				int alpha = (origColor >> 24 & 255);
+				int red = (color >> 16 & 255);
+				int green = (color >> 8 & 255);
+				int blue = (color >> 0 & 255);
+				color = (alpha & 255) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+				image.setRGB(s, t, color);
+			}
+		}
+
+		return image;
+	}*/
+	
+	private int getNonTransparentPixel(int x, int y, BufferedImage image) {
+		int color;
+		if (x > 0) {
+			color = image.getRGB(x-1, y);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		if (x < image.getWidth()-1) {
+			color = image.getRGB(x+1, y);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		if (y > 0) {
+			color = image.getRGB(x, y-1);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		if (y < image.getHeight()-1) {
+			color = image.getRGB(x, y+1);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		
+		if (x > 0 && y > 0) {
+			color = image.getRGB(x-1, y-1);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		if (x > 0 && y < image.getHeight()-1) {
+			color = image.getRGB(x-1, y+1);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		if (x < image.getWidth()-1 && y > 0) {
+			color = image.getRGB(x+1, y-1);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		if (x < image.getWidth()-1 && y < image.getHeight()-1) {
+			color = image.getRGB(x+1, y+1);
+			if ((color >> 24 & 255) != 0)
+				return color;
+		}
+		return -1;
+	}
+	
+	private void replaceGenericPlayerRefs(int oldRef, int newRef) {
+		for(Map.Entry<String,Integer> entry : mpContacts.entrySet()) {
+			if (entry.getValue().equals(oldRef))
+				entry.setValue(newRef);
+		}
 	}
 	
 	public void setTexturePack(ITexturePack pack) {
@@ -458,12 +657,12 @@ public class ZanRadar {
 	
 	public void drawPre()
 	{
-		lDraw.startDrawingQuads();
+		tesselator.startDrawingQuads();
 	}
 	
 	public void drawPost()
 	{
-		lDraw.draw();
+		tesselator.draw();
 	}
 	
 	public void glah(int g)
@@ -473,7 +672,7 @@ public class ZanRadar {
 	
 	public void ldrawthree(double a, double b, double c, double d, double e)
 	{
-		lDraw.addVertexWithUV(a, b, c, d, e);
+		tesselator.addVertexWithUV(a, b, c, d, e);
 	}
 	
 	private void setMap(int x, int y) {
@@ -485,12 +684,12 @@ public class ZanRadar {
 	}
 
 	private void setMap(int x, int y, int imageSize) {
-		int scale = imageSize/4; // 128 image is drawn from center - 32 to center + 32, as in the old setMap
+		float scale = imageSize/4f; // 128 image is drawn from center - 32 to center + 32, as in the old setMap
 		// 16 image is drawn from center - 4 to center + 4, quarter the size
-		ldrawthree(x-scale, y+scale, 1.0D, 0.0D, 1.0D);
-		ldrawthree(x+scale, y+scale, 1.0D, 1.0D, 1.0D);
-		ldrawthree(x+scale, y-scale, 1.0D, 1.0D, 0.0D);
-		ldrawthree(x-scale, y-scale, 1.0D, 0.0D, 0.0D);
+		ldrawthree(minimap.scScale*(x-scale), minimap.scScale*(y+scale), 1.0D, 0.0D, 1.0D);
+		ldrawthree(minimap.scScale*(x+scale), minimap.scScale*(y+scale), 1.0D, 1.0D, 1.0D);
+		ldrawthree(minimap.scScale*(x+scale), minimap.scScale*(y-scale), 1.0D, 1.0D, 0.0D);
+		ldrawthree(minimap.scScale*(x-scale), minimap.scScale*(y-scale), 1.0D, 0.0D, 0.0D);
 	}
 		
 	private int tex(BufferedImage paramImg) {
@@ -518,8 +717,16 @@ public class ZanRadar {
 					else
 						imageRef[t][1]=this.tex(icons[t][1]);
 				}
+				for (int t = 0; t < armorIcons.length; t++) {
+					armorImageRef[t][0]=this.tex(armorIcons[t][0]);
+					if (armorIcons[t][1].equals(armorIcons[t][0]))
+						armorImageRef[t][1] = armorImageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
+					else
+						armorImageRef[t][1]=this.tex(armorIcons[t][1]);
+				}
 			}
 		}
+
 		if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
 			this.enabled=false;
 		else this.enabled=true;
@@ -574,20 +781,29 @@ public class ZanRadar {
 		if (this.enabled && !this.hide && !minimap.hide  && !minimap.fullscreenMap) {
 			
 			// don't recalculate mobs all the time.  doesn't seem to affect FPS, whatev
-			if (this.timer>0) { // not multiple of 100 so doesn't happen at same time as map render
+			if (this.timer>95) { // not multiple of 100 so doesn't happen at same time as map render
 				calculateMobs();
 				timer = 0;
 			}
 			timer++;
-			// commented out block only needed if this is split out into separate mod
-			/*GL11.glDisable(GL11.GL_DEPTH_TEST);
-			GL11.glEnable(GL11.GL_BLEND);
-			GL11.glDepthMask(false);*/ 
-			// blendfunc and color are set for each icon, don't need to do it here
-		//	GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);
-		//	GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 
-			if (completedLoading) renderMapMobs(this.minimap.mapX, this.minimap.mapY, guiScale);	
+			if (completedLoading) {
+		        double scaledWidthD = (double)game.displayWidth;// / (double)minimap.scScale;
+		        double scaledHeightD = (double)game.displayHeight;// / (double)minimap.scScale;
+		        GL11.glMatrixMode(GL11.GL_PROJECTION);
+		        GL11.glPushMatrix();
+		        GL11.glLoadIdentity();
+		        GL11.glOrtho(0.0D, scaledWidthD, scaledHeightD, 0.0D, 1000.0D, 3000.0D);
+		        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+		        GL11.glLoadIdentity();
+		        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+				GL11.glDisable(GL11.GL_DEPTH_TEST);
+				GL11.glEnable(GL11.GL_BLEND);
+				GL11.glDepthMask(false);
+				renderMapMobs(this.minimap.mapX, this.minimap.mapY, guiScale);	
+		        GL11.glMatrixMode(GL11.GL_PROJECTION);
+		        GL11.glPopMatrix();
+			}
 			
 			if (ztimer > 0)
 				this.write(this.error, 20, 20, 0xffffff);
@@ -651,26 +867,24 @@ public class ZanRadar {
 					hypot = hypot/((Math.pow(2,minimap.lZoom)/2)*(Math.pow(2,minimap.lZoom)/2));
 					if (hypot < 961.0D /*31.0D squared - saves on sqrt ops*/) {
 						//System.out.println("player: " + (int)this.game.thePlayer.posY + " mob: " + (int)(entity.posY));
-
+						
+						Contact contact;
 						if (isPlayer(entity)) 
-							contacts.add(handleMPplayer(entity));
-						else  {
-							Contact contact = new Contact(/*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
-							if (contact.type == GHAST || contact.type == WITHER) {
-								contact.setEntity(entity); // allows us to display firing vs non firing icons for ghasts, invulnerable vs normal wither.  Need reference to the actual entity
-							}
-							contact.angle = (float)Math.toDegrees(Math.atan2(wayX, wayZ));
-							// pow2,0 is 1.  /2 is 1/2.  so if hypot max 16/.5 < 31.  pow2,1 is 2. /2 is 1.  hypot max 32/1 < 31.  pow2,2 is 4. /2 is 2.  hypot max 64/2 < 31  
-							contact.distance = Math.sqrt((wayX*wayX)+(wayZ*wayZ))/(Math.pow(2,minimap.lZoom)/2);
-							double adjustedDiff = max - Math.max((Math.abs(wayY) - 0), 0);
-							contact.brightness = (float)Math.max(adjustedDiff / max, 0);
-							contact.brightness *= contact.brightness;
-							contacts.add(contact);
-						}
+							contact = handleMPplayer(entity);
+						else
+							contact = new Contact(entity, /*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
+						contact.angle = (float)Math.toDegrees(Math.atan2(wayX, wayZ));
+						// pow2,0 is 1.  /2 is 1/2.  so if hypot max 16/.5 < 31.  pow2,1 is 2. /2 is 1.  hypot max 32/1 < 31.  pow2,2 is 4. /2 is 2.  hypot max 64/2 < 31  
+						contact.distance = Math.sqrt((wayX*wayX)+(wayZ*wayZ))/(Math.pow(2,minimap.lZoom)/2);
+						double adjustedDiff = max - Math.max((Math.abs(wayY) - 0), 0);
+						contact.brightness = (float)Math.max(adjustedDiff / max, 0);
+						contact.brightness *= contact.brightness;
+						contacts.add(contact);
+
 							//contacts.add(new Contact((int)(entity.posX), (int)(entity.posZ), (int)(entity.posY), getContactType(entity)));
 					} // end if valid contact
 				} // end if should be displayed
-			} catch (Exception ClassNotFoundException) {
+			} catch (Exception classNotFoundException) {
 				this.error = "class not found";
 			}
 		} // end for loop contacts
@@ -688,7 +902,7 @@ public class ZanRadar {
 	private Contact handleMPplayer(Entity entity) {
 		String playerName = scrubCodes(((EntityOtherPlayerMP)entity).username);
 		String skinURL = ((EntityOtherPlayerMP)entity).skinUrl;
-		Contact mpContact = new Contact(/*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
+		Contact mpContact = new Contact(entity, /*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
 		mpContact.setName(playerName);
 		Integer ref = mpContacts.get(playerName); // don't load if already done
 		//System.out.println("***********CHECKING " + ref);
@@ -698,13 +912,15 @@ public class ZanRadar {
 				BufferedImage skinImage = loadSkin(playerName); // try to load icon saved to disk
 				if (skinImage != null) { // if there is one, 128it and use
 					//skinImage = intoSquare(skinImage); // actally square it.  actually don't bother should all be 8x8
+					if (skinImage.getWidth() == 8) // if old non blank space around edge image, add it and make ready for filtering
+						skinImage = fillOutline(intoSquare(skinImage));
 					int imageRef = this.tex(skinImage);
-					System.out.println("Loading " + playerName + " from disk: NEW REF " + imageRef);
+					//System.out.println("Loading " + playerName + " from disk: NEW REF " + imageRef);
 					mpContacts.put(playerName, imageRef);
 				}
 				else { // else default
 					mpContacts.put(playerName, imageRef[PLAYER][1]); // so make image ref for this player the standard player icon.  Try for hidef (if it's the same as lodef, well, lodef will show)
-					//System.out.println("***********DEFAULTING " + imageRef[PLAYER]);
+					//System.out.println("***********DEFAULTING " + imageRef[PLAYER][1]);
 				}
 			}
 			else { // we got a downloaded image
@@ -712,6 +928,7 @@ public class ZanRadar {
 				//skinImage = into128(addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0));
 				skinImage = addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0, 8, 8);
 				saveSkin(skinImage, playerName); // save for future use when skin server is down
+				skinImage = fillOutline(intoSquare(skinImage)); // add space around edge and make ready for filtering
 				//skinImage = intoSquare(skinImage);
 				int imageRef = this.tex(skinImage);
 				//System.out.println("***********NEW REF " + imageRef);
@@ -719,6 +936,19 @@ public class ZanRadar {
 			}
 			if (imageData != null)
 				this.renderEngine.releaseImageData(skinURL); // if it was not null, the reference was incremented.  Decrement it!
+		}
+		if (showHelmets) {
+			ItemStack stack = ((EntityOtherPlayerMP)entity).getCurrentArmor(3);
+			Item helmet = null;
+			if (stack != null && stack.stackSize > 0) 
+				helmet = stack.getItem();
+			if (helmet != null && helmet instanceof ItemArmor) {
+				ItemArmor helmetArmor = (ItemArmor)helmet;
+				EnumArmorMaterial material = helmetArmor.getArmorMaterial();
+				mpContact.setArmor(this.getArmorType(material));
+				if (mpContact.armorValue == CLOTH) 
+					mpContact.setArmorColor(helmetArmor.getColorFromItemStack(((EntityOtherPlayerMP)entity).getCurrentArmor(3), 0));
+			}
 		}
         return mpContact;
 	}
@@ -746,7 +976,7 @@ public class ZanRadar {
 			File inFile = new File(Minecraft.getAppDir(path), playerName + ".png");
 			java.awt.Image icon = ImageIO.read(inFile);
 			BufferedImage iconBuffered = new BufferedImage(icon.getWidth(null), icon.getHeight(null), BufferedImage.TYPE_INT_ARGB);
-			java.awt.Graphics gfx = iconBuffered.createGraphics();
+			Graphics gfx = iconBuffered.createGraphics();
 		    // Paint the image onto the buffered image
 		    gfx.drawImage(icon, 0, 0, null);
 		    gfx.dispose();
@@ -825,6 +1055,31 @@ public class ZanRadar {
 		//return BLANK; // blank is a more sensible default than zombie
 	}
 	
+	private int getArmorType(EnumArmorMaterial material) {
+        switch (material)
+        {
+            case CLOTH:
+                return this.CLOTH;
+                
+            case CHAIN:
+            	return this.CHAIN;
+
+            case IRON:
+                return this.IRON;
+
+            case GOLD:
+                return this.GOLD;
+                
+            case DIAMOND:
+                return this.DIAMOND;
+                
+            default:
+            	return -1;
+                
+        }
+	}
+
+	
 	private boolean singlePixelPer(int scale, int zoom) {
 		if (scale > 4)
 			return false;
@@ -844,57 +1099,48 @@ public class ZanRadar {
 		// 0 is closest zoom.  16.  1 is out, 32. 2 is out 64
 		// so max distance is pow(2,lzoom)*16
 		double max = (Math.pow(2,minimap.lZoom) * 16 - 0);
-		if (this.lastY != this.yCoord() || this.lastZoom != this.minimap.lZoom) {
-			this.lastY = this.yCoord();
-			for(int j = 0; j < contacts.size(); j++) {
-				Contact contact = contacts.get(j);
-				int contactY = contact.y;
-				int wayY = this.yCoord() - contactY;
-				// zoom level 0 from 0 (12-12) to 4 (16-12)
-				// zoom level 1 from 0 (12-12) to 20 (32-12)
-				// max opaque at 0, min opaque at pow(2,lZoom)-12
-				// so invert (make value max - value) max at pow(2,lZoom), min at 0;
-				// then adjust out of 1: 1/max*level  aka level/max :)
-				double adjustedDiff = max - Math.max((Math.abs(wayY) - 0), 0);
-				contact.brightness = (float)Math.max(adjustedDiff / max, 0);
-				contact.brightness *= contact.brightness;
-			}
-		}
 		this.lastZoom = this.minimap.lZoom;
 		for(int j = 0; j < contacts.size(); j++) {
 			Contact contact = contacts.get(j);
+			contact.updateLocation();
 			double contactX = contact.x;
 			double contactZ = contact.z;
 			int contactY = contact.y;
-			double wayX;
-			double wayZ;
-			if (false && singlePixelPer(this.minimap.scScale, this.lastZoom)) {
-				wayX = this.minimap.lastX - (int)contactX;
-				wayZ = this.minimap.lastZ - (int)contactZ;
-				wayX+=this.minimap.percentX*Math.pow(2,minimap.lZoom-1);
-				wayZ+=this.minimap.percentY*Math.pow(2,minimap.lZoom-1);
-				//System.out.println("precision not needed " + this.minimap.scScale + " " + this.lastZoom);
-			}
-			else {
-				wayX = this.minimap.lastXDouble - contactX;
-				wayZ = this.minimap.lastZDouble - contactZ;
-			}
+
+			double wayX = this.minimap.lastXDouble - contactX;
+			double wayZ = this.minimap.lastZDouble - contactZ;
 			if (this.minimap.lastXDouble < 0)
 				wayX++;
 			if (this.minimap.lastZDouble < 0)
 				wayZ++;
+			int wayY = this.yCoord() - contactY;
+			// zoom level 0 from 0 (12-12) to 4 (16-12)
+			// zoom level 1 from 0 (12-12) to 20 (32-12)
+			// max opaque at 0, min opaque at pow(2,lZoom)-12
+			// so invert (make value max - value) max at pow(2,lZoom), min at 0;
+			// then adjust out of 1: 1/max*level  aka level/max :)
+			double adjustedDiff = max - Math.max((Math.abs(wayY) - 0), 0);
+			contact.brightness = (float)Math.max(adjustedDiff / max, 0);
+			contact.brightness *= contact.brightness;
 			contact.angle = (float)Math.toDegrees(Math.atan2(wayX, wayZ));
 			// pow2,0 is 1.  /2 is 1/2.  so if hypot max 16/.5 < 31.  pow2,1 is 2. /2 is 1.  hypot max 32/1 < 31.  pow2,2 is 4. /2 is 2.  hypot max 64/2 < 31  
-			contact.distance = Math.sqrt((wayX*wayX)+(wayZ*wayZ))/(Math.pow(2,minimap.lZoom)/2);
-			int wayY = this.yCoord() - contactY;
+			contact.distance = Math.sqrt((wayX*wayX)+(wayZ*wayZ))/(Math.pow(2,minimap.lZoom)/2)*minimap.scScale;
 			//System.out.println("adjusted diff: " + adjustedDiff + " max: " + max + " brightness: " + brightness);
+
+			/*
 			if (wayY < 0)
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); // fade out
 			else
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // blacken out.  I guess GL_ONE could brighten up?  test if mapY is + or - if we go that way
-			GL11.glColor4f(1.0F, 1.0F, 1.0F, contact.brightness);		
+			 */
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); // fade out
+			if (wayY < 0)
+				GL11.glColor4f(1.0F, 1.0F, 1.0F, contact.brightness);
+			else
+				GL11.glColor3f(1.0F*contact.brightness, 1.0F*contact.brightness, 1.0F*contact.brightness);	// not using alpha to darken.  This lets us apply linear filter if we want without creating an outline
 
-			if ( (minimap.squareMap && Math.abs(wayX)/(Math.pow(2,this.minimap.lZoom)/2) <= 28.5 && Math.abs(wayZ)/(Math.pow(2,this.minimap.lZoom)/2) <= 28.5) || (!minimap.squareMap && contact.distance < 31) ) {
+
+			if ( (minimap.squareMap && Math.abs(wayX)/(Math.pow(2,this.minimap.lZoom)/2) <= 28.5 && Math.abs(wayZ)/(Math.pow(2,this.minimap.lZoom)/2) <= 28.5) || (!minimap.squareMap && contact.distance < 31*minimap.scScale) ) {
 				try {
 					GL11.glPushMatrix();
 					if (contact.type == PLAYER) {
@@ -902,43 +1148,126 @@ public class ZanRadar {
 						if (ref == null)
 							this.disp(imageRef[PLAYER][guiScale]); // display default icon if skin is not loaded yet.
 						else 
-							this.disp(mpContacts.get(contact.name)); // there is a mapping from name to image (it could be to the default image, if loading finishes and it turns out there is no custom skin)
-					}
-					else  {
-						if (contact.entity != null) {
-							if (contact.entity instanceof EntityGhast) 
-								contact.type = (((EntityGhast)contact.entity).getTexture().equals("/mob/ghast_fire.png"))?GHASTATTACKING : GHAST;
-							else if (contact.entity instanceof EntityWither) 
-								contact.type = (((EntityWither)contact.entity).getTexture().equals("/mob/wither_invul.png"))?WITHERINVULNERABLE : WITHER;
-						}
+							this.disp(ref); // there is a mapping from name to image (it could be to the default image, if loading finishes and it turns out there is no custom skin)
+					} // end if other player
+					else {
+						if (contact.entity instanceof EntityGhast) 
+							contact.type = (((EntityGhast)contact.entity).getTexture().equals("/mob/ghast_fire.png"))?GHASTATTACKING : GHAST;
+						else if (contact.entity instanceof EntityWither) 
+							contact.type = (((EntityWither)contact.entity).getTexture().equals("/mob/wither_invul.png"))?WITHERINVULNERABLE : WITHER;
+
 						this.disp(imageRef[contact.type][guiScale]);
-						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
-						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
 					}
-					GL11.glTranslatef(x, y, 0.0F);
-					GL11.glRotatef(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
-					GL11.glTranslated(0.0D,-contact.distance,0.0D);
-					GL11.glRotatef(-(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction)), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
-					GL11.glTranslated(0.0D,contact.distance,0.0D);
-					GL11.glTranslatef(-x, -y, 0.0F);
-					GL11.glTranslated(0.0D,-contact.distance,0.0D);
+					if (filtering) {
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+					}
+					else {
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);							
+					}
+
+
+					//GL11.glTranslatef(x, y, 0.0F);
+					//		GL11.glRotatef(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+					//		GL11.glTranslated(0.0D,-contact.distance,0.0D);
+					//		GL11.glRotatef(-(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction)), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+					//GL11.glTranslated(0.0D,contact.distance,0.0D);
+					//GL11.glTranslatef(-x, -y, 0.0F);
+					//GL11.glTranslated(0.0D,-contact.distance,0.0D);
+
+					wayX = Math.sin(Math.toRadians(-(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction))))*contact.distance;
+					wayZ = Math.cos(Math.toRadians(-(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction))))*contact.distance;
+					if (filtering)
+						GL11.glTranslated(-wayX,-wayZ,0.0D);
+					else
+						GL11.glTranslated(Math.round(-wayX),Math.round(-wayZ),0.0D);
+					//GL11.glTranslated((int)(-wayX),(int)(-wayZ),0.0D);
+
+
 					drawPre();
 					this.setMap(x, y, size[contact.type]);
 					drawPost();
-					/*this.disp(imageRef[contact.type-1][guiScale]);
-					drawPre();
-					this.setMap(scWidth, size[contact.type-1]);
-					drawPost();*/ // draw another picture over the previous one.  Could do this for helmets.  But for zombie villagers?  ugh.  head will stick out the top
 
+					if (showHelmets && contact.armorValue != -1) { // draw another picture over the previous one.  Could do this for helmets.  But for zombie villagers?  ugh.  head will stick out the top
+						float red = 0;
+						float green = 1;
+						float blue = 1;
+						if (contact.armorValue == CLOTH) {
+							red = (contact.armorColor >> 16 & 255)/255f;
+							green = (contact.armorColor >> 8 & 255)/255f;
+							blue = (contact.armorColor >> 0 & 255)/255f;
+							GL11.glColor3f(red, green, blue);
+						}
+						this.disp(armorImageRef[contact.armorValue][guiScale]);
+						if (filtering) {
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+						}
+						else {
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);							
+						}
+						drawPre();
+						this.setMap(x, y, 20);
+						drawPost(); 
 
+						if (contact.armorValue == CLOTH) {
+							GL11.glColor3f(1f, 1f, 1f);
+							this.disp(armorImageRef[CLOTH+2][guiScale]);
+							if (filtering) {
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+							}
+							else {
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);							
+							}
+							drawPre();
+							this.setMap(x, y, 20);
+							drawPost();
+							
+							GL11.glColor3f(red, green, blue);
+					//	}
+						this.disp(armorImageRef[contact.armorValue+1][guiScale]);
+						if (filtering) {
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+						}
+						else {
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
+							GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);							
+						}
+						drawPre();
+						this.setMap(x, y, 20);
+						drawPost(); 
+						
+					//	if (contact.armorValue == CLOTH) {
+							GL11.glColor3f(1f, 1f, 1f);
+							this.disp(armorImageRef[CLOTH+3][guiScale]);
+							if (filtering) {
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+							}
+							else {
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);							
+							}
+							drawPre();
+							this.setMap(x, y, 20);
+							drawPost();
+						} // and if drawing cloth (overlay, outer, overlayouter
+					} // end if show helmets
+					
 				} 
 				catch (Exception localException) {
-					this.error = "Error rendering mob icons! " + localException.getLocalizedMessage() + " contact type " + contact.type;
+					this.error = "Error rendering mob icon! " + localException.getLocalizedMessage() + " contact type " + contact.type;
 				} 
 				finally {
 					GL11.glPopMatrix();
 				}
 			}
+
 
 		} // end for contacts
 
@@ -954,6 +1283,8 @@ public class ZanRadar {
 		out.println("Show Hostiles:" + Boolean.toString(showHostiles));
 		out.println("Show Players:" + Boolean.toString(showPlayers));
 		out.println("Show Neutrals:" + Boolean.toString(showNeutrals));
+		out.println("Filter Mob Icons:" + Boolean.toString(filtering));
+		out.println("Show Helmets:" + Boolean.toString(showHelmets));
 	}
 	
 	public void saveAll() {
@@ -965,6 +1296,8 @@ public class ZanRadar {
 			out.println("Show Hostiles:" + Boolean.toString(showHostiles));
 			out.println("Show Players:" + Boolean.toString(showPlayers));
 			out.println("Show Neutrals:" + Boolean.toString(showNeutrals));
+			out.println("Filter Mob Icons:" + Boolean.toString(filtering));
+			out.println("Show Helmets:" + Boolean.toString(showHelmets));
 			out.close();
 		} catch (Exception local) {
 			minimap.chatInfo("§EError Saving Settings");
@@ -1033,17 +1366,23 @@ public class ZanRadar {
     {
         switch (EnumOptionsHelperMinimap.enumOptionsMappingHelperArray[par1EnumOptions.ordinal()])
         {
-            case 13:
+            case 19:
                 return this.hide;
                 
-            case 14:
+            case 20:
             	return this.showHostiles;
 
-            case 15:
+            case 21:
                 return this.showPlayers;
 
-            case 16:
+            case 22:
                 return this.showNeutrals;
+                
+            case 23:
+                return this.filtering;
+                
+            case 24:
+                return this.showHelmets;
         }
 
         return false;
@@ -1052,20 +1391,28 @@ public class ZanRadar {
 	public void setOptionValue(EnumOptionsMinimap par1EnumOptions, int i) {
         switch (par1EnumOptions.ordinal())
         {
-            case 13:
+            case 19:
                 this.hide = !hide;
                 break;
                 
-            case 14:
+            case 20:
                 this.showHostiles = !showHostiles;
                 break;
 
-            case 15:
+            case 21:
                 this.showPlayers = !showPlayers;
                 break;
 
-            case 16:
+            case 22:
                 this.showNeutrals = !showNeutrals;
+                break;
+                
+            case 23:
+                this.filtering = !filtering;
+                break;
+                
+            case 24:
+                this.showHelmets = !showHelmets;
                 break;
         }
 		this.timer = 500; // immediately show changes

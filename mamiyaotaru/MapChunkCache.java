@@ -112,7 +112,7 @@ public class MapChunkCache {
 	}
 	
 	public void drawChunks(boolean oldNorth) {
-		if (!loaded) 
+		if (!loaded || ZanMinimap.instance.dlSafe) 
 			return;
 		for (int z = 0; z < this.height; z++) {
 			if (oldNorth) // old north reverses X-1 to X+1

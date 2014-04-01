@@ -120,7 +120,7 @@ public class CommandServerZanTp extends CommandBase {
 					int safeY = -1;
 					for (int t = 0; t < 127; t++) {
 						// ie if block is solid (no liquid) and two blocks above are air
-						if ( (y + t < 128) && isBlockStandable(player.worldObj, x, y + t, z) && isBlockOpen(player.worldObj,x, y + t + 1, z) && isBlockOpen(player.worldObj,x, y + t + 2, z)) {
+						if ( (y + t < 127) && isBlockStandable(player.worldObj, x, y + t, z) && isBlockOpen(player.worldObj,x, y + t + 1, z) && isBlockOpen(player.worldObj,x, y + t + 2, z)) {
 							safeY = y+t+1;
 							t = 128; // break
 						}
