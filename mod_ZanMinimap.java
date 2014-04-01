@@ -607,12 +607,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		int multi = (int)Math.pow(2, this.lZoom);
 		int startX = this.xCoord(); // 1
 		int startZ = this.zCoord(); // j
-		if (lastX - startX != 0) {
-			System.out.println("Moved x: " + (lastX - startX));
-		}
-		if (lastZ - startZ != 0) {
-			System.out.println("Moved z: " + (lastZ - startZ));
-		}
 		this.lastX = startX;
 		this.lastZ = startZ;
 		startX -= 16*multi;
@@ -686,340 +680,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			}
 		}
 	}
-/*	private void mapCalcOverworld() { // ** speed
-		World data = getWorld();
-		int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
-		this.lZoom = this.zoom;
-		int multi = (int)Math.pow(2, this.lZoom);
-		int startX = this.xCoord(); // 1
-		int startZ = this.zCoord(); // j
-		int offsetX = startX - lastX;
-		int offsetZ = startZ - lastZ;
-		this.lastX = startX;
-		this.lastZ = startZ;
-		if (offsetX > 0) {
-			System.out.println("Moved x: " + offsetX);
-			startX -= 16*multi;
-			startZ -= 16*multi; 
-			int color24 = 0; // k
-			int height = 0;
-			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
-			BufferedImage snip = this.map[this.lZoom].getSubimage(offsetX, 0, this.map[this.lZoom].getWidth()-offsetX , this.map[this.lZoom].getHeight());
-			java.awt.Graphics gfx = comp.getGraphics ();
-			gfx.drawImage (snip, 0, 0, null);
-			gfx.dispose ();
-			for (int imageY = 0; imageY < 32 * multi; imageY++) {
-				for (int imageX = 32 * multi - offsetX; imageX < 32 * multi; imageX++) {
-					color24 = 0;
-					boolean check = false;
-
-					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-
-					//int i1 ~ height
-					//int height = data.f(i + m, startZ - imageX); // notch
-					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
-					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
-					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
-
-					if ((check) || (squareMap) || (this.full)) {
-						if (this.rc) {
-							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-								color24 = 0xFFFFFF;
-							else {
-								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-							}
-						} else color24 = 0xFFFFFF;
-					}
-
-					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-						if (heightmap) {
-							int i2 = height-this.yCoord();
-							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
-							//double sc = Math.abs(i2)/340.0D;
-
-							int r = color24 / 0x10000;
-							int g = (color24 - r * 0x10000)/0x100;
-							int b = (color24 - r * 0x10000-g*0x100);
-
-							if (i2>=0) {
-								r = (int)(sc * (0xff-r)) + r;
-								g = (int)(sc * (0xff-g)) + g;
-								b = (int)(sc * (0xff-b)) + b;
-							} else {
-								i2=Math.abs(i2);
-								r = r -(int)(sc * r);
-								g = g -(int)(sc * g);
-								b = b -(int)(sc * b);
-							}
-
-							color24 = r * 0x10000 + g * 0x100 + b;
-						}
-
-						int i3 = 255;
-
-						if (lightmap)
-							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-
-						if(i3 > 255) i3 = 255;
-
-						if(i3 < 32) i3 = 32;
-
-						color24 = i3 * 0x1000000 + color24 ;
-					}
-					comp.setRGB(imageX, imageY, color24);
-				}
-			}
-			this.map[this.lZoom] = comp;
-			
-		}
-		if (offsetX < 0) {
-			System.out.println("Moved x: " + offsetX);
-			startX -= 16*multi;
-			startZ -= 16*multi; 
-			offsetX = Math.abs(offsetX);
-			int color24 = 0; // k
-			int height = 0;
-			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
-			BufferedImage snip = this.map[this.lZoom].getSubimage(0, 0, this.map[this.lZoom].getWidth()-offsetX , this.map[this.lZoom].getHeight());
-			java.awt.Graphics gfx = comp.getGraphics ();
-			gfx.drawImage (snip, offsetX, 0, null);
-			gfx.dispose ();
-			for (int imageY = 0; imageY < 32 * multi; imageY++) {
-				for (int imageX = 0; imageX < offsetX; imageX++) {
-					color24 = 0;
-					boolean check = false;
-
-					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-
-					//int i1 ~ height
-					//int height = data.f(i + m, startZ - imageX); // notch
-					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
-					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
-					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
-
-					if ((check) || (squareMap) || (this.full)) {
-						if (this.rc) {
-							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-								color24 = 0xFFFFFF;
-							else {
-								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-							}
-						} else color24 = 0xFFFFFF;
-					}
-
-					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-						if (heightmap) {
-							int i2 = height-this.yCoord();
-							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
-							//double sc = Math.abs(i2)/340.0D;
-
-							int r = color24 / 0x10000;
-							int g = (color24 - r * 0x10000)/0x100;
-							int b = (color24 - r * 0x10000-g*0x100);
-
-							if (i2>=0) {
-								r = (int)(sc * (0xff-r)) + r;
-								g = (int)(sc * (0xff-g)) + g;
-								b = (int)(sc * (0xff-b)) + b;
-							} else {
-								i2=Math.abs(i2);
-								r = r -(int)(sc * r);
-								g = g -(int)(sc * g);
-								b = b -(int)(sc * b);
-							}
-
-							color24 = r * 0x10000 + g * 0x100 + b;
-						}
-
-						int i3 = 255;
-
-						if (lightmap)
-							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-
-						if(i3 > 255) i3 = 255;
-
-						if(i3 < 32) i3 = 32;
-
-						color24 = i3 * 0x1000000 + color24 ;
-					}
-					comp.setRGB(imageX, imageY, color24);
-				}
-			}
-			this.map[this.lZoom] = comp;
-			
-		}
-		if (offsetZ > 0) {
-			System.out.println("Moved z: " + offsetZ);
-			startX -= 16*multi;
-			startZ -= 16*multi; 
-			int color24 = 0; // k
-			int height = 0;
-			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
-			BufferedImage snip = this.map[this.lZoom].getSubimage(0, offsetZ, this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight()-offsetZ);
-			java.awt.Graphics gfx = comp.getGraphics ();
-			gfx.drawImage (snip, 0, 0, null);
-			gfx.dispose ();
-			for (int imageY = 32 * multi - offsetZ; imageY < 32 * multi; imageY++) {
-				for (int imageX = 0; imageX < 32 * multi; imageX++) {
-					color24 = 0;
-					boolean check = false;
-
-					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-
-					//int i1 ~ height
-					//int height = data.f(i + m, startZ - imageX); // notch
-					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
-					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
-					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
-
-					if ((check) || (squareMap) || (this.full)) {
-						if (this.rc) {
-							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-								color24 = 0xFFFFFF;
-							else {
-								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-							}
-						} else color24 = 0xFFFFFF;
-					}
-
-					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-						if (heightmap) {
-							int i2 = height-this.yCoord();
-							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
-							//double sc = Math.abs(i2)/340.0D;
-
-							int r = color24 / 0x10000;
-							int g = (color24 - r * 0x10000)/0x100;
-							int b = (color24 - r * 0x10000-g*0x100);
-
-							if (i2>=0) {
-								r = (int)(sc * (0xff-r)) + r;
-								g = (int)(sc * (0xff-g)) + g;
-								b = (int)(sc * (0xff-b)) + b;
-							} else {
-								i2=Math.abs(i2);
-								r = r -(int)(sc * r);
-								g = g -(int)(sc * g);
-								b = b -(int)(sc * b);
-							}
-
-							color24 = r * 0x10000 + g * 0x100 + b;
-						}
-
-						int i3 = 255;
-
-						if (lightmap)
-							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-
-						if(i3 > 255) i3 = 255;
-
-						if(i3 < 32) i3 = 32;
-
-						color24 = i3 * 0x1000000 + color24 ;
-					}
-					comp.setRGB(imageX, imageY, color24);
-				}
-			}
-			this.map[this.lZoom] = comp;
-			
-		}
-		if (offsetZ < 0) {
-			System.out.println("Moved z: " + offsetZ);
-			startX -= 16*multi;
-			startZ -= 16*multi; 
-			offsetZ = Math.abs(offsetZ);
-			int color24 = 0; // k
-			int height = 0;
-			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
-			BufferedImage snip = this.map[this.lZoom].getSubimage(0, 0, this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight()-offsetZ);
-			java.awt.Graphics gfx = comp.getGraphics ();
-			gfx.drawImage (snip, 0, offsetZ, null);
-			gfx.dispose ();
-			for (int imageY = 0; imageY < offsetZ; imageY++) {
-				for (int imageX = 0; imageX < 32 * multi; imageX++) {
-					color24 = 0;
-					boolean check = false;
-
-					if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
-
-					//int i1 ~ height
-					//int height = data.f(i + m, startZ - imageX); // notch
-					//int height = data.func_696_e(startX + imageY, startZ - imageX); // deobf
-					//int height = getBlockHeight(data, startX + imageY, startZ - imageX); // newZan
-					//int height = data.getChunkFromBlockCoords(startX + imageY, startZ - imageX).getHeightValue((startX + imageY) & 0xf, (startZ - imageX) & 0xf); // replicate old way
-					//int height = data.getHeightValue(startX + imageY, startZ - imageX); // new method in world that easily replicates old way 
-					height = data.getHeightValue(startX + imageX, startZ + imageY); // x+y z-x west at top, x+x z+y north at top
-
-					if ((check) || (squareMap) || (this.full)) {
-						if (this.rc) {
-							if ((data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (data.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-								color24 = 0xFFFFFF;
-							else {
-								color24 = getBlockColor(data.getBlockId(startX + imageX, height - 1, startZ + imageY), data.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-							}
-						} else color24 = 0xFFFFFF;
-					}
-
-					if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (squareMap) || (this.full))) {
-						if (heightmap) {
-							int i2 = height-this.yCoord();
-							//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
-							double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.8D;
-							//double sc = Math.abs(i2)/340.0D;
-
-							int r = color24 / 0x10000;
-							int g = (color24 - r * 0x10000)/0x100;
-							int b = (color24 - r * 0x10000-g*0x100);
-
-							if (i2>=0) {
-								r = (int)(sc * (0xff-r)) + r;
-								g = (int)(sc * (0xff-g)) + g;
-								b = (int)(sc * (0xff-b)) + b;
-							} else {
-								i2=Math.abs(i2);
-								r = r -(int)(sc * r);
-								g = g -(int)(sc * g);
-								b = b -(int)(sc * b);
-							}
-
-							color24 = r * 0x10000 + g * 0x100 + b;
-						}
-
-						int i3 = 255;
-
-						if (lightmap)
-							//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-							i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-
-						if(i3 > 255) i3 = 255;
-
-						if(i3 < 32) i3 = 32;
-
-						color24 = i3 * 0x1000000 + color24 ;
-					}
-					comp.setRGB(imageX, imageY, color24);
-				}
-			}
-			this.map[this.lZoom] = comp;
-			
-		}
-
-		//if (lastZ - startZ != 0) {
-		//	System.out.println("Moved z: " + (lastZ - startZ));
-		//}
-	} */
 	
 	private void mapCalc() {
 
@@ -1551,7 +1211,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		File tpFile = new File(getAppDir("minecraft"), "moo");
 		System.out.println(game.renderEngine.getTexture("terrain.png"));
 		this.renderEngine.bindTexture(this.renderEngine.getTexture("terrain.png"));
-
+		
 		try {
 		    // Read from a file
 		    //File file = new File("image.gif");
@@ -1578,6 +1238,28 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		    // Paint the image onto the buffered image
 		    gfx.drawImage(terrain, 0, 0, null);
 		    gfx.dispose();
+		    
+		    int initialSize = terrainBuff.getHeight();
+		    int initialTileSize = initialSize/16;
+		    int imageType = terrainBuff.getType();
+			int finalSize = 256;
+			int tileSize = finalSize/16;
+			BufferedImage comp = new BufferedImage(finalSize, finalSize, terrainBuff.getType());
+			gfx = comp.getGraphics();
+			for (int t = 0; t < 16; t++) {
+				for (int s = 0; s < 16; s++) {
+					BufferedImage snip = terrainBuff.getSubimage(initialTileSize*t, initialTileSize*s, initialTileSize, initialTileSize);
+					java.awt.Image snipScaled = snip.getScaledInstance(tileSize, tileSize, java.awt.Image.SCALE_SMOOTH);
+					gfx.drawImage(snipScaled, tileSize*t, tileSize*s, null);
+				}
+			}
+			gfx.dispose ();
+			File file = new File("j:/terrainSmall.png");
+			file.createNewFile();
+			ImageIO.write(comp, "png", file);
+			
+
+		    
 			blockColors[blockColorID(1, 0)] = getColor(terrainBuff, 1);
 //			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
 			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7,  0.7)) & 0x00FFFFFF;
@@ -2742,7 +2424,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 
 		this.fudge = 20;
-		//this.mapCalcOverworldBak(); // ** speed
 	}
 
 
