@@ -1,6 +1,7 @@
 package net.minecraft.src.mamiyaotaru;
 public class Waypoint {
     public String name;
+    public String imageSuffix = ""; 
     public int x;
     public int z;
     public boolean enabled;
@@ -27,6 +28,17 @@ public class Waypoint {
         this.blue = blue;
     }
     
+    public Waypoint(String name, int x, int z, boolean enabled, float red, float green, float blue, String suffix) {
+        this.name = name;
+        this.x = x;
+        this.z = z;
+        this.enabled = enabled;
+        this.red = red;
+        this.green = green;
+        this.blue = blue;
+        this.imageSuffix = suffix;
+    }
+        
     public void kill() {
     	this.setDisplayInWorld(false);
     	this.isDead = true;

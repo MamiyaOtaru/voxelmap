@@ -20,10 +20,11 @@ import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.src.mamiyaotaru.Contact;
 import net.minecraft.src.mamiyaotaru.EnumOptionsHelperMinimap;
 import net.minecraft.src.mamiyaotaru.EnumOptionsMinimap;
 
-public class mod_ZanRadar {
+public class ZanRadar {
 	
 	private Minecraft game; 
 	
@@ -35,7 +36,7 @@ public class mod_ZanRadar {
 	/*Font rendering class*/
 	private FontRenderer fontRenderer;
 	
-	public mod_ZanMinimap minimap = null;
+	public ZanMinimap minimap = null;
 		
 	/*Display anything at all, menu, etc..*/
 	private boolean enabled = true;
@@ -47,8 +48,11 @@ public class mod_ZanRadar {
 	
 	public boolean showPlayers = true;
 	
-	public boolean showNeutrals = true;
+	public boolean showNeutrals = false;
 	
+	/*Have we finished loading icons (done in thread)*/
+	private boolean completedLoading = false;
+		
 	/*Holds error exceptions thrown*/
 	private String error = "";
 	
@@ -95,9 +99,9 @@ public class mod_ZanRadar {
 	private final int WOLF = 24;
 	private final int ZOMBIE = 25;
 	
-	private BufferedImage[] icons = new BufferedImage[26];
+	private BufferedImage[][] icons = new BufferedImage[26][2];
 	
-	private int[] imageRef = new int[26];
+	private int[][] imageRef = new int[26][2];
 	
 	/** hardcoding size here instead of after squarifiying images, in case I ever want to allow higher def images in icons 
 	 * 	currently full screen is showing icons at double their resolution.  Can allow higher.  Reading size then would just
@@ -105,7 +109,7 @@ public class mod_ZanRadar {
 	 */
 	private int[] size = {8, 8, 8, 8, 8, 16, 8, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 8, 8};//new int[26]; 
 	
-	public mod_ZanRadar(mod_ZanMinimap minimap) {
+	public ZanRadar(ZanMinimap minimap) {
 		this.minimap = minimap;
 		this.renderEngine = minimap.renderEngine;
 		loadDefaultIcons();
@@ -150,40 +154,53 @@ public class mod_ZanRadar {
 			//java.awt.Image terrain = ImageIO.read(file);
 
 			//System.out.println("WIDTH: " + terrain.getWidth(null));
-			icons[BLAZE] = loadImage("fire", 8, 8, 8, 8);
-			icons[CAVESPIDER] = addImages(addImages(loadImage("cavespider", 40, 12, 8, 8), loadImage("cavespider", 6, 6, 6, 6), 1, 1), loadImage("cavespider", 40, 12, 8, 8), 0, 0);
-			icons[CHICKEN] = addImages(loadImage("chicken", 2, 3, 6, 6), loadImage("chicken", 16, 2, 4, 2), 1, 2);
-			icons[COW] = loadImage("cow", 6, 6, 8, 8);
-			icons[CREEPER] = loadImage("creeper", 8, 8, 8, 8);
-			icons[ENDERDRAGON] = loadImage("enderdragon/ender", 128, 46, 16, 16, 256, 256);
-			icons[ENDERMAN] = addImages(addImages(loadImage("enderman", 8, 8, 8, 8), loadImage("enderman", 8, 24, 8, 8), 0, 0), loadImage("enderman_eyes", 8, 12, 8, 1), 0, 4);
-			icons[GHAST] = loadImage("ghast", 16, 16, 16, 16);
-			icons[GHASTATTACKING] = loadImage("ghast_fire", 16, 16, 16, 16);
-			icons[IRONGOLEM] = loadImage("villager_golem", 8, 8, 8, 10, 128, 128);
-			icons[MAGMA] = addImages(addImages(loadImage("lava", 8, 8, 8, 8), loadImage("lava", 32, 18, 8, 1), 0, 3), loadImage("lava", 32, 27, 8, 1), 0, 4);
-			icons[MOOSHROOM] = loadImage("redcow", 6, 6, 8, 8);
-			icons[OCELOT] = addImages(loadImage("ozelot", 5, 5, 5, 5), loadImage("ozelot", 2, 26, 3, 2), 1, 2);
-			icons[PIG] = addImages(loadImage("pig", 8, 8, 8, 8), loadImage("pig", 16, 17, 6, 3), 1, 4);
-			icons[PIGZOMBIE] = addImages(loadImage("pigzombie", 8, 8, 8, 8), loadImage("pigzombie", 40, 8, 8, 8), 0, 0);
-			icons[PLAYER] = loadImage("char", 8, 8, 8, 8);
-			icons[SHEEP] = loadImage("sheep", 8, 8, 6, 6);
-			icons[SILVERFISH] = addImages(loadImage("silverfish", 22, 20, 6, 6), loadImage("silverfish", 2, 2, 3, 2), 2, 2);
-			icons[SKELETON] = addImages(loadImage("skeleton", 8, 8, 8, 8), loadImage("skeleton", 40, 8, 8, 8), 0, 0);
-			icons[SLIME] = addImages(addImages(addImages(loadImage("slime", 8, 8, 8, 8), loadImage("slime", 6, 22, 6 ,6), 1, 1), loadImage("slime", 34, 6, 2, 2), 1, 2), loadImage("slime", 34, 2, 2, 2), 5, 2);
-			icons[SNOWGOLEM] = loadImage("snowman", 8, 8, 8, 8, 64, 64);
-			icons[SPIDER] = addImages(addImages(loadImage("spider", 40, 12, 8, 8), loadImage("spider", 6, 6, 6, 6), 1, 1), loadImage("spider", 40, 12, 8, 8), 0, 0);
-			icons[SQUID] = scaleImage(loadImage("squid", 12, 12, 12, 16), 0.5f); // squid is too big for what it is
-			icons[VILLAGER] = addImages(loadImage("villager/farmer", 8, 8, 8, 10, 64, 64), loadImage("villager/farmer", 26, 2, 2, 3, 64, 64), 3, 7);
-			icons[WOLF] = addImages(loadImage("wolf", 4, 4, 6, 6), loadImage("wolf", 4, 14, 3, 3), 2, 3);
-			icons[ZOMBIE] = addImages(loadImage("zombie", 8, 8, 8, 8), loadImage("zombie", 40, 8, 8, 8), 0, 0);
+			icons[BLAZE][0] = loadImage("fire", 8, 8, 8, 8);
+			icons[CAVESPIDER][0] = addImages(addImages(loadImage("cavespider", 40, 12, 8, 8), loadImage("cavespider", 6, 6, 6, 6), 1, 1, 8, 8), loadImage("cavespider", 40, 12, 8, 8), 0, 0, 8, 8); // head first (it's the biggest) then thorax then head. In case head is invisible, this gives us the thorax
+			icons[CHICKEN][0] = addImages(loadImage("chicken", 2, 3, 6, 6), loadImage("chicken", 16, 2, 4, 2), 1, 2, 6, 6);
+			icons[COW][0] = loadImage("cow", 6, 6, 8, 8);
+			icons[CREEPER][0] = loadImage("creeper", 8, 8, 8, 8);
+			icons[ENDERDRAGON][0] = loadImage("enderdragon/ender", 128, 46, 16, 16, 256, 256);
+			icons[ENDERMAN][0] = addImages(addImages(addImages(loadImage("enderman", 8, 8, 8, 8), loadImage("enderman", 8, 24, 8, 8), 0, 0, 8, 8), loadImage("enderman", 8, 8, 8, 8), 0, 0, 8, 8), loadImage("enderman_eyes", 8, 12, 8, 1), 0, 4, 8, 8); // head twice, once to establish size, then again because it goes over the jaw
+			icons[GHAST][0] = loadImage("ghast", 16, 16, 16, 16);
+			icons[GHASTATTACKING][0] = loadImage("ghast_fire", 16, 16, 16, 16);
+			icons[IRONGOLEM][0] = loadImage("villager_golem", 8, 8, 8, 10, 128, 128);
+			icons[MAGMA][0] = addImages(addImages(loadImage("lava", 8, 8, 8, 8), loadImage("lava", 32, 18, 8, 1), 0, 3, 8, 8), loadImage("lava", 32, 27, 8, 1), 0, 4, 8, 8);
+			icons[MOOSHROOM][0] = loadImage("redcow", 6, 6, 8, 8);
+			icons[OCELOT][0] = addImages(loadImage("ozelot", 5, 5, 5, 5), loadImage("ozelot", 2, 26, 3, 2), 1, 2, 5, 5);
+			icons[PIG][0] = addImages(loadImage("pig", 8, 8, 8, 8), loadImage("pig", 16, 17, 6, 3), 1, 4, 8, 8);
+			icons[PIGZOMBIE][0] = addImages(loadImage("pigzombie", 8, 8, 8, 8), loadImage("pigzombie", 40, 8, 8, 8), 0, 0, 8, 8);
+			icons[PLAYER][0] = loadImage("char", 8, 8, 8, 8);
+			icons[SHEEP][0] = loadImage("sheep", 8, 8, 6, 6);
+			icons[SILVERFISH][0] = addImages(loadImage("silverfish", 22, 20, 6, 6), loadImage("silverfish", 2, 2, 3, 2), 2, 2, 6, 6);
+			icons[SKELETON][0] = addImages(loadImage("skeleton", 8, 8, 8, 8), loadImage("skeleton", 40, 8, 8, 8), 0, 0, 8, 8);
+			icons[SLIME][0] = addImages(addImages(addImages(loadImage("slime", 8, 8, 8, 8), loadImage("slime", 6, 22, 6 ,6), 1, 1, 8, 8), loadImage("slime", 34, 6, 2, 2), 1, 2, 8, 8), loadImage("slime", 34, 2, 2, 2), 5, 2, 8, 8);
+			icons[SNOWGOLEM][0] = loadImage("snowman", 8, 8, 8, 8, 64, 64);
+			icons[SPIDER][0] = addImages(addImages(loadImage("spider", 40, 12, 8, 8), loadImage("spider", 6, 6, 6, 6), 1, 1, 8, 8), loadImage("spider", 40, 12, 8, 8), 0, 0, 8, 8);
+			icons[SQUID][0] = scaleImage(loadImage("squid", 12, 12, 12, 16), 0.5f); // squid is too big for what it is
+			icons[VILLAGER][0] = addImages(loadImage("villager/farmer", 8, 8, 8, 10, 64, 64), loadImage("villager/farmer", 26, 2, 2, 3, 64, 64), 3, 7, 8, 10);
+			icons[WOLF][0] = addImages(loadImage("wolf", 4, 4, 6, 6), loadImage("wolf", 4, 14, 3, 3), 1.5f, 3, 6, 6);
+			icons[ZOMBIE][0] = addImages(loadImage("zombie", 8, 8, 8, 8), loadImage("zombie", 40, 8, 8, 8), 0, 0, 8, 8);
 			
 			for (int t = 0; t < icons.length; t++) {
 				//icons[t]=into128(icons[t]);
-				icons[t]=intoSquare(icons[t]); // this is actually faster.  180000 to 140000 or so
-				if (renderEngine!=null) 
-					imageRef[t]=this.tex(icons[t]);
-				else
-					imageRef[t]=-1;//this.tex(icons[t]);
+				icons[t][0]=intoSquare(icons[t][0]); // this is actually faster.  180000 to 140000 or so
+				icons[t][1]=icons[t][0];
+				float scale = icons[t][0].getWidth()/size[t];
+				if (scale>2)
+					icons[t][1] = scaleImage(icons[t][0], (1/scale)*2); // if icons are more than double, reduce to double for hidef icons
+				if (scale>1)
+					icons[t][0] = scaleImage(icons[t][0], (1/scale)); // if icons are more than default, reduce to default
+				if (renderEngine!=null) { 
+					imageRef[t][0]=this.tex(icons[t][0]);
+					if (icons[t][1].equals(icons[t][0]))
+						imageRef[t][1] = imageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
+					else
+						imageRef[t][1]=this.tex(icons[t][1]);
+				}
+				else {
+					imageRef[t][0]=-1;
+					imageRef[t][1]=-1;
+				}
 			}
 			
 		/*	String[] names = new String[25];
@@ -218,6 +235,7 @@ public class mod_ZanRadar {
 				outFile.createNewFile();
 				ImageIO.write(icons[t], "png", outFile);
 			}*/
+			completedLoading = true;
 
 		}
 		catch (Exception e) {
@@ -269,14 +287,15 @@ public class mod_ZanRadar {
 		
 		float scale = mobSkin.getWidth(null) / imageWidth; // float for dealing with lower res texture packs
 		BufferedImage base = mobSkin.getSubimage((int)(x*scale), (int)(y*scale), (int)(w*scale), (int)(h*scale));
-		if (scale != 1)  // scale down hidef (or up lodef?  haha)
-			base = scaleImage (base, 1/scale);
+	//	if (scale != 1)  // scale down hidef (or up lodef?  haha) // scale at the end, after it's all added together
+	//		base = scaleImage (base, 1/scale);
 		return base;
 	}
 	
-	private BufferedImage addImages(BufferedImage base, BufferedImage overlay, int x, int y) {
+	private BufferedImage addImages(BufferedImage base, BufferedImage overlay, float x, int y, int baseWidth, int baseHeight) {
+		int scale = base.getWidth()/baseWidth;
 		java.awt.Graphics gfx = base.getGraphics();
-		gfx.drawImage(overlay, x, y, null);
+		gfx.drawImage(overlay, (int)(x*scale), y*scale, null); // float for x here simply allows us to center the wolf nose in double and higher resolution packs
 		gfx.dispose();
 		return base;
 	}
@@ -364,11 +383,15 @@ public class mod_ZanRadar {
 	public void OnTickInGame(Minecraft mc) {
 		if(game==null) game = mc;
 		if(fontRenderer==null) fontRenderer = this.game.fontRenderer;
-		if(renderEngine==null) {
+		if(renderEngine==null && completedLoading) {
 			renderEngine = this.game.renderEngine;
 			if (renderEngine!=null) { // once we get a render engine (and only once) allocate the images
 				for (int t = 0; t < icons.length; t++) {
-					imageRef[t]=this.tex(icons[t]);
+					imageRef[t][0]=this.tex(icons[t][0]);
+					if (icons[t][1].equals(icons[t][0]))
+						imageRef[t][1] = imageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
+					else
+						imageRef[t][1]=this.tex(icons[t][1]);
 				}
 			}
 		}
@@ -378,6 +401,8 @@ public class mod_ZanRadar {
 		ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
 		int scWidth = scSize.getScaledWidth();
 		int scHeight = scSize.getScaledHeight();
+		int guiScale = scSize.getScaleFactor();
+		guiScale = (guiScale>=4)?1:0;
 		scWidth -= 5;
 		scHeight -= 5;
 		this.direction = -this.game.thePlayer.rotationYaw;
@@ -406,17 +431,13 @@ public class mod_ZanRadar {
 			}
 			timer++;
 
-			if (imageRef[COW] == -1) {
-				imageRef[COW] = this.tex(icons[COW]);
-			}
-
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
 			GL11.glEnable(GL11.GL_BLEND);
 			GL11.glDepthMask(false);
 			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 
-			renderMapMobs(scWidth);	
+			if (completedLoading) renderMapMobs(scWidth, guiScale);	
 			
 			if (ztimer > 0)
 				this.write(this.error, 20, 20, 0xffffff);
@@ -473,7 +494,7 @@ public class mod_ZanRadar {
 						else  {
 							Contact contact = new Contact((int)(entity.posX), (int)(entity.posZ), (int)(entity.posY), getContactType(entity));
 							if (contact.type == GHAST) {
-								contact.setEntity(entity);
+								contact.setEntity(entity); // allows us to display firing vs non firing icons for ghasts.  Need reference to the actual entity
 							}
 							contacts.add(contact);
 						}
@@ -498,7 +519,7 @@ public class mod_ZanRadar {
 		mpContact.setName(playerName);
 		Integer ref = mpContacts.get(playerName); // don't load if already done
 		//System.out.println("***********CHECKING " + ref);
-		if (ref == null) {
+		if (ref == null) { // if we haven't encountered player yet, try to get MP skin
 			ThreadDownloadImageData imageData = this.renderEngine.obtainImageData(skinURL, new ImageBufferDownload());
 			if (imageData == null || imageData.image == null) { // failed to get 
 				BufferedImage skinImage = loadSkin(playerName); // try to load icon saved to disk
@@ -509,15 +530,15 @@ public class mod_ZanRadar {
 					mpContacts.put(playerName, imageRef);
 				}
 				else { // else default
-					mpContacts.put(playerName, imageRef[PLAYER]); // so make image ref for this player the standard player icon
+					mpContacts.put(playerName, imageRef[PLAYER][0]); // so make image ref for this player the standard player icon
 					//System.out.println("***********DEFAULTING " + imageRef[PLAYER]);
 				}
 			}
 			else { // we got a downloaded image
 				BufferedImage skinImage = imageData.image;
 				//skinImage = into128(addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0));
-				skinImage = addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0);
-				saveSkin(skinImage, playerName);
+				skinImage = addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0, 8, 8);
+				saveSkin(skinImage, playerName); // save for future use when skin server is down
 				//skinImage = intoSquare(skinImage);
 				int imageRef = this.tex(skinImage);
 				//System.out.println("***********NEW REF " + imageRef);
@@ -531,7 +552,8 @@ public class mod_ZanRadar {
 	
 	private void saveSkin(BufferedImage skinImage, String playerName) {
 		try {
-			File outFile = new File(Minecraft.getAppDir("minecraft/zan"), playerName + ".png");
+			String path = "minecraft/mods/zan/" + minimap.getServerName();
+			File outFile = new File(Minecraft.getAppDir(path), playerName + ".png");
 			outFile.createNewFile();
 			ImageIO.write(skinImage, "png", outFile);
 		}
@@ -542,7 +564,8 @@ public class mod_ZanRadar {
 	
 	private BufferedImage loadSkin(String playerName) {
 		try {
-			File inFile = new File(Minecraft.getAppDir("minecraft/zan"), "playerName" + ".png");
+			String path = "minecraft/mods/zan/" + minimap.getServerName();
+			File inFile = new File(Minecraft.getAppDir(path), playerName + ".png");
 			java.awt.Image icon = ImageIO.read(inFile);
 			BufferedImage iconBuffered = new BufferedImage(icon.getWidth(null), icon.getHeight(null), BufferedImage.TYPE_INT_ARGB);
 			java.awt.Graphics gfx = iconBuffered.createGraphics();
@@ -611,7 +634,7 @@ public class mod_ZanRadar {
 		return ZOMBIE;
 	}
 	
-	public void renderMapMobs (int scWidth) {
+	public void renderMapMobs (int scWidth, int guiScale) {
 		//final long startTime = System.nanoTime();
 		for(int j = 0; j < contacts.size(); j++) {
 			Contact contact = contacts.get(j);
@@ -654,7 +677,7 @@ public class mod_ZanRadar {
 						if (contact.type == PLAYER) {
 							Integer ref = mpContacts.get(contact.name);
 							if (ref == null)
-								this.disp(imageRef[PLAYER]); // display default icon if skin is not loaded yet
+								this.disp(imageRef[PLAYER][0]); // display default icon if skin is not loaded yet
 							else 
 								this.disp(mpContacts.get(contact.name)); // there is a mapping from name to image (it could be to the default image, if loading finishes and it turns out there is no custom skin)
 						}
@@ -664,7 +687,7 @@ public class mod_ZanRadar {
 						        System.out.println("should be ghast " + contact.type);
 						        contact.type = var1 == 1 ? GHASTATTACKING : GHAST;
 							}
-							this.disp(imageRef[contact.type]);
+							this.disp(imageRef[contact.type][guiScale]);
 						}
 						//GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
 						// from here
@@ -698,16 +721,16 @@ public class mod_ZanRadar {
 						if (contact.type == PLAYER) {
 							Integer ref = mpContacts.get(contact.name);
 							if (ref == null)
-								this.disp(imageRef[PLAYER]); // display default icon if skin is not loaded yet
+								this.disp(imageRef[PLAYER][0]); // display default icon if skin is not loaded yet
 							else 
-								this.disp(mpContacts.get(contact.name)); // there is a mapping from name to image (it could be to the default image, if loading finishes and it turns out there is no custom skin)
+								this.disp(ref); // there is a mapping from name to image (it could be to the default image, if loading finishes and it turns out there is no custom skin)
 						}
 						else  {
 							if (contact.entity != null) {
 								byte var1 = ((EntityGhast)contact.entity).dataWatcher.getWatchableObjectByte(16);
 						        contact.type = var1 == 1 ? GHASTATTACKING : GHAST;
 							}
-							this.disp(imageRef[contact.type]);
+							this.disp(imageRef[contact.type][guiScale]);
 						}
 						GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 						GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F); 
@@ -788,7 +811,7 @@ public class mod_ZanRadar {
     /**
      * Gets a key binding. // aka the text on the button?
      */
-    public String getKeyBinding(EnumOptionsMinimap par1EnumOptions)
+    public String getKeyText(EnumOptionsMinimap par1EnumOptions)
     {
         StringTranslate stringtranslate = StringTranslate.getInstance();
 //      String s = (new StringBuilder()).append(stringtranslate.translateKey(par1EnumOptions.getEnumString())).append(": ").toString(); // use if I ever do translations
@@ -835,7 +858,6 @@ public class mod_ZanRadar {
     }
     
 	public void setOptionValue(EnumOptionsMinimap par1EnumOptions, int i) {
-		// TODO Auto-generated method stub
         switch (par1EnumOptions.ordinal())
         {
             case 13:
@@ -855,8 +877,7 @@ public class mod_ZanRadar {
                 break;
         }
 		this.timer = 500; // immediately show changes
-        //this.saveAll(); // TODO
-		
+        //this.saveAll(); // called from the gui when the gui screen closes.  done once per screen instead of per option set.  On the other hand, it's additional saves for times when no options are changed
 	}
 
 }
