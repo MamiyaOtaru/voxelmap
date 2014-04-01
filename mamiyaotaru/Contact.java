@@ -6,6 +6,9 @@ public class Contact {
 	public int x;
 	public int z;
 	public int y;
+	public float angle;
+	public double distance;
+	public float brightness;
 	public int type;
 	public String name = "_";
 	public String skinURL = "";

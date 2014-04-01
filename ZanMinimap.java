@@ -23,6 +23,8 @@ import net.minecraft.src.mamiyaotaru.GLBufferedImage;
 import net.minecraft.src.mamiyaotaru.GuiMinimap;
 import net.minecraft.src.mamiyaotaru.GuiScreenAddWaypoint;
 import net.minecraft.src.mamiyaotaru.GuiWaypoints;
+import net.minecraft.src.mamiyaotaru.MapChunkCache;
+import net.minecraft.src.mamiyaotaru.MapData;
 import net.minecraft.src.mamiyaotaru.RenderWaypoint;
 import net.minecraft.src.mamiyaotaru.Waypoint;
 
@@ -68,6 +70,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*whether caves is allowed*/
 	public Boolean cavesAllowed = true;
 	
+	/*Stored data for each zoom level*/
+	private MapData[] mapData = new MapData[4];
+	
+	private MapChunkCache[] chunkCache = new MapChunkCache[4];
+	
 	/*Textures for each zoom level*/
 	private GLBufferedImage[] map = new GLBufferedImage[4];
 	
@@ -79,10 +86,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*color picker used by menu for waypoint color*/
 	public BufferedImage colorPicker;
 	
+	/*watercolorX as a buffered image from which we can getRGB*/
 	private BufferedImage waterColorBuff;
 
 	/*Block colour array*/
-	private int[] blockColors = new int[4096];
+	private int[] blockColors = new int[65536]; // 4096 good enough for 256 blocks.  for 4096 blocks need 65536
+	
+	private static int COLOR_NOT_LOADED = 0xff00ff;
+	
+	private static int COLOR_FAILED_LOAD = 0xff01ff;
 	
 	/*use internal linear scale or more logarithmic looking minecraft scale*/
 	private boolean useInternalLightTable = false;
@@ -93,6 +105,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*regular default brightness table, against which to compare worldprovider's to catch light changes and allow us to translate them to our linear scale*/ 
 	private final float[] standardLightBrightnessTable = new float[] {0.0f, 0.017543858f, 0.037037037f, 0.058823526f, 0.08333333f, 0.11111113f, 0.14285712f, 0.1794872f, 0.22222225f, 0.2727273f, 0.33333334f, 0.40740743f, 0.50000006f, 0.61904764f, 0.77777773f, 1.0f};
 
+	/* last light brightness table (so we can detect changes and redo light */
+	private final float[] lastLightBrightnessTable = new float[16];
+	
+	/* lets us keep track of sun going up or down */
+	private int lastDaylight = 0;
+	
+	/* used to keep track of moving from aboveground to underground */
+	private boolean lastBeneathRendering = false;
+			
 	public Random generator = new Random();
 	/*Current Menu Loaded*/
 	public int iMenu = 1;
@@ -121,10 +142,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*corner to display in 0-3 upper left clockwise*/
 	public int mapCorner = 1;
 	
-	/*corner to display in 0-3 upper left clockwise*/
+	/*center of map x coord*/
 	public int mapX = 37;
 	
-	/*corner to display in 0-3 upper left clockwise*/
+	/*center of map y coord*/
 	public int mapY = 37;
 
 	/*Current build version*/
@@ -151,28 +172,19 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
 
-	/*increments with tick*/
-	private int timer = 0;
-	
 	private int availableProcessors =  Runtime.getRuntime().availableProcessors();
 	
 	public boolean multicore = (availableProcessors > 0);
 	
-	/*Minimap update interval*/
-	private int calcLull = 300;
-	
-	/*how many chunks to break up full render into*/
-	private int slices = multicore?1:4;
-	
-	/*current chunk*/
-	private int slice = 0;
-	
-	/*how far we've moved since last slice render*/
-	private int sliceAdditional = 1337;
-
 	/*Key entry interval (ie, can only zoom once every 20 ticks)*/
-	private int fudge = 0;
-
+	private int inputFudge = 0;
+	
+	/*needed for doing tasks occasionally, like checking for old waypoints*/
+	private int timer = 0;
+	
+	/*whether we need to do a full render*/
+	private boolean doFullRender = true;
+	
 	/*Last X coordinate rendered*/
 	private int lastX = 0;
 
@@ -182,15 +194,12 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Last Y coordinate rendered*/
 	private int lastY = 0;
 	
+	/*Last gamma setting*/
+	private float lastGamma = 0;
+	
 	/*Last UI scale factor*/
 	private int scScale = 0;
 	
-	/*Array of blockHeights*/
-	private int[][] heightArray = new int[256][256];
-	
-	/*Array of blockBiomeTints*/
-	private int[][] tintArray = new int[256][256];
-
 	/*Last zoom level rendered at*/
 	public int lZoom = 0;
 	
@@ -212,6 +221,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private BufferedImage terrainBuff = null;
 	private BufferedImage terrainBuffTrans = null;
 	
+	/*Current texture pack's water alpha level*/
+	int waterAlpha = 0;
+	
+	private int waterBase = -1;
+	
     public KeyBinding keyBindZoom = new KeyBinding("Zoom", Keyboard.KEY_Z);
     public KeyBinding keyBindMenu = new KeyBinding("Menu", Keyboard.KEY_M);
     public KeyBinding keyBindWaypoint = new KeyBinding("Waypoint Hotkey", Keyboard.KEY_N);
@@ -227,7 +241,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Show the minimap when in the Nether*/
 	private boolean showNether = true;
 
-	/*Experimental cave mode (only applicable to overworld)*/
+	/*Cave mode (only applicable to overworld)*/
 	private boolean showCaves = true;
 	
 	/*Dynamic lighting toggle*/
@@ -248,8 +262,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Show biome colors*/
 	boolean biomes = multicore;
 	
-	int waterAlpha = 0;
-
 	/*Square map toggle*/
 	public boolean squareMap = false;
 
@@ -324,6 +336,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		zCalc.start();
 		zCalc.setPriority(Thread.MIN_PRIORITY);
+
+		this.mapData[0] = new MapData(32, 32);
+		this.mapData[1] = new MapData(64, 64);
+		this.mapData[2] = new MapData(128, 128);
+		this.mapData[3] = new MapData(256, 256);
+		
+		this.chunkCache[0] = new MapChunkCache(3, 3);
+		this.chunkCache[1] = new MapChunkCache(5, 5);
+		this.chunkCache[2] = new MapChunkCache(9, 9);
+		this.chunkCache[3] = new MapChunkCache(17, 17);
+		
 		this.map[0] = new GLBufferedImage(32,32,BufferedImage.TYPE_4BYTE_ABGR);
 		this.map[1] = new GLBufferedImage(64,64,BufferedImage.TYPE_4BYTE_ABGR);
 		this.map[2] = new GLBufferedImage(128,128,BufferedImage.TYPE_4BYTE_ABGR);
@@ -382,8 +405,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						mapCorner = Integer.parseInt(curLine[1]);
 					else if(curLine[0].equals("Map Size"))
 						sizeModifier = Integer.parseInt(curLine[1]);
-					else if(curLine[0].equals("Update Frequency"))
-						calcLull = Integer.parseInt(curLine[1]);
 					else if(curLine[0].equals("Zoom Key"))
 						keyBindZoom.keyCode = Keyboard.getKeyIndex(curLine[1]);
 					else if(curLine[0].equals("Menu Key"))
@@ -405,7 +426,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						radar.showNeutrals = Boolean.parseBoolean(curLine[1]);
 				}
 				in.close();
-				timer = calcLull + 1; // fullrender on initial load
+				doFullRender = true; // fullrender on initial load
 			}
 			//else {
 				saveAll(); // save, to catch welcome being turned off.  If that gets added back as an option, can forego this
@@ -413,8 +434,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		} catch (Exception e) {}
 
 		for(int i = 0; i<blockColors.length; i++)
-			blockColors[i] = 0xff01ff;
-		getDefaultBlockColors();
+			blockColors[i] = 0xff00ff;
+		//getDefaultBlockColors();
 		
 		Object renderManager = RenderManager.instance; 
 		if (renderManager == null) {
@@ -538,11 +559,19 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public int yCoord() {
 		return (int)this.game.thePlayer.posY;
 	}
+	
+	public double xCoordDouble() {
+		return (this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
+	}
+
+	public double zCoordDouble() {
+		return (this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
+	}
 
 	private float rotationYaw() {
 		return this.game.thePlayer.rotationYaw;
 	}
-
+	
 	public World getWorld()
 	{
 		return game.theWorld;
@@ -557,13 +586,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				this.active = true;
 				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
 					if (this.enabled && !this.hide) {
-						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>=(multicore?calcLull:calcLull/slices)))) { // logically the same as the check at the beginning of mapcalc that returns if these aren't met. duplicate.  delete?
-							try {this.mapCalc((timer>=(multicore?calcLull:calcLull/slices))?true:false, timer>=calcLull?true:false);} catch (Exception local) {}
-							imageChanged = true;
-						}
+						try {this.mapCalc(doFullRender);} catch (Exception local) {}
+						this.chunkCache[this.lZoom].drawChunks(oldNorth);
 					}
 					//System.out.println("changed: " + this.imageChanged);
-					this.timer=(this.timer>=(multicore?calcLull:calcLull/slices))?1:this.timer+1;
+					doFullRender = false;
 					this.active = false;
 				}
 				try {this.zCalc.sleep(10);} catch (Exception exc) {}
@@ -583,13 +610,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		northRotate = oldNorth ? 90 : 0;
 		if(game==null) game = mc;
-		
-		if (sliceAdditional == 1337) {
-			sliceAdditional = this.zCoord();
-			lastZ = this.zCoord();
-			lastX = this.xCoord();
-		}
-	
+			
 	/*	if (motionTrackerExists && motionTracker.activated) {
 			motionTracker.OnTickInGame(mc);
 			return;
@@ -654,10 +675,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				welcome = false;
 				saveAll();
 			}
-			if (this.fudge <= 0) {
+			if (this.inputFudge <= 0) {
 				this.radar.setOptionValue(EnumOptionsMinimap.HIDERADAR, 0);
 				saveAll();
-				this.fudge = 20;
+				this.inputFudge = 20;
 			}
 		}
 
@@ -719,12 +740,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		//System.out.println(System.nanoTime()-startTime);
 
         this.guiScreen = this.game.currentScreen;
+        
+        checkIfChunksChanged();
 
 		if (threading)
 		{
 
 			if (!zCalc.isAlive() && threading) {
 				zCalc = new Thread(this);
+				//zCalc.setPriority(Thread.MIN_PRIORITY);
 				zCalc.start();
 			}
 			if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
@@ -732,14 +756,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 		else if (!threading)
 		{
-			if (this.enabled && !this.hide)
-				if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>(multicore?calcLull:calcLull/slices)))) {// logically the same as the check at the beginning of mapcalc that returns if these aren't met. duplicate.  delete?
-					mapCalc((timer>(multicore?calcLull:calcLull/slices))?true:false, timer>calcLull?true:false);
-					imageChanged = true;
-				}
-				else
-					imageChanged = false;
-			timer=(timer>(multicore?calcLull:calcLull/slices))?0:timer+1;
+			if (this.enabled && !this.hide) {
+				mapCalc(doFullRender);
+				this.chunkCache[this.lZoom].drawChunks(oldNorth);
+			}
+			doFullRender=false;
 		}
 
 		if (this.iMenu==1) {
@@ -769,7 +790,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		if (this.ztimer > 0) this.ztimer -= 1;
 
-		if (this.fudge > 0) this.fudge -= 1;
+		if (this.inputFudge > 0) this.inputFudge -= 1;
 
 		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 		
@@ -807,7 +828,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
         this.game.entityRenderer.setupOverlayRendering(); // set viewport back to GuiScale heeding version
 
-		if (this.timer == (int)calcLull/8*2/3 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
+        timer = (timer > 5000)?0:timer++;
+		if (this.timer == 5000 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
 			if (old2dWayPts.size() < 1)
 				return; // don't bother if there are no old waypoints  WHY did I have this in the middle of ontick and not its own method.  This skipped rendering the map when I had this above the map rendering block haha D:
 			updatedPts = new ArrayList<Waypoint>();
@@ -823,6 +845,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				System.out.println("remaining old 2d waypoints: " + this.old2dWayPts.size());
 			}
 		}
+
 	
 		// draw menus after ontickingame.  fscking modloader
 /*      
@@ -949,7 +972,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 		
 		if (changed) {
-			timer=calcLull+1; // fullrender for new world/texturepack
+			doFullRender = true;
 		}
 	}
 	
@@ -1003,7 +1026,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private void SetZoom() {
-		if (this.fudge > 0) return;
+		if (this.inputFudge > 0) return;
 
 		if (this.iMenu != 0) {
 			this.iMenu = 0;
@@ -1013,44 +1036,77 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			if (this.zoom == 3) {
 				if(!this.fullscreenMap) {
 					this.fullscreenMap = true;
-					this.slices = multicore?1:16;
 				}
 				else {
 					this.zoom = 2;
 					this.fullscreenMap = false;
 					this.error = "Zoom Level: (1.0x)";
-					this.slices = multicore?1:4;
 				}
 			} else if (this.zoom == 0) {
 				this.zoom = 3;
 				this.error = "Zoom Level: (0.5x)";
-				this.slices = multicore?1:16; 
 			} else if (this.zoom==2) {
 				this.zoom = 1;
 				this.error = "Zoom Level: (2.0x)";
-				this.slices = 1;
 			} else {
 				this.zoom = 0;
 				this.error = "Zoom Level: (4.0x)";
-				this.slices = 1;
 			}
-			this.timer = calcLull+1;
-			this.slice = 0;
+			doFullRender = true;
 		}
 
-		this.fudge = 20;
+		this.inputFudge = 20;
+	}
+	
+	private void checkIfChunksChanged() {
+		//zoom 4 = 32 across
+		//zoom 2 = 64
+		//zoom 1 = 128
+		//zoom .5 = 256
+		this.chunkCache[this.lZoom].checkIfChunksChanged(this.xCoord(), this.zCoord());
 	}
 		
-	private void mapCalc(boolean fullSlice, boolean full) {
+	private void mapCalc(boolean full) {
 		//final long startTime = System.nanoTime();
-		int startX = this.xCoord(); // 1
-		int startZ = this.zCoord(); // j
+		int startX = this.xCoord(); 
+		int startZ = this.zCoord(); 
 		int startY = this.yCoord();
 		int offsetX = startX - lastX;
 		int offsetZ = startZ - lastZ;
 		int offsetY = startY - lastY;
-		if (!fullSlice && !full && offsetX == 0 && offsetZ == 0) 
-			return;
+		this.lastX = startX;
+		this.lastZ = startZ;
+		this.lZoom = this.zoom;
+		int multi = (int)Math.pow(2, this.lZoom);
+		World world=this.getWorld();
+		int skylightsubtract = world.calculateSkylightSubtracted(1.0f);
+		boolean needHeight = false;
+		boolean needHeightMap = false;
+		boolean needLight = false;
+
+		if (this.lightmap) {
+			if (this.game.gameSettings.gammaSetting != lastGamma) {
+				needLight = true;
+				lastGamma = this.game.gameSettings.gammaSetting;
+			}
+			for (int t = 0; t < 16; t++) {
+				if (world.provider.lightBrightnessTable[t] != lastLightBrightnessTable[t]) {
+					needLight = true;
+					lastLightBrightnessTable[t] = world.provider.lightBrightnessTable[t];
+				}
+			}
+			if (lastDaylight != skylightsubtract) {
+				needLight = true;
+				lastDaylight = skylightsubtract;
+			}
+		}
+		if (full || Math.abs(offsetY) > 1) {
+			this.lastY = startY;
+			needHeightMap = true;
+		}
+		if (offsetX > 32*multi || offsetX < -32*multi || offsetZ > 32*multi || offsetZ < -32*multi)
+			full = true;
+		
 		if (useInternalLightTable) {
 			for (int t = 0; t <16; t++) {
 				internalLightBrightnessTable[t] = (world.provider.lightBrightnessTable[t]/standardLightBrightnessTable[t] * t);
@@ -1073,138 +1129,232 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 		else
 			return; // if we are nether and nether mapping is not on, just exit;
-		World world=this.getWorld();
-		this.lastX = startX;
-		this.lastZ = startZ;
-		if (fullSlice || full || Math.abs(offsetY) > 5)
-			this.lastY = startY;
-		int skylightsubtract = world.calculateSkylightSubtracted(1.0f);
-
-		this.lZoom = this.zoom;
-		int multi = (int)Math.pow(2, this.lZoom);
+		if (this.showCaves || this.showNether){
+			if (lastBeneathRendering != (caves || nether)) {
+				lastBeneathRendering = (caves || nether);
+				full = true;
+			}
+		}
+		if (!full && offsetX == 0 && offsetZ == 0 && !needHeightMap && !needLight) // exit if nothing needs to be changed 
+			return;
+		
+		needHeight = needHeightMap && (nether || caves);
+		
 		startX -= 16*multi;
 		startZ -= 16*multi; // + west at top, - north at top
-		int color24 = 0; // k
+		int height = -1;
+		int color24 = -1;
 		// flat map or bump map.  or heightmap with no changed height.  No logarithmic height shading, so we can get away with only drawing the edges
 		// render edges, if moved.  This is the norm for flat or bump.  Also hit if heightmap and height hasn't changed
-		if (!full) { // if not full just render edge.  or if it was full but only partially so (fullslice).  still need to move the rest 
+		if (!full) { // fill in edges 
 			this.map[this.lZoom].moveY(offsetZ);
+			this.mapData[this.lZoom].moveZ(offsetZ);
+			this.map[this.lZoom].moveX(offsetX);
+			this.mapData[this.lZoom].moveX(offsetX);
 			for (int imageY = ((offsetZ>0)?32 * multi - offsetZ:0); imageY < ((offsetZ>0)?32 * multi:-offsetZ); imageY++) {			
 				for (int imageX = 0; imageX < 32 * multi; imageX++) {
-					color24 = getPixelColor(fullSlice || full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					color24 = getPixelColor(true, true, true, true, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
 					this.map[this.lZoom].setRGB(imageX, imageY, color24);
 				}
 			}
-			this.map[this.lZoom].moveX(offsetX);
+
 			for (int imageY = 0; imageY < 32 * multi; imageY++) {			
 				for (int imageX = ((offsetX>0)?32 * multi - offsetX:0); imageX < ((offsetX>0)?32 * multi:-offsetX); imageX++) {
-					color24 = getPixelColor(fullSlice || full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					color24 = getPixelColor(true, true, true, true, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
 					this.map[this.lZoom].setRGB(imageX, imageY, color24);
 				}
 			}
 		}
 		// do a full render sometimes (to catch changes), or on heightmap with significantly changed height
-		if (fullSlice || full || (heightmap && Math.abs(offsetY) > 5)) {
-			if (!full && slices > 1) {
-				if (this.zCoord() - sliceAdditional > 0) {
-					sliceAdditional = this.zCoord() - sliceAdditional + 1;
-					if (sliceAdditional > slice * 32 * multi)
-						sliceAdditional = 0;
-				}
-				else if (this.zCoord() - sliceAdditional < 0) {
-					sliceAdditional = this.zCoord() - sliceAdditional;
-				}
-				else
-					sliceAdditional = 0;
-			}
-			else
-				sliceAdditional = 0;
-			/*
-			for (int imageY = (32 * multi)-1; imageY >= 0; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
+		if (full || (heightmap && needHeightMap) || needHeight || (lightmap && needLight)) {
+			for (int imageY = (32 * multi -1); imageY >= 0; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
 				if (oldNorth) // old north reverses X-1 to X+1
 					for (int imageX = (32 * multi)-1; imageX >= 0; imageX--) {
-						color24 = getPixelColor(full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+						color24 = getPixelColor(full || needHeight, full || needHeight, full, full || needLight || needHeight && (nether || caves), nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
 						this.map[this.lZoom].setRGB(imageX, imageY, color24);
 					}
 				else {
 					for (int imageX = 0; imageX < 32 * multi; imageX++) {
-						color24 = getPixelColor(full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-						this.map[this.lZoom].setRGB(imageX, imageY, color24);
-					}
-				}
-			}*/
-			for (int imageY = (32 * multi * (full?1:(slice+1)) / (full?1:slices) -1); imageY >= (full?0:(32 * multi * slice / slices - sliceAdditional)); imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
-				if (oldNorth) // old north reverses X-1 to X+1
-					for (int imageX = (32 * multi)-1; imageX >= 0; imageX--) {
-						color24 = getPixelColor(fullSlice || full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-						this.map[this.lZoom].setRGB(imageX, imageY, color24);
-					}
-				else {
-					for (int imageX = 0; imageX < 32 * multi; imageX++) {
-						color24 = getPixelColor(fullSlice || full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+						color24 = getPixelColor(full || needHeight, full || needHeight, full, full || needLight || needHeight && (nether || caves), nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
 						this.map[this.lZoom].setRGB(imageX, imageY, color24);
 					}
 				}
 			}
-			slice = (slice >= slices-1)?0:slice+1;
-			sliceAdditional = this.zCoord();
 		}
+		imageChanged = true;
 		//if (System.nanoTime()-startTime > 10000000 )
-		//System.out.println("time: " + (System.nanoTime()-startTime) + " " + fullSlice + " " + full);
 	}
 	
-	private int getPixelColor(boolean full, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY) {
+	public void renderChunk(int left, int top, int right, int bottom) {
+		boolean nether = false;
+		boolean caves = false;
+		boolean netherPlayerInOpen = false;
+		if (this.game.thePlayer.dimension!=-1)
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
+			if (cavesAllowed && showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+				caves = true;
+			else
+				caves = false;
+		else if (showNether) {
+			nether = true;
+			netherPlayerInOpen = (world.getHeightValue(xCoord(), zCoord()) < yCoord());
+		}
+		else
+			return; // if we are nether and nether mapping is not on, just exit;
+		int startX = this.xCoord(); 
+		int startZ = this.zCoord();
+		int multi = (int)Math.pow(2, this.lZoom);
+		startX -= 16*multi;
+		startZ -= 16*multi;
+		
+		left = left - startX - 1; 
+		right = right - startX + 1;
+		top = top - startZ - 1; // draw above one line to fix chunk above whose bottom line heightmap was messed up by this not existing
+		bottom = bottom - startZ + 1;
+
+		left = Math.max(0, left);
+		right = Math.min(32*multi-1, right);
+		top = Math.max(0, top);
+		bottom = Math.min(32*multi-1, bottom);
+		//System.out.println("left: " + left + " right: " + right + " top: " + top + " bottom: " + bottom);
+		
+
+		int color24 = 0;
+		int skylightsubtract = world.calculateSkylightSubtracted(1.0f);
+		
+		for (int imageY = bottom; imageY >= top; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
+			if (oldNorth) {// old north reverses X-1 to X+1
+				for (int imageX = right; imageX >= left; imageX--) {
+					color24 = getPixelColor(true, true, true, true, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					this.map[this.lZoom].setRGB(imageX, imageY, color24);
+				}
+			}
+			else {
+				for (int imageX = left; imageX <= right; imageX++) {
+					color24 = getPixelColor(true, true, true, true, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					this.map[this.lZoom].setRGB(imageX, imageY, color24);
+				}
+			}
+		}
+		imageChanged = true;
+	}
+	
+	private int getPixelColor(boolean needHeight, boolean needMaterial, boolean needTint, boolean needLight, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY) {
 		int color24 = 0;
 		int height = 0;
 		boolean solid = false;
-		height = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
-		if (full && slopemap) 
-			heightArray[imageX][imageY]=height; // store heights so we don't get height twice for every pixel on full runs.  Only for slopemap though
+		if (needHeight) {
+			height = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
+			mapData[this.lZoom].setHeight(imageX, imageY, height); 
+		}
+		else 
+			height = mapData[this.lZoom].getHeight(imageX, imageY);
 		if (height == -1) {
-			height = this.yCoord() + 1;
+			height = this.lastY + 1;
 			solid = true;
 		}
+
 		int material = -1;
 		int metadata = 0;
+		if (needMaterial) {
+			material = world.getBlockId(startX + imageX, height - 1, startZ + imageY);
+			metadata = world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY);
+			mapData[this.lZoom].setMaterial(imageX, imageY, material);
+			mapData[this.lZoom].setMetadata(imageX, imageY, metadata);
+		}
+		else {
+			material = mapData[this.lZoom].getMaterial(imageX, imageY);
+			metadata = mapData[this.lZoom].getMetadata(imageX, imageY);
+		}
 		if (this.rc) {
 			if ((world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
 				color24 = getBlockColor(80,0); // snow
 			else {
-				material = world.getBlockId(startX + imageX, height - 1, startZ + imageY);
-				metadata = world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY);
 				color24 = getBlockColor(material, metadata);
 			}
-		} else color24 = 0xFFFFFF;
+		} 
+		else 
+			color24 = 0xFFFFFF;
 		
-		if (biomes && material != -1) 
-			color24 = applyBiomeTint(color24, material, metadata, startX + imageX, startZ + imageY);
+		if (color24 == this.COLOR_FAILED_LOAD)
+			color24 = 0;
 		
-		color24 = applyModifiers(color24, full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, height, solid);
+		if (biomes && material != -1) {
+			int tint = -1;
+			if (needTint) {
+				if (color24 != getBlockColor(80,0))
+					tint = getBiomeTint(material, metadata, startX + imageX, startZ + imageY);
+				mapData[this.lZoom].setBiomeTint(imageX, imageY, tint);
+			}
+			else
+				tint = mapData[this.lZoom].getBiomeTint(imageX, imageY);
+			if (tint != -1)
+				color24 = colorMultiplier(color24, tint);
+		}
+
+		color24 = applyHeight(color24, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, height, solid);
+		int light = 255;
+		if (needLight) {
+			light = getLight(color24, nether, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, height, solid);
+			mapData[this.lZoom].setLight(imageX, imageY, light);	
+			}
+		else {
+			light = mapData[this.lZoom].getLight(imageX, imageY);
+		}
+		color24 = light * 0x1000000 + color24 ;
 
 		if (transparency && world.getBlockMaterial(startX + imageX, height - 1, startZ + imageY) == Material.water) { // fuuu get color from seafloor
-			int seafloorHeight = height - 1; // start one down obviously don't check if it's water again
-			//while (!world.isBlockOpaqueCube(startX + imageX, seafloorHeight-1, startZ + imageY) && seafloorHeight > 1) // misses half slabs
-			while (Block.lightOpacity[world.getBlockId(startX + imageX, seafloorHeight-1, startZ + imageY)] < 5 && seafloorHeight > 1) 
-				seafloorHeight-=1;
+			int seafloorHeight;
+			if (needHeight) {
+				seafloorHeight = height - 1; // start one down obviously don't check if it's water again
+				//while (!world.isBlockOpaqueCube(startX + imageX, seafloorHeight-1, startZ + imageY) && seafloorHeight > 1) // misses half slabs
+				while (Block.lightOpacity[world.getBlockId(startX + imageX, seafloorHeight-1, startZ + imageY)] < 5 && seafloorHeight > 1) 
+					seafloorHeight-=1;
+				mapData[this.lZoom].setOceanFloorHeight(imageX, imageY, seafloorHeight); 
+			}
+			else 
+				seafloorHeight = mapData[this.lZoom].getOceanFloorHeight(imageX, imageY);
+			
 			int seafloorColor = 0;
+			if (needMaterial) {
+				material = world.getBlockId(startX + imageX, seafloorHeight - 1, startZ + imageY);
+				metadata = world.getBlockMetadata(startX + imageX, seafloorHeight - 1, startZ + imageY);
+				mapData[this.lZoom].setOceanFloorMaterial(imageX, imageY, material);
+				mapData[this.lZoom].setOceanFloorMetadata(imageX, imageY, metadata);
+			}
+			else {
+				material = mapData[this.lZoom].getOceanFloorMaterial(imageX, imageY);
+				metadata = mapData[this.lZoom].getOceanFloorMetadata(imageX, imageY);
+			}
 			if (this.rc) {
-				seafloorColor = getBlockColor(world.getBlockId(startX + imageX, seafloorHeight - 1, startZ + imageY), world.getBlockMetadata(startX + imageX, seafloorHeight - 1, startZ + imageY));
+				seafloorColor = getBlockColor(material, metadata);
 			} else seafloorColor = 0xFFFFFF;
 			//System.out.println(color24 + " - " + seafloorColor);
-			seafloorColor = applyModifiers(seafloorColor, full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
+			seafloorColor = applyHeight(seafloorColor, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
+			int seafloorLight = 255;
+			if (needLight) {
+				seafloorLight = getLight(seafloorColor, nether, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
+				mapData[this.lZoom].setOceanFloorLight(imageX, imageY, seafloorLight);
+			}
+			else {
+				seafloorLight = mapData[this.lZoom].getOceanFloorLight(imageX, imageY);
+			}
+			seafloorColor = seafloorLight * 0x1000000 + seafloorColor ;
 			color24 = colorAdder(color24, seafloorColor);
 		}
 		return color24;
 	}
 	
-	private int applyBiomeTint(int color24, int material, int metadata, int x, int z) {
+	private int getBiomeTint(int material, int metadata, int x, int z) {
+		int tint = -1;
         if (material == 2 && (metadata & 3) == 1)
         {
-            return ColorizerFoliage.getFoliageColorPine();
+            tint = ColorizerFoliage.getFoliageColorPine();
         }
         else if (material == 2 && (metadata & 3) == 2)
         {
-            return ColorizerFoliage.getFoliageColorBirch();
+            tint = ColorizerFoliage.getFoliageColorBirch();
         }
 		if (material == 2 || material == 18 || material ==8 || material == 9) {
 	        int r = 0;
@@ -1215,7 +1365,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	        {
 	            for (int s = -1; s <= 1; ++s)
 	            {
-	            	int biomeTint = 0; // TODO
+	            	int biomeTint = 0;
 	            	if (material == 2)
 	            		biomeTint = world.getBiomeGenForCoords(x + s, z + t).getBiomeGrassColor();
 	            	else if (material == 18)
@@ -1241,10 +1391,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	            }
 	        }
 
-	        int tint = (r / 9 & 255) << 16 | (g / 9 & 255) << 8 | b / 9 & 255;
-			color24 = colorMultiplier(color24, tint);
+	        tint = (r / 9 & 255) << 16 | (g / 9 & 255) << 8 | b / 9 & 255;
 		}
-		return color24;
+		return tint;
 	}
 	
     private int colorAdder(int color1, int color2)
@@ -1299,20 +1448,26 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private final int getBlockHeight(boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int x, int z, int starty) 
 	{
 		//int height = getBlockHeight(data, x, z); // newZan
-		//int height = data.getChunkFromBlockCoords(x, z).getHeightValue(x & 0xf, z & 0xf); // replicate old way
+		//int height = world.getChunkFromBlockCoords(x, z).getHeightValue(x & 0xf, z & 0xf); // replicate old way
 		//int height = data.getHeightValue(x, z); // new method in world that easily replicates old way
 		int height = world.getHeightValue(x, z);
 		// below is because we can't trust the heightmap.  Random chunks are frequently a block too low or high
-		while (height < 255 && Block.lightOpacity[world.getBlockId(x, height, z)] > 0)
-			height++;
-		while (height > 0 && Block.lightOpacity[world.getBlockId(x, height-1, z)] == 0) {
-			height--;
+		int heightCheck = (((height >> 4) + 1 ) * 16 - 1);
+		while (heightCheck < 256) {
+			if (Block.lightOpacity[world.getBlockId(x, heightCheck, z)] > 0)
+				height = heightCheck + 1;
+			heightCheck=heightCheck+16;
 		}
+//		while (height < 255 && Block.lightOpacity[world.getBlockId(x, height, z)] > 0)
+//			height++;
+//		while (height > 0 && Block.lightOpacity[world.getBlockId(x, height-1, z)] == 0) 
+//			height--;
+
 		if ((!nether && !caves) || height < starty || (nether && starty > 125 && (!showCaves || netherPlayerInOpen))) {  // do overworld style mapping for a pixel when nothing is above our height at that location, or when a nether player is above the bedrock and uncovered or showCaves is turned off  
 			return height;
 		}
 		else {
-			int y = starty;
+			int y = lastY;
 			//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
 			//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
 			if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
@@ -1334,17 +1489,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		}
 	}
 	
-	private int applyModifiers(int color24, boolean full, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid) {
+	private int applyHeight(int color24, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid) {
 		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
 			int heightComp = 0;
 			if ((heightmap || slopemap) && !solid) {
 				int diff=0;
 				double sc = 0;
 				if (slopemap) {
-					if (full && ((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi * slice / slices -1) // old north reverses X- to X+
-						heightComp = heightArray[imageX-((oldNorth)?-1:1)][imageY+1]; // on full run, get stored height for neighboring pixels (if it exists)
+					if (((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi -1) // old north reverses X- to X+
+						heightComp = mapData[this.lZoom].getHeight(imageX-((oldNorth)?-1:1), imageY+1); // on full run, get stored height for neighboring pixels (if it exists)
 					else
-						heightComp = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, this.yCoord());
+						heightComp = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, lastY);
 					if (heightComp == -1) // if compared area is solid, don't bump the stuff next to it
 						heightComp = height;
 					diff = heightComp-height;
@@ -1353,7 +1508,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						sc = sc/8;
 					}
 					if (heightmap) {
-						diff = height-this.yCoord();
+						diff = height-this.lastY;
 						double heightsc = Math.log10(Math.abs(diff)/8.0D+1.0D)/3D;
 						sc = (diff > 0)? sc + heightsc:sc - heightsc;
 						// below lowers the effect of slope as terrain gets progressively higher or lower than the player
@@ -1365,7 +1520,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					}
 				}
 				else if (heightmap) {
-					diff = height-this.yCoord();
+					diff = height-lastY;
 					//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D; // old way with 128 total height worlds
 					sc = Math.log10(Math.abs(diff)/8.0D+1.0D)/1.8D;
 					if (diff < 0) sc = 0 - sc;
@@ -1385,10 +1540,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					g = g -(int)(sc * g);
 					b = b -(int)(sc * b);
 				}
-
 				color24 = r * 0x10000 + g * 0x100 + b;
 			}
-			int i3 = 255;
+		}
+		return color24;
+	}
+
+	private int getLight(int color24, boolean nether, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid) {
+		int i3 = 255;
+		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
 
 			if (this.lightmap) {
 				//i3 = world.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
@@ -1404,7 +1564,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					i3=i3+(int)(this.game.gameSettings.gammaSetting*.4f*(255-i3));
 				}
 			}
-			if (solid) 
+			/*else*/ if (solid) 
 				i3 = 26; // needs to be at least 26 if storing light in the alpha channel
 
 			if(i3 > 255) i3 = 255;
@@ -1445,9 +1605,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			color24 = 255 * 0x1000000 + color24 ; // apply after water
 			 */
 			// storing lighting in alpha channel.  doesn't work so well with stencilling
-			color24 = i3 * 0x1000000 + color24 ;
 		}
-		return color24;
+		return i3;
 	}
 	
 	private int calcLightSMPtoo(World world, int x, int y, int z, int skylightsubtract) {
@@ -1460,263 +1619,26 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	//END UPDATE SECTION
 	
-	// load colors, default and texture pack
-	
-	private void getDefaultBlockColors() {
-		blockColors[blockColorID(1, 0)] = 0x686868;
-		blockColors[blockColorID(2, 0)] = 0x74b44a;
-		blockColors[blockColorID(3, 0)] = 0x79553a;
-		blockColors[blockColorID(4, 0)] = 0x959595;
-		blockColors[blockColorID(5, 0)] = 0xbc9862; // oak wood planks
-		blockColors[blockColorID(5, 1)] = 0x805e36; // spruce wood planks
-		blockColors[blockColorID(5, 2)] = 0xd7c185; // birch planks
-		blockColors[blockColorID(5, 3)] = 0x9f714a; // jungle planks
-		blockColors[blockColorID(6, 0)] = 0x946428;
-		blockColors[blockColorID(7, 0)] = 0x333333;
-		blockColors[blockColorID(8, 0)] = 0x3256ff; // water
-	/*	blockColors[blockColorID(8, 1)] = 0x3256ff;
-		blockColors[blockColorID(8, 2)] = 0x3256ff;
-		blockColors[blockColorID(8, 3)] = 0x3256ff;
-		blockColors[blockColorID(8, 4)] = 0x3256ff;
-		blockColors[blockColorID(8, 5)] = 0x3256ff;
-		blockColors[blockColorID(8, 6)] = 0x3256ff;
-		blockColors[blockColorID(8, 7)] = 0x3256ff; */
-		blockColors[blockColorID(9, 0)] = 0x3256ff; // water still
-		blockColors[blockColorID(10, 0)] = 0xd86514; //lava
-	/*	blockColors[blockColorID(10, 1)] = 0xd76514;
-		blockColors[blockColorID(10, 2)] = 0xd66414;
-		blockColors[blockColorID(10, 3)] = 0xd56414;
-		blockColors[blockColorID(10, 4)] = 0xd46314;
-		blockColors[blockColorID(10, 5)] = 0xd36314;
-		blockColors[blockColorID(10, 6)] = 0xd26214; */
-		blockColors[blockColorID(11, 0)] = 0xd96514; // lava still
-		blockColors[blockColorID(12, 0)] = 0xddd7a0;
-		blockColors[blockColorID(13, 0)] = 0x747474;
-		blockColors[blockColorID(14, 0)] = 0x747474;
-		blockColors[blockColorID(15, 0)] = 0x747474;
-		blockColors[blockColorID(16, 0)] = 0x747474;
-		blockColors[blockColorID(17, 0)] = 0x342919; // logs right side up
-		blockColors[blockColorID(17, 1)] = 0x342919;
-		blockColors[blockColorID(17, 2)] = 0x342919;
-		blockColors[blockColorID(17, 3)] = 0x584519;
-		blockColors[blockColorID(17, 4)] = 0x342919; // logs on side
-		blockColors[blockColorID(17, 5)] = 0x342919;
-		blockColors[blockColorID(17, 6)] = 0x342919;
-		blockColors[blockColorID(17, 7)] = 0x584519;
-		blockColors[blockColorID(17, 8)] = 0x342919; 
-		blockColors[blockColorID(17, 9)] = 0x342919;
-		blockColors[blockColorID(17, 10)] = 0x342919;
-		blockColors[blockColorID(17, 11)] = 0x584519;
-		blockColors[blockColorID(17, 12)] = 0x342919; // logs all bark?
-		blockColors[blockColorID(17, 13)] = 0x342919;
-		blockColors[blockColorID(17, 14)] = 0x342919;
-		blockColors[blockColorID(17, 15)] = 0x584519;
-		blockColors[blockColorID(18, 0)] = 0x164d0c;
-		blockColors[blockColorID(18, 1)] = 0x164d0c;
-		blockColors[blockColorID(18, 2)] = 0x164d0c;
-		blockColors[blockColorID(18, 3)] = 0x164d0c;
-		blockColors[blockColorID(19, 0)] = 0xe5e54e;
-		blockColors[blockColorID(20, 0)] = 0xffffff;
-		blockColors[blockColorID(21, 0)] = 0x677087;
-		blockColors[blockColorID(22, 0)] = 0xd2eb2;
-		blockColors[blockColorID(23, 0)] = 0x747474;
-		blockColors[blockColorID(24, 0)] = 0xc6bd6d; // sandstone
-		blockColors[blockColorID(24, 1)] = 0xc6bd6d;
-		blockColors[blockColorID(24, 2)] = 0xc6bd6d;
-		blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
-		blockColors[blockColorID(30, 0)] = 0xf4f4f4; // cobweb
-		blockColors[blockColorID(35, 0)] = 0xf4f4f4;
-		blockColors[blockColorID(35, 1)] = 0xeb843e;
-		blockColors[blockColorID(35, 2)] = 0xc55ccf;
-		blockColors[blockColorID(35, 3)] = 0x7d9cda;
-		blockColors[blockColorID(35, 4)] = 0xddd13a;
-		blockColors[blockColorID(35, 5)] = 0x3ecb31;
-		blockColors[blockColorID(35, 6)] = 0xe09aad;
-		blockColors[blockColorID(35, 7)] = 0x434343;
-		blockColors[blockColorID(35, 8)] = 0xafafaf;
-		blockColors[blockColorID(35, 9)] = 0x2f8286;
-		blockColors[blockColorID(35, 10)] = 0x9045d1;
-		blockColors[blockColorID(35, 11)] = 0x2d3ba7;
-		blockColors[blockColorID(35, 12)] = 0x573016;
-		blockColors[blockColorID(35, 13)] = 0x41581f;
-		blockColors[blockColorID(35, 14)] = 0xb22c27;
-		blockColors[blockColorID(35, 15)] = 0x1b1717;
-		blockColors[blockColorID(37, 0)] = 0xf1f902;
-		blockColors[blockColorID(38, 0)] = 0xf7070f;
-		blockColors[blockColorID(39, 0)] = 0x916d55;
-		blockColors[blockColorID(40, 0)] = 0x9a171c;
-		blockColors[blockColorID(41, 0)] = 0xfefb5d;
-		blockColors[blockColorID(42, 0)] = 0xe9e9e9;
-		blockColors[blockColorID(43, 0)] = 0xa8a8a8;
-		blockColors[blockColorID(43, 1)] = 0xc6bd6d;
-		blockColors[blockColorID(43, 2)] = 0xbc9862;
-		blockColors[blockColorID(43, 3)] = 0x959595;
-		blockColors[blockColorID(43, 4)] = 0xaa543b;
-		blockColors[blockColorID(43, 5)] = 0x7a7a7a;
-		blockColors[blockColorID(43, 6)] = 0x43262f;
-		blockColors[blockColorID(43, 7)] = 0xa8a8a8;
-		blockColors[blockColorID(44, 0)] = 0xa8a8a8; // slabs
-		blockColors[blockColorID(44, 1)] = 0xc6bd6d;
-		blockColors[blockColorID(44, 2)] = 0xbc9862;
-		blockColors[blockColorID(44, 3)] = 0x959595;
-		blockColors[blockColorID(44, 4)] = 0xaa543b;
-		blockColors[blockColorID(44, 5)] = 0x7a7a7a;
-		blockColors[blockColorID(44, 6)] = 0x43262f;
-		blockColors[blockColorID(44, 7)] = 0xa8a8a8;
-		blockColors[blockColorID(44, 8)] = 0xa8a8a8; // slabs upside down
-		blockColors[blockColorID(44, 9)] = 0xc6bd6d;
-		blockColors[blockColorID(44, 10)] = 0xbc9862;
-		blockColors[blockColorID(44, 11)] = 0x959595;
-		blockColors[blockColorID(44, 12)] = 0xaa543b;
-		blockColors[blockColorID(44, 13)] = 0x7a7a7a;
-		blockColors[blockColorID(44, 14)] = 0x43262f;
-		blockColors[blockColorID(44, 15)] = 0xa8a8a8; // all stone slab (inv editor only)
-		blockColors[blockColorID(45, 0)] = 0xaa543b;
-		blockColors[blockColorID(46, 0)] = 0xdb441a;
-		blockColors[blockColorID(47, 0)] = 0xb4905a;
-		blockColors[blockColorID(48, 0)] = 0x1f471f;
-		blockColors[blockColorID(49, 0)] = 0x101018;
-		blockColors[blockColorID(50, 0)] = 0xffd800;
-		blockColors[blockColorID(51, 0)] = 0xc05a01;
-		blockColors[blockColorID(52, 0)] = 0x265f87;
-		blockColors[blockColorID(53, 0)] = 0xbc9862;
-		blockColors[blockColorID(53, 1)] = 0xbc9862;
-		blockColors[blockColorID(53, 2)] = 0xbc9862;
-		blockColors[blockColorID(53, 3)] = 0xbc9862;
-		blockColors[blockColorID(54, 0)] = 0x8f691d; // chest
-		blockColors[blockColorID(55, 0)] = 0x480000;
-		blockColors[blockColorID(56, 0)] = 0x747474;
-		blockColors[blockColorID(57, 0)] = 0x82e4e0;
-		blockColors[blockColorID(58, 0)] = 0xa26b3e;
-		blockColors[blockColorID(59, 0)] = 57872;
-		blockColors[blockColorID(60, 0)] = 0x633f24;
-		blockColors[blockColorID(61, 0)] = 0x747474;
-		blockColors[blockColorID(62, 0)] = 0x747474;
-		blockColors[blockColorID(63, 0)] = 0xb4905a;
-		blockColors[blockColorID(64, 0)] = 0x7a5b2b;
-		blockColors[blockColorID(65, 0)] = 0xac8852;
-		blockColors[blockColorID(66, 0)] = 0xa4a4a4;
-		blockColors[blockColorID(67, 0)] = 0x9e9e9e;
-		blockColors[blockColorID(67, 1)] = 0x9e9e9e;
-		blockColors[blockColorID(67, 2)] = 0x9e9e9e;
-		blockColors[blockColorID(67, 3)] = 0x9e9e9e;
-		blockColors[blockColorID(68, 0)] = 0x9f844d;
-		blockColors[blockColorID(69, 0)] = 0x695433;
-		blockColors[blockColorID(70, 0)] = 0x8f8f8f;
-		blockColors[blockColorID(71, 0)] = 0xc1c1c1;
-		blockColors[blockColorID(72, 0)] = 0xbc9862;
-		blockColors[blockColorID(73, 0)] = 0x747474;
-		blockColors[blockColorID(74, 0)] = 0x747474;
-		blockColors[blockColorID(75, 0)] = 0x290000;
-		blockColors[blockColorID(76, 0)] = 0xfd0000;
-		blockColors[blockColorID(77, 0)] = 0x747474;
-		blockColors[blockColorID(78, 0)] = 0xfbffff;
-		blockColors[blockColorID(79, 0)] = 0x8ebfff;
-		blockColors[blockColorID(80, 0)] = 0xffffff;
-		blockColors[blockColorID(81, 0)] = 0x11801e;
-		blockColors[blockColorID(82, 0)] = 0xffffff;
-		blockColors[blockColorID(83, 0)] = 0xa1a7b2;
-		blockColors[blockColorID(84, 0)] = 0x8f691d; // jukebox
-		blockColors[blockColorID(85, 0)] = 0x9b664b;
-		blockColors[blockColorID(86, 0)] = 0xbc9862;
-		blockColors[blockColorID(87, 0)] = 0x582218;
-		blockColors[blockColorID(88, 0)] = 0x996731;
-		blockColors[blockColorID(89, 0)] = 0xcda838;
-		blockColors[blockColorID(90, 0)] = 0x732486;
-		blockColors[blockColorID(91, 0)] = 0xffc88d;
-		blockColors[blockColorID(92, 0)] = 0xe3cccd;
-		blockColors[blockColorID(93, 0)] = 0x979393;
-		blockColors[blockColorID(94, 0)] = 0xc09393;
-		blockColors[blockColorID(95, 0)] = 0x8f691d;
-		blockColors[blockColorID(96, 0)] = 0x7e5d2d;
-		blockColors[blockColorID(97, 0)] = 0x686868; // monster egg, stone, cobble, stone brick
-		blockColors[blockColorID(97, 1)] = 0x959595; 
-		blockColors[blockColorID(97, 2)] = 0x7a7a7a; 
-		blockColors[blockColorID(98, 0)] = 0x7a7a7a;
-		blockColors[blockColorID(98, 1)] = 0x1f471f;
-		blockColors[blockColorID(98, 2)] = 0x7a7a7a;
-		blockColors[blockColorID(99, 0)] = 0xcaab78;
-		blockColors[blockColorID(100, 0)] = 0xcaab78;
-		blockColors[blockColorID(101, 0)] = 0x6d6c6a;
-		blockColors[blockColorID(102, 0)] = 0xffffff;
-		blockColors[blockColorID(103, 0)] = 0x979924;
-		blockColors[blockColorID(104, 0)] = 39168;
-		blockColors[blockColorID(105, 0)] = 39168;
-		blockColors[blockColorID(106, 0)] = 0x1f4e0a;
-		blockColors[blockColorID(107, 0)] = 0xbc9862;
-		blockColors[blockColorID(108, 0)] = 0xaa543b;
-		blockColors[blockColorID(108, 1)] = 0xaa543b;
-		blockColors[blockColorID(108, 2)] = 0xaa543b;
-		blockColors[blockColorID(108, 3)] = 0xaa543b;
-		blockColors[blockColorID(109, 0)] = 0x7a7a7a;
-		blockColors[blockColorID(109, 1)] = 0x7a7a7a;
-		blockColors[blockColorID(109, 2)] = 0x7a7a7a;
-		blockColors[blockColorID(109, 3)] = 0x7a7a7a;
-		blockColors[blockColorID(110, 0)] = 0x6e646a; // mycelium
-		blockColors[blockColorID(112, 0)] = 0x43262f; // netherbrick
-		blockColors[blockColorID(114, 0)] = 0x43262f; // netherbrick stairs
-		blockColors[blockColorID(114, 1)] = 0x43262f; // netherbrick stairs
-		blockColors[blockColorID(114, 2)] = 0x43262f; // netherbrick stairs
-		blockColors[blockColorID(114, 3)] = 0x43262f; // netherbrick stairs
-		blockColors[blockColorID(121, 0)] = 0xd3dca4; // endstone
-		blockColors[blockColorID(123, 0)] = 0x8f691d; // inactive glowstone lamp
-		blockColors[blockColorID(124, 0)] = 0xcda838; // active glowstone lamp
-		blockColors[blockColorID(125, 0)] = 0xbc9862; // wooden double slab
-		blockColors[blockColorID(125, 1)] = 0x805e36;  
-		blockColors[blockColorID(125, 2)] = 0xd7c185; 
-		blockColors[blockColorID(125, 3)] = 0x9f714a; 
-		blockColors[blockColorID(126, 0)] = 0xbc9862; // wooden slab
-		blockColors[blockColorID(126, 1)] = 0x805e36;  
-		blockColors[blockColorID(126, 2)] = 0xd7c185; 
-		blockColors[blockColorID(126, 3)] = 0x9f714a;
-		blockColors[blockColorID(126, 8)] = 0xbc9862; // wooden slab upside down
-		blockColors[blockColorID(126, 9)] = 0x805e36;  
-		blockColors[blockColorID(126, 10)] = 0xd7c185; 
-		blockColors[blockColorID(126, 11)] = 0x9f714a;
-		blockColors[blockColorID(127, 0)] = 0xae682a;  // cocoa plant
-		blockColors[blockColorID(128, 0)] = 0xc6bd6d;  // sandstone stairs
-		blockColors[blockColorID(128, 1)] = 0xc6bd6d;
-		blockColors[blockColorID(128, 2)] = 0xc6bd6d;
-		blockColors[blockColorID(128, 3)] = 0xc6bd6d;
-		blockColors[blockColorID(129, 0)] = 0x747474; // emerald ore
-		blockColors[blockColorID(130, 0)] = 0x2d0133; // ender chest (using side of enchanting table)
-		blockColors[blockColorID(131, 0)] = 0x7a7a7a; // tripwire hook
-		blockColors[blockColorID(132, 0)] = 0x767676; // tripwire
-		blockColors[blockColorID(133, 0)] = 0x45d56a; // emerald block
-		blockColors[blockColorID(134, 0)] = 0x805e36;  // spruce stairs
-		blockColors[blockColorID(134, 1)] = 0x805e36;
-		blockColors[blockColorID(134, 2)] = 0x805e36;
-		blockColors[blockColorID(134, 3)] = 0x805e36;
-		blockColors[blockColorID(135, 0)] = 0xd7c185;  // birch stairs
-		blockColors[blockColorID(135, 1)] = 0xd7c185;
-		blockColors[blockColorID(135, 2)] = 0xd7c185;
-		blockColors[blockColorID(135, 3)] = 0xd7c185;
-		blockColors[blockColorID(136, 0)] = 0x9f714a;  // jungle stairs
-		blockColors[blockColorID(136, 1)] = 0x9f714a;
-		blockColors[blockColorID(136, 2)] = 0x9f714a;
-		blockColors[blockColorID(136, 3)] = 0x9f714a;
-		blockColors[blockColorID(137, 0)] = 0xb88f74; // command block
-		blockColors[blockColorID(138, 0)] = 0x7be0da; // beacon block
-		blockColors[blockColorID(151, 0)] = 0x968e75; // light sensor
-		blockColors[blockColorID(152, 0)] = 0xb8200a; // redstone block
-		blockColors[blockColorID(153, 0)] = 0x87625e; // nether quartz ore
-
-	}
+	// colors, loading thereof
 
 	private final int blockColorID(int blockid, int meta) {
-		return (blockid) | (meta << 8);
+		return (blockid) | (meta << 12);  //  8 is good enough for 256 blocks.  for 4096 blocks need to shift 12
 	}
 
 	private final int getBlockColor(int blockid, int meta) {
 		try {
+			if (blockColors[blockColorID(blockid, meta)] == COLOR_NOT_LOADED)
+				blockColors[blockColorID(blockid, meta)] = getColor(terrainBuff, blockid, meta); 
 			int col = blockColors[blockColorID(blockid, meta)];
-			if (col != 0xff01ff) 
+			if (col != COLOR_FAILED_LOAD) 
 				return col;
+			if (blockColors[blockColorID(blockid, 0)] == COLOR_NOT_LOADED)
+				blockColors[blockColorID(blockid, 0)] = getColor(terrainBuff, blockid, 0); 
 			col = blockColors[blockColorID(blockid, 0)];
-			if (col != 0xff01ff) 
+			if (col != COLOR_FAILED_LOAD) 
 				return col;
 			col = blockColors[0];
-			if (col != 0xff01ff) 
+			if (col != COLOR_FAILED_LOAD) 
 				return col;
 		}
 		catch (ArrayIndexOutOfBoundsException e) {
@@ -1724,7 +1646,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			throw e;
 		}
 		//		System.err.println("Unable to find a block color for blockid: " + blockid + " blockmeta: " + meta);
-		return 0xff01ff;
+		return COLOR_FAILED_LOAD;
 	}
 	
 	// get texture pack data, includes CTM stuff
@@ -1747,6 +1669,25 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	private void loadTexturePackColors() {
 		try {
+			for(int i = 0; i<blockColors.length; i++)
+				blockColors[i] = COLOR_NOT_LOADED;
+			Icon icon = Block.blocksList[155].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
+			Texture texture = ((TextureStitched)icon).field_94228_a;
+
+			// gives name (minus /textures/blocks and .png) of the image used for this block/face/metadata
+			// can use to load block color.  Either all at once, or whenever we encounter a new block (or both)
+			//System.out.println(icon.func_94215_i()); 
+			//System.out.println(((TextureStitched)icon).func_94211_a() /*x*/ + " " + ((TextureStitched)icon).func_94216_b() + " " + ((TextureStitched)icon).func_94212_f() + " " + ((TextureStitched)icon).func_94210_h());
+			//icon = Block.blocksList[153].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
+			//System.out.println(icon.func_94215_i());
+			//System.out.println(((TextureStitched)icon).func_94211_a() /*x*/ + " " + ((TextureStitched)icon).func_94216_b() + " " + ((TextureStitched)icon).func_94212_f() + " " + ((TextureStitched)icon).func_94210_h());
+			
+			//Texture texture = ((TextureStitched)icon).field_94228_a;
+			//ByteBuffer buffer = texture.func_94273_h();
+			//GLBufferedImage bi = new GLBufferedImage(texture.func_94275_d(), texture.func_94276_e(), BufferedImage.TYPE_4BYTE_ABGR);
+			//bi.setBuffer(buffer);
+			
+
 		    // Read from a file
 		    //File file = new File("image.gif");
 		    //image = ImageIO.read(file);
@@ -1762,18 +1703,39 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		
 			//File file = new File("c:/terrain.png");
 			//java.awt.Image terrain = ImageIO.read(file);
-			InputStream is = pack.getResourceAsStream("/terrain.png");
-			java.awt.Image terrain = ImageIO.read(is);
-			is.close();
-			//System.out.println("WIDTH: " + terrain.getWidth(null));
-			terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
+			//InputStream is = pack.getResourceAsStream("/terrain.png");
+			//java.awt.Image terrain = ImageIO.read(is);
+			//is.close();
+			//terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
 			
-			terrainBuff = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_INT_RGB);
+	        BufferedImage terrainStitched = new BufferedImage(texture.func_94275_d(), texture.func_94276_e(), BufferedImage.TYPE_4BYTE_ABGR);
+	        ByteBuffer var3 = texture.func_94273_h();
+	        byte[] var4 = new byte[texture.func_94275_d() * texture.func_94276_e() * 4];
+	        var3.position(0);
+	        var3.get(var4);
+
+	        for (int var5 = 0; var5 < texture.func_94275_d(); ++var5)
+	        {
+	            for (int var6 = 0; var6 < texture.func_94276_e(); ++var6)
+	            {
+	                int var7 = var6 * texture.func_94275_d() * 4 + var5 * 4;
+	                byte var8 = 0;
+	                int var10 = var8 | (var4[var7 + 2] & 255) << 0;
+	                var10 |= (var4[var7 + 1] & 255) << 8;
+	                var10 |= (var4[var7 + 0] & 255) << 16;
+	                var10 |= (var4[var7 + 3] & 255) << 24;
+	                terrainStitched.setRGB(var5, var6, var10);
+	            }
+	        }
+	        //java.awt.Image terrain = terrainStitched.getScaledInstance(32,16, java.awt.Image.SCALE_SMOOTH);
+
+			
+			terrainBuff = new BufferedImage(terrainStitched.getWidth(null), terrainStitched.getHeight(null), BufferedImage.TYPE_INT_RGB);
 			java.awt.Graphics gfx = terrainBuff.createGraphics();
 		    //Paint the image onto the buffered image
-		    gfx.drawImage(terrain, 0, 0, null);
+		    gfx.drawImage(terrainStitched, 0, 0, null);
 		    gfx.dispose();
-			
+
 		    /**taking into account transparency in the bufferedimage makes stuff like the cobwebs look right.
 		     * downside is it gets the actual RGB of water, which can be very bright.
 		     * we sort of expect it to be darker (ocean deep, seeing the bottom through it etc)
@@ -1782,305 +1744,40 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		     * experiment with leaves and ice - I think both look better with transparency baked in there too..
 		     * shadows in leaves, stuff under the ice, etc.  So basically of the transparent blocks only cobwebs need real RGB 
 		     */
-		    terrainBuffTrans = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
+		    terrainBuffTrans = new BufferedImage(terrainStitched.getWidth(null), terrainStitched.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
 			gfx = terrainBuffTrans.createGraphics();
 		    //Paint the image onto the buffered image
-		    gfx.drawImage(terrain, 0, 0, null);
+		    gfx.drawImage(terrainStitched, 0, 0, null);
 		    gfx.dispose();
 
 
-			blockColors[blockColorID(1, 0)] = getColor(terrainBuff, 1);
 //			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
 			if (biomes)
-				blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0);
+				blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 2, 0);
 			else // apply a default color
-				blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
-			blockColors[blockColorID(3, 0)] = getColor(terrainBuff, 2); 
-			blockColors[blockColorID(4, 0)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(5, 0)] = getColor(terrainBuff, 4); // planks
-			blockColors[blockColorID(5, 1)] = getColor(terrainBuff, 198);
-			blockColors[blockColorID(5, 2)] = getColor(terrainBuff, 214);
-			blockColors[blockColorID(5, 3)] = getColor(terrainBuff, 199);
-			blockColors[blockColorID(6, 0)] = getColor(terrainBuff, 15);
-			blockColors[blockColorID(7, 0)] = getColor(terrainBuff, 17);
+				blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
 			getWaterColor(transparency?terrainBuffTrans:terrainBuff);
 			getLavaColor(terrainBuff);
-	/*		blockColors[blockColorID(8, 0)] = getColor(terrainBuff, 205); // water
-			blockColors[blockColorID(8, 1)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(8, 2)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(8, 3)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(8, 4)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(8, 5)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(8, 6)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(8, 7)] = getColor(terrainBuff, 205);
-			blockColors[blockColorID(9, 0)] = getColor(terrainBuff, 205); // stationary water
-			blockColors[blockColorID(10, 0)] = getColor(terrainBuff, 237); // lava
-			blockColors[blockColorID(10, 1)] = getColor(terrainBuff, 237);
-			blockColors[blockColorID(10, 2)] = getColor(terrainBuff, 237);
-			blockColors[blockColorID(10, 3)] = getColor(terrainBuff, 237);
-			blockColors[blockColorID(10, 4)] = getColor(terrainBuff, 237);
-			blockColors[blockColorID(10, 5)] = getColor(terrainBuff, 237);
-			blockColors[blockColorID(10, 6)] = getColor(terrainBuff, 237);
-			blockColors[blockColorID(11, 0)] = getColor(terrainBuff, 237); */// flowing lava
-			blockColors[blockColorID(12, 0)] = getColor(terrainBuff, 18);
-			blockColors[blockColorID(13, 0)] = getColor(terrainBuff, 19);
-			blockColors[blockColorID(14, 0)] = getColor(terrainBuff, 32);
-			blockColors[blockColorID(15, 0)] = getColor(terrainBuff, 33);
-			blockColors[blockColorID(16, 0)] = getColor(terrainBuff, 34);
-			blockColors[blockColorID(17, 0)] = getColor(terrainBuff, 21); // logs right side up
-			blockColors[blockColorID(17, 1)] = getColor(terrainBuff, 21);
-			blockColors[blockColorID(17, 2)] = getColor(terrainBuff, 21);
-			blockColors[blockColorID(17, 3)] = getColor(terrainBuff, 21);
-			blockColors[blockColorID(17, 4)] = getColor(terrainBuff, 20); // logs on side
-			blockColors[blockColorID(17, 5)] = getColor(terrainBuff, 116);
-			blockColors[blockColorID(17, 6)] = getColor(terrainBuff, 117);
-			blockColors[blockColorID(17, 7)] = getColor(terrainBuff, 153);
-			blockColors[blockColorID(17, 8)] = getColor(terrainBuff, 20); 
-			blockColors[blockColorID(17, 9)] = getColor(terrainBuff, 116);
-			blockColors[blockColorID(17, 10)] = getColor(terrainBuff, 117);
-			blockColors[blockColorID(17, 11)] = getColor(terrainBuff, 153);
-			blockColors[blockColorID(17, 12)] = getColor(terrainBuff, 20); // logs all bark?
-			blockColors[blockColorID(17, 13)] = getColor(terrainBuff, 116);
-			blockColors[blockColorID(17, 14)] = getColor(terrainBuff, 117);
-			blockColors[blockColorID(17, 15)] = getColor(terrainBuff, 153);
 			//blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 53); // leaves
 			//blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
 			//blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 53);
 			//blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 196);
 			if (biomes) {
-				blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 53);
-				blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
-				blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 53);
-				blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 196);
+				blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 18, 0);
+				blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 18, 1);
+				blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 18, 2);
+				blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 18, 3);
 			}
 			else {
-				blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
-				blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 133), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
-				blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
-				blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 196), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
+				blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
+				blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
+				blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
+				blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
 			}
-			blockColors[blockColorID(19, 0)] = getColor(terrainBuff, 48);
-			blockColors[blockColorID(20, 0)] = getColor(terrainBuff, 49);
-			blockColors[blockColorID(21, 0)] = getColor(terrainBuff, 160);
-			blockColors[blockColorID(22, 0)] = getColor(terrainBuff, 144);
-			blockColors[blockColorID(23, 0)] = getColor(terrainBuff, 62);
-			blockColors[blockColorID(24, 0)] = getColor(terrainBuff, 176); // sandstone.  
-			blockColors[blockColorID(24, 1)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(24, 2)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(25, 0)] = getColor(terrainBuff, 74); // note block
-			blockColors[blockColorID(30, 0)] = getColor(terrainBuffTrans, 11); // cobweb
-			blockColors[blockColorID(35, 0)] = getColor(terrainBuff, 64);
-			blockColors[blockColorID(35, 1)] = getColor(terrainBuff, 210);
-			blockColors[blockColorID(35, 2)] = getColor(terrainBuff, 194);
-			blockColors[blockColorID(35, 3)] = getColor(terrainBuff, 178);
-			blockColors[blockColorID(35, 4)] = getColor(terrainBuff, 162);
-			blockColors[blockColorID(35, 5)] = getColor(terrainBuff, 146);
-			blockColors[blockColorID(35, 6)] = getColor(terrainBuff, 130);
-			blockColors[blockColorID(35, 7)] = getColor(terrainBuff, 114);
-			blockColors[blockColorID(35, 8)] = getColor(terrainBuff, 225);
-			blockColors[blockColorID(35, 9)] = getColor(terrainBuff, 209);
-			blockColors[blockColorID(35, 10)] = getColor(terrainBuff, 193);
-			blockColors[blockColorID(35, 11)] = getColor(terrainBuff, 177);
-			blockColors[blockColorID(35, 12)] = getColor(terrainBuff, 161);
-			blockColors[blockColorID(35, 13)] = getColor(terrainBuff, 145);
-			blockColors[blockColorID(35, 14)] = getColor(terrainBuff, 129);
-			blockColors[blockColorID(35, 15)] = getColor(terrainBuff, 113);
-			blockColors[blockColorID(37, 0)] = getColor(terrainBuff, 13); // dandelion
-			blockColors[blockColorID(38, 0)] = getColor(terrainBuff, 12); // rose
-			blockColors[blockColorID(39, 0)] = getColor(terrainBuff, 29); // brown shroom
-			blockColors[blockColorID(40, 0)] = getColor(terrainBuff, 28); // red shroom
-			blockColors[blockColorID(41, 0)] = getColor(terrainBuff, 23);
-			blockColors[blockColorID(42, 0)] = getColor(terrainBuff, 22);
-			blockColors[blockColorID(43, 0)] = getColor(terrainBuff, 6); // double slabs
-			blockColors[blockColorID(43, 1)] = getColor(terrainBuff, 176); 
-			blockColors[blockColorID(43, 2)] = getColor(terrainBuff, 4);
-			blockColors[blockColorID(43, 3)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(43, 4)] = getColor(terrainBuff, 7);
-			blockColors[blockColorID(43, 5)] = getColor(terrainBuff, 54);
-			blockColors[blockColorID(43, 6)] = getColor(terrainBuff, 224); // netherbrick
-			blockColors[blockColorID(43, 7)] = getColor(terrainBuff, 6); // all stone double slab (inv editor only)
-			blockColors[blockColorID(44, 0)] = getColor(terrainBuff, 6); // slabs
-			blockColors[blockColorID(44, 1)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(44, 2)] = getColor(terrainBuff, 4);
-			blockColors[blockColorID(44, 3)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(44, 4)] = getColor(terrainBuff, 7);
-			blockColors[blockColorID(44, 5)] = getColor(terrainBuff, 54);
-			blockColors[blockColorID(44, 6)] = getColor(terrainBuff, 224); // netherbrick
-			blockColors[blockColorID(44, 7)] = getColor(terrainBuff, 6); // all stone slab (inv editor only)
-			blockColors[blockColorID(44, 8)] = getColor(terrainBuff, 6); // slabs upside down
-			blockColors[blockColorID(44, 9)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(44, 10)] = getColor(terrainBuff, 4);
-			blockColors[blockColorID(44, 11)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(44, 12)] = getColor(terrainBuff, 7);
-			blockColors[blockColorID(44, 13)] = getColor(terrainBuff, 54);
-			blockColors[blockColorID(44, 14)] = getColor(terrainBuff, 224); // netherbrick
-			blockColors[blockColorID(44, 15)] = getColor(terrainBuff, 6); // all stone slab (inv editor only)
-			blockColors[blockColorID(45, 0)] = getColor(terrainBuff, 7);
-			blockColors[blockColorID(46, 0)] = getColor(terrainBuff, 9); // tnt
-			blockColors[blockColorID(47, 0)] = getColor(terrainBuff, 4); // bookshelf
-			blockColors[blockColorID(48, 0)] = getColor(terrainBuff, 36);
-			blockColors[blockColorID(49, 0)] = getColor(terrainBuff, 37);
-			blockColors[blockColorID(50, 0)] = getColor(terrainBuff, 80); // torch
-			blockColors[blockColorID(51, 0)] = getColor(terrainBuff, 237); // fire (using lava)
-			blockColors[blockColorID(52, 0)] = getColor(terrainBuff, 65); // spawner
-			blockColors[blockColorID(53, 0)] = getColor(terrainBuff, 4); // oak stairs
-			blockColors[blockColorID(53, 1)] = getColor(terrainBuff, 4);
-			blockColors[blockColorID(53, 2)] = getColor(terrainBuff, 4);
-			blockColors[blockColorID(53, 3)] = getColor(terrainBuff, 4);
-			blockColors[blockColorID(54, 0)] = getColor(terrainBuff, 58); // chest (as long as some of it is still in terrain.png)
-			blockColors[blockColorID(55, 0)] = getColor(terrainBuff, 164); // redstone wire
-			blockColors[blockColorID(56, 0)] = getColor(terrainBuff, 50);
-			blockColors[blockColorID(57, 0)] = getColor(terrainBuff, 24);
-			blockColors[blockColorID(58, 0)] = getColor(terrainBuff, 43); // crafting table
-			blockColors[blockColorID(59, 0)] = getColor(terrainBuff, 95); // wheat seeds
-			blockColors[blockColorID(60, 0)] = getColor(terrainBuff, 87); // farmland
-			blockColors[blockColorID(60, 1)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 2)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 3)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 4)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 5)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 6)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 7)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(60, 8)] = getColor(terrainBuff, 86); 
-			blockColors[blockColorID(61, 0)] = getColor(terrainBuff, 62); // furnace
-			blockColors[blockColorID(62, 0)] = getColor(terrainBuff, 62); // burning furnace
-			blockColors[blockColorID(63, 0)] = getColor(terrainBuff, 4); // sign
-			blockColors[blockColorID(64, 0)] = getColor(terrainBuff, 97); // wood door
-			blockColors[blockColorID(65, 0)] = getColor(terrainBuff, 83); // ladder
-			blockColors[blockColorID(66, 0)] = getColor(terrainBuff, 28); // rails
-			blockColors[blockColorID(67, 0)] = getColor(terrainBuff, 16); // cobble stairs
-			blockColors[blockColorID(67, 1)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(67, 2)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(67, 3)] = getColor(terrainBuff, 16);
-			blockColors[blockColorID(68, 0)] = getColor(terrainBuff, 4); // wall sign
-			blockColors[blockColorID(69, 0)] = getColor(terrainBuff, 96); // lever
-			blockColors[blockColorID(70, 0)] = getColor(terrainBuff, 1); // stone plate
-			blockColors[blockColorID(71, 0)] = getColor(terrainBuff, 98); // iron door
-			blockColors[blockColorID(72, 0)] = getColor(terrainBuff, 4); // wood plate
-			blockColors[blockColorID(73, 0)] = getColor(terrainBuff, 51); // redstone ore
-			blockColors[blockColorID(74, 0)] = getColor(terrainBuff, 51); // glowing redstone ore
-			blockColors[blockColorID(75, 0)] = getColor(terrainBuff, 115); // redstone torch off
-			blockColors[blockColorID(76, 0)] = getColor(terrainBuff, 99); // redstone torch on
-			blockColors[blockColorID(77, 0)] = getColor(terrainBuff, 1); // button
-			blockColors[blockColorID(78, 0)] = getColor(terrainBuff, 66); // snow
-			blockColors[blockColorID(79, 0)] = getColor(terrainBuff, 67); // ice
-			blockColors[blockColorID(80, 0)] = getColor(terrainBuff, 66); // snow block
-			blockColors[blockColorID(81, 0)] = getColor(terrainBuff, 69); // cactus
-			blockColors[blockColorID(82, 0)] = getColor(terrainBuff, 72); // clay
-			blockColors[blockColorID(83, 0)] = getColor(terrainBuff, 73); // sugar cane
-			blockColors[blockColorID(84, 0)] = getColor(terrainBuff, 75); // jukebox
-			blockColors[blockColorID(85, 0)] = getColor(terrainBuff, 4); // fence
-			blockColors[blockColorID(86, 0)] = getColor(terrainBuff, 102); // pumpkin
-			blockColors[blockColorID(87, 0)] = getColor(terrainBuff, 103); // netherrack
-			blockColors[blockColorID(88, 0)] = getColor(terrainBuff, 104); // soulsand
-			blockColors[blockColorID(89, 0)] = getColor(terrainBuff, 105); // glowstone
-			blockColors[blockColorID(90, 0)] = getColor(terrainBuff, 14); // portal
-			blockColors[blockColorID(91, 0)] = getColor(terrainBuff, 102); // lit pumpkin
-			blockColors[blockColorID(92, 0)] = getColor(terrainBuff, 121); // cake
-			blockColors[blockColorID(93, 0)] = getColor(terrainBuff, 131); // repeater off
-			blockColors[blockColorID(94, 0)] = getColor(terrainBuff, 147); // repeater on
-			blockColors[blockColorID(95, 0)] = getColor(terrainBuff, 58); // locked chest
-			blockColors[blockColorID(96, 0)] = getColor(terrainBuff, 84); // trapdoor
-			blockColors[blockColorID(97, 0)] = getColor(terrainBuff, 1); // monster egg (stone, cobble, or stone brick)
-			blockColors[blockColorID(97, 1)] = getColor(terrainBuff, 16); 
-			blockColors[blockColorID(97, 2)] = getColor(terrainBuff, 54); 
-			blockColors[blockColorID(98, 0)] = getColor(terrainBuff, 54); // stone brick
-			blockColors[blockColorID(98, 1)] = getColor(terrainBuff, 100);
-			blockColors[blockColorID(98, 2)] = getColor(terrainBuff, 101);
-			blockColors[blockColorID(98, 3)] = getColor(terrainBuff, 213);
-			blockColors[blockColorID(99, 0)] = getColor(terrainBuff, 142); // huge brown shroom pores
-			blockColors[blockColorID(99, 1)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 2)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 3)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 4)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 5)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 6)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 7)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 8)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 9)] = getColor(terrainBuff, 126); // huge brown shroom cap
-			blockColors[blockColorID(99, 10)] = getColor(terrainBuff, 142); // huge brown shroom stem, pores on top
-			blockColors[blockColorID(99, 14)] = getColor(terrainBuff, 126); // huge brown shroom all cap
-			blockColors[blockColorID(99, 15)] = getColor(terrainBuff, 141); // huge brown shroom all stem
-			blockColors[blockColorID(100, 0)] = getColor(terrainBuff, 142); // huge red shroom pores
-			blockColors[blockColorID(100, 1)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 2)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 3)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 4)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 5)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 6)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 7)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 8)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 9)] = getColor(terrainBuff, 125); // huge red shroom cap
-			blockColors[blockColorID(100, 10)] = getColor(terrainBuff, 142); // huge red shroom stem, pores on top
-			blockColors[blockColorID(100, 14)] = getColor(terrainBuff, 125); // huge red shroom all cap
-			blockColors[blockColorID(100, 15)] = getColor(terrainBuff, 141); // huge red shroom all stem
-			blockColors[blockColorID(101, 0)] = getColor(terrainBuff, 85); // iron bars
-			blockColors[blockColorID(102, 0)] = getColor(terrainBuff, 49); // glass pane
-			blockColors[blockColorID(103, 0)] = getColor(terrainBuff, 137); // melon
-			blockColors[blockColorID(104, 0)] = getColor(terrainBuff, 127); // pumpkin stem
-			blockColors[blockColorID(105, 0)] = getColor(terrainBuff, 127); // melon stem
-			blockColors[blockColorID(106, 0)] = getColor(terrainBuff, 143); // vines
-			blockColors[blockColorID(107, 0)] = getColor(terrainBuff, 4); // fence gate
-			blockColors[blockColorID(108, 0)] = getColor(terrainBuff, 7); // brick stairs
-			blockColors[blockColorID(108, 1)] = getColor(terrainBuff, 7); 
-			blockColors[blockColorID(108, 2)] = getColor(terrainBuff, 7);
-			blockColors[blockColorID(108, 3)] = getColor(terrainBuff, 7);
-			blockColors[blockColorID(109, 0)] = getColor(terrainBuff, 54); // stone brick stairs
-			blockColors[blockColorID(109, 1)] = getColor(terrainBuff, 54);
-			blockColors[blockColorID(109, 2)] = getColor(terrainBuff, 54);
-			blockColors[blockColorID(109, 3)] = getColor(terrainBuff, 54);
-			blockColors[blockColorID(110, 0)] = getColor(terrainBuff, 78); // mycelium
-			blockColors[blockColorID(112, 0)] = getColor(terrainBuff, 224); // netherbrick
-			blockColors[blockColorID(114, 0)] = getColor(terrainBuff, 224); // netherbrick stairs
-			blockColors[blockColorID(114, 1)] = getColor(terrainBuff, 224); // netherbrick stairs
-			blockColors[blockColorID(114, 2)] = getColor(terrainBuff, 224); // netherbrick stairs
-			blockColors[blockColorID(114, 3)] = getColor(terrainBuff, 224); // netherbrick stairs
-			blockColors[blockColorID(121, 0)] = getColor(terrainBuff, 175); // endstone
-			blockColors[blockColorID(123, 0)] = getColor(terrainBuff, 211); // inactive glowstone lamp
-			blockColors[blockColorID(124, 0)] = getColor(terrainBuff, 212); // active glowstone lamp
-			blockColors[blockColorID(125, 0)] = getColor(terrainBuff, 4); // wooden double slab
-			blockColors[blockColorID(125, 1)] = getColor(terrainBuff, 198);  
-			blockColors[blockColorID(125, 2)] = getColor(terrainBuff, 214); 
-			blockColors[blockColorID(125, 3)] = getColor(terrainBuff, 199); 
-			blockColors[blockColorID(126, 0)] = getColor(terrainBuff, 4); // wooden slab
-			blockColors[blockColorID(126, 1)] = getColor(terrainBuff, 198);  
-			blockColors[blockColorID(126, 2)] = getColor(terrainBuff, 214); 
-			blockColors[blockColorID(126, 3)] = getColor(terrainBuff, 199);
-			blockColors[blockColorID(126, 8)] = getColor(terrainBuff, 4); // wooden slab upside down
-			blockColors[blockColorID(126, 9)] = getColor(terrainBuff, 198);  
-			blockColors[blockColorID(126, 10)] = getColor(terrainBuff, 214); 
-			blockColors[blockColorID(126, 11)] = getColor(terrainBuff, 199);
-			blockColors[blockColorID(127, 0)] = getColor(terrainBuff, 168);  // cocoa plant
-			blockColors[blockColorID(128, 0)] = getColor(terrainBuff, 176);  // sandstone stairs
-			blockColors[blockColorID(128, 1)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(128, 2)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(128, 3)] = getColor(terrainBuff, 176);
-			blockColors[blockColorID(129, 0)] = getColor(terrainBuff, 171); // emerald ore
-			blockColors[blockColorID(130, 0)] = getColor(terrainBuff, 182); // ender chest (using side of enchanting table)
-			blockColors[blockColorID(131, 0)] = getColor(terrainBuff, 172); // tripwire hook
-			blockColors[blockColorID(132, 0)] = getColor(terrainBuff, 173); // tripwire
-			blockColors[blockColorID(133, 0)] = getColor(terrainBuff, 25); // emerald block
-			blockColors[blockColorID(134, 0)] = getColor(terrainBuff, 198);  // spruce stairs
-			blockColors[blockColorID(134, 1)] = getColor(terrainBuff, 198);
-			blockColors[blockColorID(134, 2)] = getColor(terrainBuff, 198);
-			blockColors[blockColorID(134, 3)] = getColor(terrainBuff, 198);
-			blockColors[blockColorID(135, 0)] = getColor(terrainBuff, 214);  // birch stairs
-			blockColors[blockColorID(135, 1)] = getColor(terrainBuff, 214);
-			blockColors[blockColorID(135, 2)] = getColor(terrainBuff, 214);
-			blockColors[blockColorID(135, 3)] = getColor(terrainBuff, 214);
-			blockColors[blockColorID(136, 0)] = getColor(terrainBuff, 199);  // jungle stairs
-			blockColors[blockColorID(136, 1)] = getColor(terrainBuff, 199);
-			blockColors[blockColorID(136, 2)] = getColor(terrainBuff, 199);
-			blockColors[blockColorID(136, 3)] = getColor(terrainBuff, 199);
-			blockColors[blockColorID(137, 0)] = getColor(terrainBuff, 184); // command block
-			blockColors[blockColorID(138, 0)] = getColor(terrainBuff, 41); // beacon block
-			blockColors[blockColorID(151, 0)] = getColor(terrainBuff, 57); // light sensor
-			blockColors[blockColorID(152, 0)] = getColor(terrainBuff, 26); // redstone block
-			blockColors[blockColorID(153, 0)] = getColor(terrainBuff, 191); // nether quartz ore
-
+			
 			getCTMcolors();
 
-		    this.timer = calcLull+1; // force rerender with texture pack colors now that they are loaded
+			doFullRender = true; // force rerender with texture pack colors now that they are loaded
 		}
 		catch (Exception e) {
 			System.out.println("ERRRORRR " + e.getLocalizedMessage());
@@ -2091,26 +1788,54 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	private void reloadBiomeColors(boolean biomes) {
 		if (biomes)
-			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0);
+			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 2, 0);
 		else // apply a default color
-			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
+			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
 
 		if (biomes) {
-			blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 53);
-			blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
-			blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 53);
-			blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 196);
+			blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 18, 0);
+			blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 18, 1);
+			blockColors[blockColorID(18, 2)] = getColor(terrainBuff, 18, 2);
+			blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 18, 3);
 		}
 		else {
-			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
-			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 133), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
-			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 53), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
-			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 196), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
 		}
 	}
 	
 	private void reloadWaterColor(boolean transparency) {
 		getWaterColor(transparency?terrainBuffTrans:terrainBuff);
+	}
+	
+	private int getColor(BufferedImage image, int blockID, int metadata) {
+		try {
+	    Icon icon = Block.blocksList[blockID].getBlockTextureFromSideAndMetadata(1, metadata); // 1 is top
+	    int left = (int)(icon.func_94209_e()*image.getWidth());
+	    int right = (int)(icon.func_94212_f()*image.getWidth());
+	    int top = (int)(icon.func_94206_g()*image.getHeight());
+	    int bottom = (int)(icon.func_94210_h()*image.getHeight());
+	    		
+	    BufferedImage blockTexture = image.getSubimage(left, top, right-left, bottom-top);
+	    System.out.println(blockID + " " + metadata + " " + this.blockColorID(blockID, metadata));
+	    //System.out.println("dims: " + blockTexture.getWidth() + " " + blockTexture.getHeight());
+	    java.awt.Image singlePixel = blockTexture.getScaledInstance(1, 1, java.awt.Image.SCALE_SMOOTH);
+	    
+	    //System.out.println(blockID + " " + left + " " + top);
+	    
+	    BufferedImage singlePixelBuff = new BufferedImage(1, 1, image.getType());
+		java.awt.Graphics gfx = singlePixelBuff.createGraphics();
+	    //Paint the image onto the buffered image
+	    gfx.drawImage(singlePixel, 0, 0, null);
+	    gfx.dispose();
+		
+		return (singlePixelBuff.getRGB(0, 0) & 0x00FFFFFF); // the and dumps the alpha, in hex the ff at the beginning
+		}
+		catch (Exception e) {
+			return COLOR_FAILED_LOAD;
+		}
 	}
 	
 	private int getColor(BufferedImage image, int textureID) {
@@ -2152,24 +1877,37 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
     }
     
-    private void getWaterColor(BufferedImage terrainBuff) {
+    private void getWaterColor(BufferedImage image) {
     	try {
     		int waterRGB = -1;
-    		int waterBase = -1;
+    		//int waterBase = -1;
     		InputStream is = pack.getResourceAsStream("/anim/custom_water_still.png");
     		if (is == null) { 
     			is = pack.getResourceAsStream("/custom_water_still.png");
     		}
     		if (is == null) {
     			if (this.transparency) {
-    				int texX = 205 & 15; // 0 based column in terrain.png 
-    				int texY = (205 & 240) >> 4; // 0 based row in terrain.png
-    				waterBase = terrainBuff.getRGB(texX, texY);
+        			Icon icon = Block.blocksList[9].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
+        		    int left = (int)(icon.func_94209_e()*image.getWidth());
+        		    int right = (int)(icon.func_94212_f()*image.getWidth());
+        		    int top = (int)(icon.func_94206_g()*image.getHeight());
+        		    int bottom = (int)(icon.func_94210_h()*image.getHeight());
+        		    		
+        		    BufferedImage blockTexture = image.getSubimage(left, top, right-left, bottom-top);
+        		    java.awt.Image singlePixel = blockTexture.getScaledInstance(1, 1, java.awt.Image.SCALE_SMOOTH);
+        		    
+        		    BufferedImage singlePixelBuff = new BufferedImage(1, 1, image.getType());
+        			java.awt.Graphics gfx = singlePixelBuff.createGraphics();
+        		    //Paint the image onto the buffered image
+        		    gfx.drawImage(singlePixel, 0, 0, null);
+        		    gfx.dispose();
+        		    
+    				waterBase = singlePixelBuff.getRGB(0, 0); // the and dumps the alpha, in hex the ff at the beginning
     				waterAlpha = waterBase >> 24 & 255;
     				waterBase = waterBase & 0x00FFFFFF;
     			}
     			else {
-        			waterBase = getColor(terrainBuff, 205);
+        			waterBase = getColor(image, 9, 0);
     				waterAlpha = 180;
     			}
     		}
@@ -2177,7 +1915,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			java.awt.Image water = ImageIO.read(is);
     			is.close();
     			water = water.getScaledInstance(1,1, java.awt.Image.SCALE_SMOOTH);
-    			BufferedImage waterBuff = new BufferedImage(water.getWidth(null), water.getHeight(null), transparency?BufferedImage.TYPE_4BYTE_ABGR:BufferedImage.TYPE_INT_RGB);
+    			BufferedImage waterBuff = new BufferedImage(water.getWidth(null), water.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
     			java.awt.Graphics gfx = waterBuff.createGraphics();
     			// Paint the image onto the buffered image
     			gfx.drawImage(water, 0, 0, null);
@@ -2197,7 +1935,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			// Paint the image onto the buffered image
     			gfx.drawImage(waterColor, 0, 0, null);
     			gfx.dispose();
-    			waterMult = waterColorBuff.getRGB(waterColorBuff.getWidth()*76/255, waterColorBuff.getHeight()*112/255) & 0x00FFFFFF;
+    			waterMult = waterColorBuff.getRGB(waterColorBuff.getWidth()*76/256, waterColorBuff.getHeight()*112/256) & 0x00FFFFFF;
     		}
     		if (waterMult != -1 && waterMult != 0 && !biomes) // && != 0 cause some packs (ravands!) have completely transparent areas in watercolorX (ie no multiplier applied at all most of the time)
     			waterRGB = this.colorMultiplier(waterBase, waterMult);
@@ -2221,7 +1959,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			is = pack.getResourceAsStream("/custom_lava_still.png");
     		}
     		if (is == null) {
-    			lavaRGB = getColor(terrainBuff, 237);
+    			lavaRGB = getColor(terrainBuff, 11, 0);
     		}
     		else {
     			java.awt.Image lava = ImageIO.read(is);
@@ -2248,7 +1986,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
     
     private void getCTMcolors() {
     	for (String s : listResources("/ctm", ".properties")) {
-    		loadCTM(s);
+    		try {
+    			loadCTM(s);
+    		}
+            catch (NumberFormatException e) {
+            	// nothing, continue loop
+            }
+    		catch (IllegalArgumentException e) {
+    			
+    		}
     	}
     }
     
@@ -2270,6 +2016,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
         
         filePath = filePath.toLowerCase();
         String blockNum = filePath.substring(filePath.lastIndexOf("block")+5, filePath.lastIndexOf(".properties"));
+        blockNum = blockNum.replaceAll("[^0-9.]", "");
         int blockID = -1;
         try {
         	blockID = Integer.parseInt(blockNum);
@@ -2416,7 +2163,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			out.println("Welcome Message:" + Boolean.toString(welcome));
 			out.println("Map Corner:" + Integer.toString(mapCorner));
 			out.println("Map Size:" + Integer.toString(sizeModifier));
-			out.println("Update Frequency:" + Integer.toString(calcLull));
 			//out.println("Threading:" + Boolean.toString(threading));
 			out.println("Zoom Key:" + getKeyDisplayString(keyBindZoom.keyCode));
 			out.println("Menu Key:" + getKeyDisplayString(keyBindMenu.keyCode));
@@ -2554,10 +2300,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				old2dWayPts.add(wpt);
 			}
 		}
-	}
-	
-	public void graduateOld2dWaypoint(int i) {
-		old2dWayPts.remove(i);
 	}
 	
 	public void graduateOld2dWaypoint(Waypoint point) { 
@@ -2891,7 +2633,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glLoadIdentity ();  
 					GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
 
-					EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, fboID); // draw to the FBP
+					EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, fboID); // draw to the FBO
 
 					// Clear Screen And Depth Buffer on the fbo to black.  We draw same circle each time, so only need to do it on scale change (when we start drawing a new circle)
 					if (scaleChanged) {
@@ -2935,6 +2677,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glTranslatef(128, 128, 0.0F); 
 					GL11.glRotatef(this.direction-this.northRotate, 0.0F, 0.0F, 1.0F); 
 					GL11.glTranslatef(-(128), -128F, 0.0F);
+					
 					if(this.zoom==0) 
 						GL11.glTranslatef(-2.2f, 1.6f, 0.0f);
 					else 
@@ -3704,7 +3447,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
             	this.sizeModifier = (this.sizeModifier >=1)?-1:this.sizeModifier+1;
             	
         }
-		this.timer=calcLull+1; // re-render immediately for new options
+        doFullRender = true; // re-render immediately for new options
 	}
 	
 	// controls menu from here
