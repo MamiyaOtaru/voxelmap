@@ -1,6 +1,8 @@
 package net.minecraft.src;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.src.mamiyaotaru.CommandServerZanTp;
 import net.minecraft.src.mamiyaotaru.EntityWaypoint;
 import net.minecraft.src.mamiyaotaru.MinimapGuiInGame;
 import net.minecraft.src.mamiyaotaru.RenderWaypoint;
@@ -11,6 +13,7 @@ public class mod_ZanMinimap extends BaseMod {
 	GuiIngame realGui;
 	MinimapGuiInGame fakeGui;
 	boolean haveRenderManager = false;
+	MinecraftServer server = null;
 	
     public String getVersion()
     {
@@ -47,6 +50,8 @@ public class mod_ZanMinimap extends BaseMod {
     				RenderWaypoint renderWaypoint = new RenderWaypoint();
     				((java.util.HashMap)entityRenderMap).put(EntityWaypoint.class, renderWaypoint);
     				renderWaypoint.setRenderManager(RenderManager.instance);
+    				
+    				haveRenderManager = true; // don't do again
     			}
     		}
     	}

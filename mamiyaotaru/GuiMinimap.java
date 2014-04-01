@@ -53,7 +53,7 @@ public class GuiMinimap extends GuiScreen
       //      }
       //      else
       //      {
-                GuiSmallButtonMinimap var7 = new GuiSmallButtonMinimap(option.returnEnumOrdinal(), this.width / 2 - 155 + var2 % 2 * 160, this.height / 6 + 24 + 24 * (var2 >> 1), option, this.minimap.getKeyText(option));
+                GuiSmallButtonMinimap var7 = new GuiSmallButtonMinimap(option.returnEnumOrdinal(), this.width / 2 - 155 + var2 % 2 * 160, this.height / 6 + 24 * (var2 >> 1), option, this.minimap.getKeyText(option));
 
                 this.controlList.add(var7);
       //      }
@@ -64,10 +64,10 @@ public class GuiMinimap extends GuiScreen
 //      this.controlList.add(new GuiButton(101, this.width / 2 - 152, this.height / 6 + 136 - 6, 150, 20, stringTranslate.translateKey("options.radar"))); // use if I ever get translate going
         //														-152 or plus 2
 //        this.controlList.add(new GuiButton(101, this.width / 2 - 155, this.height / 6 + /*136*/ 0 - 6, 150, 20, "Radar Options...")); 
-        GuiButton radarOptionsButton = new GuiButton(101, this.width / 2 - 155, this.height / 6 + /*136*/ 0 - 6, 150, 20, "Radar Options...");
+        GuiButton radarOptionsButton = new GuiButton(101, this.width / 2 - 155, this.height / 6 + 136 - 6, 150, 20, "Radar Options...");
         radarOptionsButton.enabled = (this.minimap.radar != null && this.minimap.radarAllowed); // deactivate button if class is missing, or if radar is disabled
         this.controlList.add(radarOptionsButton);
-        this.controlList.add(new GuiButton(100, this.width / 2 + 5, this.height / 6 + /*136*/ 0 - 6, 150, 20, "Waypoints...")); // stuck at the top (with radar button) so it doesn't trigger the zan waypoint menu code
+        this.controlList.add(new GuiButton(100, this.width / 2 + 5, this.height / 6 + 136 - 6, 150, 20, "Waypoints...")); // stuck at the top (with radar button) so it doesn't trigger the zan waypoint menu code
         this.controlList.add(new GuiButton(200, this.width / 2 - 100, this.height / 6 + 168, stringTranslate.translateKey("menu.returnToGame")));
 
 
@@ -93,10 +93,10 @@ public class GuiMinimap extends GuiScreen
 
             if (par1GuiButton.id == 100)
             {
-                //this.minimap.saveAll();
-                //this.mc.displayGuiScreen(new GuiWaypoints(this, minimap));
-    			minimap.iMenu = 3;
-    			minimap.game.displayGuiScreen(new GuiScreen());
+                this.minimap.saveAll();
+                this.mc.displayGuiScreen(new GuiWaypoints(this, minimap));
+    			//minimap.iMenu = 3;
+    			//minimap.game.displayGuiScreen(new GuiScreen());
             }
             
             if (par1GuiButton.id == 200)
