@@ -167,5 +167,41 @@ public class EnumOptionsHelperMinimap
         {
             ;
         }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.FILTERING.ordinal()] = 18;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.TRANSPARENCY.ordinal()] = 19;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.BIOMES.ordinal()] = 20;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SIZE.ordinal()] = 21;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
     }
 }

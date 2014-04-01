@@ -37,7 +37,12 @@ public enum EnumOptionsMinimap
 	SHOWHOSTILES("Show Hostiles", false, true, false),
 	SHOWPLAYERS("Show Players", false, true, false),
 	SHOWNEUTRALS("Show Neutrals", false, true, false), 
-	LOCATION("Location", false, false, true);
+	LOCATION("Location", false, false, true),
+	FILTERING("Filtering", false, true, false),
+	TRANSPARENCY("Transparency", false, true, false),
+	BIOMES("Biomes", false, true, false),
+	SIZE("Size", false, false, true);
+
 	
     private final boolean enumFloat;
     private final boolean enumBoolean;

@@ -34,9 +34,9 @@ public class GuiMinimap extends GuiScreen
     public void initGui()
     {
     	if (minimap.motionTrackerExists)
-    		relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.COORDS, EnumOptionsMinimap.HIDE, EnumOptionsMinimap.LIGHTING, EnumOptionsMinimap.TERRAIN, EnumOptionsMinimap.SQUARE, EnumOptionsMinimap.OLDNORTH, EnumOptionsMinimap.BEACONS, EnumOptionsMinimap.CAVEMODE, EnumOptionsMinimap.MOTIONTRACKER};
+    		relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.COORDS, EnumOptionsMinimap.HIDE, EnumOptionsMinimap.LOCATION, EnumOptionsMinimap.SIZE, EnumOptionsMinimap.SQUARE, EnumOptionsMinimap.OLDNORTH, EnumOptionsMinimap.BEACONS, EnumOptionsMinimap.CAVEMODE, EnumOptionsMinimap.MOTIONTRACKER};
     	else
-    		relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.COORDS, EnumOptionsMinimap.HIDE, EnumOptionsMinimap.LIGHTING, EnumOptionsMinimap.TERRAIN, EnumOptionsMinimap.SQUARE, EnumOptionsMinimap.OLDNORTH, EnumOptionsMinimap.BEACONS, EnumOptionsMinimap.CAVEMODE};
+    		relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.COORDS, EnumOptionsMinimap.HIDE, EnumOptionsMinimap.LOCATION, EnumOptionsMinimap.SIZE, EnumOptionsMinimap.SQUARE, EnumOptionsMinimap.OLDNORTH, EnumOptionsMinimap.BEACONS, EnumOptionsMinimap.CAVEMODE};
     		
         StringTranslate stringTranslate = StringTranslate.getInstance();
         int var2 = 0;
@@ -63,7 +63,7 @@ public class GuiMinimap extends GuiScreen
             ++var2;
         }
 
-        this.controlList.add(new GuiButton(103, this.width / 2 + 5, this.height / 6 + 120 - 6, 150, 20, "Size/Location...")); 
+        this.controlList.add(new GuiButton(103, this.width / 2 + 5, this.height / 6 + 120 - 6, 150, 20, "Details/Performance...")); 
         this.controlList.add(new GuiButton(102, this.width / 2 - 155, this.height / 6 + 120 - 6, 150, 20, stringTranslate.translateKey("options.controls"))); 
         GuiButton radarOptionsButton = new GuiButton(101, this.width / 2 - 155, this.height / 6 + 144 - 6, 150, 20, "Radar Options...");
         radarOptionsButton.enabled = (this.minimap.radar != null && this.minimap.radarAllowed); // deactivate button if class is missing, or if radar is disabled
@@ -89,7 +89,7 @@ public class GuiMinimap extends GuiScreen
             
             if (par1GuiButton.id == 103)
             {
-           		this.mc.displayGuiScreen(new GuiMinimapLocation(this, minimap));
+           		this.mc.displayGuiScreen(new GuiMinimapPerformance(this, minimap));
             }
 
             if (par1GuiButton.id == 102)
@@ -106,8 +106,6 @@ public class GuiMinimap extends GuiScreen
             {
                 this.minimap.saveAll();
                 this.mc.displayGuiScreen(new GuiWaypoints(this, minimap));
-    			//minimap.iMenu = 3;
-    			//minimap.game.displayGuiScreen(new GuiScreen());
             }
             
             if (par1GuiButton.id == 200)

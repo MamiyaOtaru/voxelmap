@@ -543,7 +543,7 @@ public class ZanRadar {
 		
 		guiScale = (guiScale>=4)?1:0;
 
-		this.direction = -this.game.thePlayer.rotationYaw;
+		this.direction = this.game.thePlayer.rotationYaw + 180;
 
 		if (this.direction >= 360.0f)
 			while (this.direction >= 360.0f)
@@ -850,9 +850,9 @@ public class ZanRadar {
 					//GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
 					// from here
 					GL11.glTranslatef(x, y, 0.0F);
-					GL11.glRotatef(-locate + (minimap.squareMap?90.0F - minimap.northRotate:this.direction + 180.0F), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+					GL11.glRotatef(-locate + (minimap.squareMap?minimap.northRotate:-this.direction), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
 					GL11.glTranslated(0.0D,-hypot,0.0D);
-					GL11.glRotatef(-(-locate + (minimap.squareMap?90.0F - minimap.northRotate:this.direction + 180.0F)), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
+					GL11.glRotatef(-(-locate + (minimap.squareMap?minimap.northRotate:-this.direction)), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
 					GL11.glTranslated(0.0D,hypot,0.0D);
 					GL11.glTranslatef(-x, -y, 0.0F);
 					GL11.glTranslated(0.0D,-hypot,0.0D);

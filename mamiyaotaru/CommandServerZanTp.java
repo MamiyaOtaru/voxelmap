@@ -6,12 +6,15 @@ import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.src.Block;
+import net.minecraft.src.BlockHalfSlab;
+import net.minecraft.src.BlockStairs;
 import net.minecraft.src.Chunk;
 import net.minecraft.src.CommandBase;
 import net.minecraft.src.EntityPlayerMP;
 import net.minecraft.src.ICommandSender;
 import net.minecraft.src.Material;
 import net.minecraft.src.PlayerNotFoundException;
+import net.minecraft.src.World;
 import net.minecraft.src.WrongUsageException;
 import net.minecraft.src.ZanMinimap;
 
@@ -115,15 +118,15 @@ public class CommandServerZanTp extends CommandBase {
 					Chunk chunk = player.worldObj.getChunkFromBlockCoords(x, z); // just make sure chunk is loaded
 					player.worldObj.getChunkProvider().loadChunk(x, z);
 					int safeY = -1;
-					for (int t = 0; t < 63; t++) {
+					for (int t = 0; t < 127; t++) {
 						// ie if block is solid (no liquid) and two blocks above are air
-						if (player.worldObj.isBlockOpaqueCube(x, 64 + t, z) && player.worldObj.getBlockMaterial(x, 64 + t + 1, z) == Material.air && player.worldObj.getBlockMaterial(x, 64 + t + 2, z) == Material.air) {
-							safeY = 64+t+1;
-							t = 70; // break
+						if ( (y + t < 128) && isBlockStandable(player.worldObj, x, y + t, z) && isBlockOpen(player.worldObj,x, y + t + 1, z) && isBlockOpen(player.worldObj,x, y + t + 2, z)) {
+							safeY = y+t+1;
+							t = 128; // break
 						}
-						if (player.worldObj.isBlockOpaqueCube(x, 64 - t, z) && player.worldObj.getBlockMaterial(x, 64 - t + 1, z) == Material.air && player.worldObj.getBlockMaterial(x, 64 - t + 2, z) == Material.air) {
-							safeY = 64-t+1;
-							t = 70; // break
+						if ( (y - t > 0) && isBlockStandable(player.worldObj, x, y - t, z) && isBlockOpen(player.worldObj,x, y - t + 1, z) && isBlockOpen(player.worldObj,x, y - t + 2, z)) {
+							safeY = y-t+1;
+							t = 128; // break
 						}
 					}
 					if (safeY == -1)
@@ -158,6 +161,22 @@ public class CommandServerZanTp extends CommandBase {
 				: getListOfStringsMatchingLastWord(par2ArrayOfStr,
 						MinecraftServer.getServer().getAllUsernames());
 	}
+	
+    private boolean isBlockStandable(World worldObj, int par1, int par2, int par3)
+    {
+        if (worldObj.getBlockMaterial(par1, par2, par3) == Material.air) // can stand on fence
+        	return (worldObj.getBlockId(par1, par2-1, par3) == Block.fence.blockID || worldObj.getBlockId(par1, par2-1, par3) == Block.netherFence.blockID);
+        Block block = Block.blocksList[worldObj.getBlockId(par1, par2, par3)];
+        return block == null ? false : (block.blockMaterial.isOpaque());
+    }
+    
+    private boolean isBlockOpen(World worldObj, int par1, int par2, int par3)
+    {
+        if (worldObj.getBlockMaterial(par1, par2, par3) == Material.air) // can stand on fence
+        	return !(worldObj.getBlockId(par1, par2-1, par3) == Block.fence.blockID || worldObj.getBlockId(par1, par2-1, par3) == Block.netherFence.blockID);
+        Block block = Block.blocksList[worldObj.getBlockId(par1, par2, par3)];
+        return block == null ? true : (Block.lightOpacity[block.blockID] == 0);
+    }
 	
 	
 // not command related, this is just to get a handle on zan's so we can get waypoints	

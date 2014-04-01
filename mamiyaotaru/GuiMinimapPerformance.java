@@ -10,12 +10,12 @@ import net.minecraft.src.KeyBinding;
 import net.minecraft.src.StringTranslate;
 import net.minecraft.src.ZanMinimap;
 
-public class GuiMinimapLocation extends GuiScreen
+public class GuiMinimapPerformance extends GuiScreen
 {
     /**
      * An array of options that can be changed directly from the options GUI.
      */
-    private static final EnumOptionsMinimap[] relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.LOCATION};
+    private static final EnumOptionsMinimap[] relevantOptions = new EnumOptionsMinimap[] {EnumOptionsMinimap.LIGHTING, EnumOptionsMinimap.TERRAIN, EnumOptionsMinimap.BIOMES, EnumOptionsMinimap.TRANSPARENCY, EnumOptionsMinimap.FILTERING};
     
     /**
      * A reference to the screen object that created this. Used for navigating between screens.
@@ -23,7 +23,7 @@ public class GuiMinimapLocation extends GuiScreen
     private GuiScreen parentScreen;
 
     /** The title string that is displayed in the top-center of the screen. */
-    protected String screenTitle = "Location";
+    protected String screenTitle = "Details / Performance";
 
     /** Reference to the Minimap object. */
     private ZanMinimap options;
@@ -31,7 +31,7 @@ public class GuiMinimapLocation extends GuiScreen
     /** The ID of the  button that has been pressed. */
     private int buttonId = -1;
 
-    public GuiMinimapLocation(GuiScreen par1GuiScreen, ZanMinimap minimap)
+    public GuiMinimapPerformance(GuiScreen par1GuiScreen, ZanMinimap minimap)
     {
         this.parentScreen = par1GuiScreen;
         this.options = minimap;
@@ -48,7 +48,7 @@ public class GuiMinimapLocation extends GuiScreen
     public void initGui()
     {
         StringTranslate stringTranslate = StringTranslate.getInstance();
-        this.screenTitle = "Minimap Location";
+        this.screenTitle = "Details / Performance";
         
         int var1 = this.func_73907_g();
         int var2 = 0;
@@ -63,10 +63,13 @@ public class GuiMinimapLocation extends GuiScreen
       //      }
       //      else
       //      {
-                GuiSmallButtonMinimap var7 = new GuiSmallButtonMinimap(option.returnEnumOrdinal(), var1 + var2 % 2 * 160, this.height / 6 + 24 * (var2 >> 1), option, this.options.getKeyText(option));
+            String text = this.options.getKeyText(option);
+            if ((option.returnEnumOrdinal() == 19 || option.returnEnumOrdinal()== 20) && !options.multicore && options.getOptionBooleanValue(option))
+            	text = "\u00a7c"+text;
+            GuiSmallButtonMinimap var7 = new GuiSmallButtonMinimap(option.returnEnumOrdinal(), var1 + var2 % 2 * 160, this.height / 6 + 24 * (var2 >> 1), option, text);
 
-                this.controlList.add(var7);
-      //      }
+            this.controlList.add(var7);
+            //      }
 
             ++var2;
         }
@@ -89,7 +92,11 @@ public class GuiMinimapLocation extends GuiScreen
         if (par1GuiButton.id < 100 && par1GuiButton instanceof GuiSmallButtonMinimap)
         {
             this.options.setOptionValue(((GuiSmallButtonMinimap)par1GuiButton).returnEnumOptions(), 1);
-            par1GuiButton.displayString = this.options.getKeyText(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id));
+            String perfBomb = "";
+            if ((par1GuiButton.id == 19 || par1GuiButton.id == 20) && !options.multicore && options.getOptionBooleanValue(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id)))
+            	perfBomb = "\u00a7c";
+            //System.out.println(par1GuiButton.id + " " + EnumOptionsMinimap.getEnumOptions(par1GuiButton.id).ordinal());
+            par1GuiButton.displayString = perfBomb + this.options.getKeyText(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id));
         }
         if (par1GuiButton.id == 200)
         {
