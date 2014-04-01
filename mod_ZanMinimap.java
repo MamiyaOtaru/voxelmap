@@ -19,6 +19,12 @@ import java.util.Random;
 public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private Minecraft game; 
 
+	/*motion tracker, may or may not exist*/
+	private mod_MotionTracker motionTracker = null;
+
+	/*whether motion tracker exists*/
+	private Boolean motionTrackerExists = false;
+
 	/*Textures for each zoom level*/
 	private BufferedImage[] map = new BufferedImage[4];
 
@@ -79,7 +85,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private String error = "";
 
 	/*Strings to show for menu*/
-	private String[][] sMenu = new String[2][11];
+	private String[][] sMenu = new String[2][12];
 
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
@@ -270,6 +276,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
   				//mc.s.a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
   				//mc.entityRenderer.func_21152_a(1.0, 0.0, 0.0); // ** jay do I even need this shit?
 
+				if (motionTrackerExists && motionTracker.activated) {
+					motionTracker.OnTickInGame(mc);
+					return;
+				}
 	
 				if (threading)
 				{
@@ -359,7 +369,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 					if (this.showNether || this.game.thePlayer.dimension!=-1) {
 						if(this.full) renderMapFull(scWidth,scHeight);
-						else if (showCaves) renderMapMobs(scWidth);
 						else renderMap(scWidth);
 					}					
 					
@@ -483,7 +492,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 						if ((check) || (showmap) || (this.full)) {
 							if (this.rc) {
-								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.builtSnow)) 
+								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
 								else if ((data.getBlockMaterial(startX + imageY, height - 1, startZ - imageX) == Material.cloth)) // || (data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX) == 35))
 									color24 = this.clothColors[data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX)];
@@ -563,7 +572,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 						if ((check) || (showmap) || (this.full)) {
 							if (this.rc) {
-								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.builtSnow)) 
+								if ((data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.snow) || (data.getBlockMaterial(startX + imageY, height, startZ - imageX) == Material.craftedSnow)) 
 									color24 = 0xFFFFFF;
 								else if ((data.getBlockMaterial(startX + imageY, height - 1, startZ - imageX) == Material.cloth)) // || (data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX) == 35))
 									color24 = this.clothColors[data.getBlockMetadata(startX + imageY, height - 1, startZ - imageX)];
@@ -670,6 +679,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
         //ModLoader.SetInGameHook(this, true, false);
 		
 		instance=this;
+		if (classExists("mod_MotionTracker")) {
+			motionTracker = new mod_MotionTracker();		
+			motionTrackerExists = true;
+		}
+
 		threading = false;
 		zCalc.start();
 		this.map[0] = new BufferedImage(32,32,2);
@@ -678,7 +692,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.map[3] = new BufferedImage(256,256,2);
 
 		for (int m = 0; m<2; m++)
-			for(int n = 0; n<11; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
+			for(int n = 0; n<12; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
 				this.sMenu[m][n] = "";
 
 		this.sMenu[0][0] = "§4Zan's§F Mod! " + this.zmodver;
@@ -695,6 +709,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.sMenu[1][7] = "Square Map:";
 		this.sMenu[1][8] = "Welcome Screen:";
 		this.sMenu[1][9] = "Threading:";
+		if (motionTrackerExists) this.sMenu[1][10] = "Radar Mode:";
 		
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
 
@@ -740,9 +755,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			saveAll();
 		}
 		for(int i = 0; i<blockColors.length; i++)
-			blockColors[i] = 0xff00ff;
+			blockColors[i] = 0xff01ff;
 		for(int i = 0; i<clothColors.length; i++)
-			clothColors[i] = 0xff00ff;
+			clothColors[i] = 0xff01ff;
 			
 		settingsFile = new File(getAppDir("minecraft"), "colours.txt");
 
@@ -768,6 +783,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[18]=0x164d0c;
 			blockColors[19]=0xe5e54e;
 			blockColors[20]=0xffffff;
+			blockColors[21]=0x677087;
 			blockColors[22]=0x0d2eb2;
 			blockColors[23]=0x747474;
 			blockColors[24]=0xc6bd6d;
@@ -828,6 +844,24 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[89]=0xcda838;
 			blockColors[90]=0x732486;
 			blockColors[91]=0xffc88d;
+			blockColors[92]=0xe3cccd;
+			blockColors[93]=0x979393;
+			blockColors[94]=0xc09393;
+			blockColors[95]=0x8f691d;
+			blockColors[96]=0x7e5d2d;
+			blockColors[97]=0x686868;
+			blockColors[98]=0x7a7a7a;
+			blockColors[99]=0xcaab78;
+			blockColors[100]=0xcaab78;
+			blockColors[101]=0x6d6c6a;
+			blockColors[102]=0xffffff;
+			blockColors[103]=0x979924;
+			blockColors[104]=0x009900;
+			blockColors[105]=0x009900;
+			blockColors[106]=0x1f4e0a;
+			blockColors[107]=0xbc9862;
+			blockColors[108]=0x9b6d61;
+			blockColors[109]=0x7a7a7a;
 
 			clothColors[0]=0xf4f4f4;
 			clothColors[1]=0xeb843e;
@@ -882,7 +916,17 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		} catch (Exception e) {e.printStackTrace();}
 
 		for (int t = 0; t <= 30; t++) {
-			pitch[t] = (float)(Math.pow(1.0188, (30 -t )));
+			pitch[t] = (float)(Math.pow(1.0188, (30 - t)));
+		}
+	}
+
+	private boolean classExists (String className) {
+		try {
+			Class.forName (className);
+			return true;
+		}
+		 catch (ClassNotFoundException exception) {
+			return false;
 		}
 	}
 	
@@ -1193,7 +1237,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			//	brightness = 1 - ((tickerFade-120) * .011F);
 			//else 
 			//	brightness = 1 - ((tickerFade+30) * .011F);  
- 			// above good if we want the ping to be at some point other than when the wave finishes its sweep (at mod 0)
+ 			// above good if we want the pong to be at some point other than when the wave finishes its sweep (at mod 0)
 			brightness = 1 - (tickerFade * .011F);
 
 			if (ticker != 11)
@@ -1215,18 +1259,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				oldDir = this.direction;
 				for(int j = 0; j < entities.size(); j++) {
 					Entity entity = (Entity)entities.get(j);
-					Class entityClass = entity.getClass();
-//					try {
-//						if(EntityMob.class.isAssignableFrom(entity.getClass())) { // catches classes that might be descended through a couple generations.  Possible problem: picks up pig zombies (mob->zombie->pigzombie)
-//						}
-//					} catch (Exception ClassNotFoundException) {
-//						this.error = "class not found";
-//					}
 
-					if(entityClass.getSuperclass().equals(EntityMob.class)) { // only works if mob is immediate subclass of entityMob
-																								// misses ghasts (sub of entityFlying - doesn't descent from entityMob at all, but implements IMob)
-																								// ghasts might need public Class[] getInterfaces()[0].  Or just test if is ghast
-																								// or public boolean isAnnotationPresent(Class<? extends Annotation> annotationClass)
+					if(isHostile(entity)) { 
 						int wayX = this.xCoord() - (int)(entity.posX);
 						int wayY = this.yCoord() - (int)(entity.posZ);
 						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
@@ -1310,6 +1344,17 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			GL11.glPopMatrix(); 
 		} // end if not hidden
 	} // end method rendermapMobs
+
+	private boolean isHostile(Entity entity) {
+		if (entity instanceof EntityMob) // most mobs
+			return true;
+		// TODO pigZombies like wolves
+		if (entity instanceof IMob) // ghast
+			return true;
+		if (entity instanceof EntityWolf) 
+			return ((EntityWolf)entity).isWolfAngry();
+		return false;
+	}
 
 
 
@@ -1768,7 +1813,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			leftCl = rightCl - 9;
 		} else {
 			min = 0;
-			max = 9; // number of menu options, only affects if they can be clicked
+			if (motionTrackerExists) max = 10;
+			else max = 9; // number of menu options, only affects if they can be clicked
 		}
 
 		for(int i = min; i<max; i++) {
@@ -1908,6 +1954,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (i==6) return showmap;
 		else if (i==7) return welcome;
 		else if (i==8) return threading;
+		else if (i==9 && motionTrackerExists) return false;
 		throw new IllegalArgumentException("bad option number "+i);
 	}
 
@@ -1921,6 +1968,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (i==6) showmap = !showmap;
 		else if (i==7) welcome = !welcome;
 		else if (i==8) threading = !threading;
+		else if (i==9 && motionTrackerExists) motionTracker.activated = true;
 		else throw new IllegalArgumentException("bad option number "+i);
 		this.saveAll();
 		this.timer=500;
