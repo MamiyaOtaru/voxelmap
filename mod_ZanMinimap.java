@@ -181,9 +181,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	private boolean haveLoadedBefore;
 
-	//TODO: update
 	/*Polygon creation class*/
-	//private lj lDraw = lj.a;
 	private Tessellator lDraw = Tessellator.instance;
 
 	/*Font rendering class*/
@@ -307,26 +305,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			return;
 		}
 
-		if (threading)
-		{
-
-			if (!zCalc.isAlive() && threading) {
-				zCalc = new Thread(this);
-				zCalc.start();
-			}
-			if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
-				try {this.zCalc.notify();} catch (Exception local) {}
-		}
-		else if (!threading)
-		{
-			if (this.enabled && !this.hide)
-				mapCalc((timer>300)?true:false);
-			timer=(timer>300)?0:timer;
-			timer++;
-		}
-
-
-
 		if(lang==null) lang = this.game.fontRenderer;
 
 		if(renderEngine==null) renderEngine = this.game.renderEngine;
@@ -345,6 +323,23 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 
 		checkForChanges();
+		if (threading)
+		{
+
+			if (!zCalc.isAlive() && threading) {
+				zCalc = new Thread(this);
+				zCalc.start();
+			}
+			if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
+				try {this.zCalc.notify();} catch (Exception local) {}
+		}
+		else if (!threading)
+		{
+			if (this.enabled && !this.hide)
+				mapCalc((timer>300)?true:false);
+			timer=(timer>300)?0:timer;
+			timer++;
+		}
 
 		if (this.iMenu==1) {
 			if (!welcome) this.iMenu = 0;
@@ -389,10 +384,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 		if (this.enabled) {
 
-			GL11.glDisable(2929 /*GL_DEPTH_TEST*/);
-			GL11.glEnable(3042 /*GL_BLEND*/);
+			GL11.glDisable(GL11.GL_DEPTH_TEST);
+			GL11.glEnable(GL11.GL_BLEND);
 			GL11.glDepthMask(false);
-			GL11.glBlendFunc(770, 0);
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 			if (this.showNether || this.game.thePlayer.dimension!=-1) {
 				if(this.full) renderMapFull(scWidth,scHeight);
@@ -405,8 +400,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			if (this.iMenu>0) showMenu(scWidth, scHeight);
 
 			GL11.glDepthMask(true);
-			GL11.glDisable(3042 /*GL_BLEND*/);
-			GL11.glEnable(2929 /*GL_DEPTH_TEST*/);
+			GL11.glDisable(GL11.GL_BLEND);
+			GL11.glEnable(GL11.GL_DEPTH_TEST);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 
 			if (this.showNether || this.game.thePlayer.dimension!=-1)
@@ -441,7 +436,12 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		
 		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
 			pack = game.texturePackList.getSelectedTexturePack();
-			this.loadTexturePackColors();
+			try {
+				this.loadTexturePackColors();
+			}
+			catch (Exception e) {
+				System.out.println("texture pack not ready yet");
+			}
 		}
 	}
 
@@ -582,14 +582,31 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
 				i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
 			else if (solid) 
-				i3 = 32;
+				i3 = 0;
 			if(i3 > 255) i3 = 255;
 
-			if (nether && !solid)
-				if(i3 < 76) i3 = 76; // nether/cave shows some light even in the dark so you can see caves/nether surface that isn't lit.  If it's solid though leave it black
-			if(i3 < 32) i3 = 32; // overworld lowest black is lower for some reason 
+			if (nether) {
+				if (!solid)
+					if(i3 < 76) i3 = 76; // nether/cave shows some light even in the dark so you can see caves/nether surface that isn't lit.  If it's solid though leave it black
+				else
+					if(i3<0) i3 = 0; // solid is black
+			}
+			else { // overworld
+				if(i3 < 32) i3 = 32; // overworld lowest black is lower for some reason.  not as black as solid though
+			}
 
-			color24 = i3 * 0x1000000 + color24 ;
+			// store drakness in actual RGB.  Instead of mixing with black based on alpha later.  Can save alpha for stencilling this into a circle
+			int r = color24 / 0x10000;
+			int g = (color24 - r * 0x10000)/0x100;
+			int b = (color24 - r * 0x10000-g*0x100);
+			r=r*i3/255;
+			g=g*i3/255;
+			b=b*i3/255;
+			color24 = r * 0x10000 + g * 0x100 + b;
+			color24 = 255 * 0x1000000 + color24 ;
+
+			// storing lighting in alpha channel.  doesn't work so well with stencilling
+			//color24 = i3 * 0x1000000 + color24 ;
 		}
 		return color24;
 	}
@@ -794,262 +811,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		for(int i = 0; i<blockColors.length; i++)
 			blockColors[i] = 0xff01ff;
 
-		try {
-			// load default colors.  For if TP fails?  Also for that bit at the start
-			blockColors[blockColorID(1, 0)] = 0x686868;
-			blockColors[blockColorID(2, 0)] = 0x74b44a;
-			blockColors[blockColorID(3, 0)] = 0x79553a;
-			blockColors[blockColorID(4, 0)] = 0x959595;
-			blockColors[blockColorID(5, 0)] = 0xbc9862; // oak wood planks
-			blockColors[blockColorID(5, 1)] = 0x805e36; // spruce wood planks
-			blockColors[blockColorID(5, 2)] = 0xd7c185; // birch planks
-			blockColors[blockColorID(5, 3)] = 0x9f714a; // jungle planks
-			blockColors[blockColorID(6, 0)] = 0x946428;
-			blockColors[blockColorID(7, 0)] = 0x333333;
-			blockColors[blockColorID(8, 0)] = 0x3256ff;
-			blockColors[blockColorID(8, 1)] = 0x3256ff;
-			blockColors[blockColorID(8, 2)] = 0x3256ff;
-			blockColors[blockColorID(8, 3)] = 0x3256ff;
-			blockColors[blockColorID(8, 4)] = 0x3256ff;
-			blockColors[blockColorID(8, 5)] = 0x3256ff;
-			blockColors[blockColorID(8, 6)] = 0x3256ff;
-			blockColors[blockColorID(8, 7)] = 0x3256ff;
-			blockColors[blockColorID(9, 0)] = 0x3256ff;
-			blockColors[blockColorID(10, 0)] = 0xd86514;
-			blockColors[blockColorID(10, 1)] = 0xd76514;
-			blockColors[blockColorID(10, 2)] = 0xd66414;
-			blockColors[blockColorID(10, 3)] = 0xd56414;
-			blockColors[blockColorID(10, 4)] = 0xd46314;
-			blockColors[blockColorID(10, 5)] = 0xd36314;
-			blockColors[blockColorID(10, 6)] = 0xd26214;
-			blockColors[blockColorID(11, 0)] = 0xd96514;
-			blockColors[blockColorID(12, 0)] = 0xddd7a0;
-			blockColors[blockColorID(13, 0)] = 0x747474;
-			blockColors[blockColorID(14, 0)] = 0x747474;
-			blockColors[blockColorID(15, 0)] = 0x747474;
-			blockColors[blockColorID(16, 0)] = 0x747474;
-			blockColors[blockColorID(17, 0)] = 0x342919; // logs right side up
-			blockColors[blockColorID(17, 1)] = 0x342919;
-			blockColors[blockColorID(17, 2)] = 0x342919;
-			blockColors[blockColorID(17, 3)] = 0x584519;
-			blockColors[blockColorID(17, 4)] = 0x342919; // logs on side
-			blockColors[blockColorID(17, 5)] = 0x342919;
-			blockColors[blockColorID(17, 6)] = 0x342919;
-			blockColors[blockColorID(17, 7)] = 0x584519;
-			blockColors[blockColorID(17, 8)] = 0x342919; 
-			blockColors[blockColorID(17, 9)] = 0x342919;
-			blockColors[blockColorID(17, 10)] = 0x342919;
-			blockColors[blockColorID(17, 11)] = 0x584519;
-			blockColors[blockColorID(17, 12)] = 0x342919; // logs all bark?
-			blockColors[blockColorID(17, 13)] = 0x342919;
-			blockColors[blockColorID(17, 14)] = 0x342919;
-			blockColors[blockColorID(17, 15)] = 0x584519;
-			blockColors[blockColorID(18, 0)] = 0x164d0c;
-			blockColors[blockColorID(18, 1)] = 0x164d0c;
-			blockColors[blockColorID(18, 2)] = 0x164d0c;
-			blockColors[blockColorID(18, 3)] = 0x164d0c;
-			blockColors[blockColorID(19, 0)] = 0xe5e54e;
-			blockColors[blockColorID(20, 0)] = 0xffffff;
-			blockColors[blockColorID(21, 0)] = 0x677087;
-			blockColors[blockColorID(22, 0)] = 0xd2eb2;
-			blockColors[blockColorID(23, 0)] = 0x747474;
-			blockColors[blockColorID(24, 0)] = 0xc6bd6d; // sandstone
-			blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
-			blockColors[blockColorID(35, 0)] = 0xf4f4f4;
-			blockColors[blockColorID(35, 1)] = 0xeb843e;
-			blockColors[blockColorID(35, 2)] = 0xc55ccf;
-			blockColors[blockColorID(35, 3)] = 0x7d9cda;
-			blockColors[blockColorID(35, 4)] = 0xddd13a;
-			blockColors[blockColorID(35, 5)] = 0x3ecb31;
-			blockColors[blockColorID(35, 6)] = 0xe09aad;
-			blockColors[blockColorID(35, 7)] = 0x434343;
-			blockColors[blockColorID(35, 8)] = 0xafafaf;
-			blockColors[blockColorID(35, 9)] = 0x2f8286;
-			blockColors[blockColorID(35, 10)] = 0x9045d1;
-			blockColors[blockColorID(35, 11)] = 0x2d3ba7;
-			blockColors[blockColorID(35, 12)] = 0x573016;
-			blockColors[blockColorID(35, 13)] = 0x41581f;
-			blockColors[blockColorID(35, 14)] = 0xb22c27;
-			blockColors[blockColorID(35, 15)] = 0x1b1717;
-			blockColors[blockColorID(37, 0)] = 0xf1f902;
-			blockColors[blockColorID(38, 0)] = 0xf7070f;
-			blockColors[blockColorID(39, 0)] = 0x916d55;
-			blockColors[blockColorID(40, 0)] = 0x9a171c;
-			blockColors[blockColorID(41, 0)] = 0xfefb5d;
-			blockColors[blockColorID(42, 0)] = 0xe9e9e9;
-			blockColors[blockColorID(43, 0)] = 0xa8a8a8;
-			blockColors[blockColorID(43, 1)] = 0xc6bd6d;
-			blockColors[blockColorID(43, 2)] = 0xbc9862;
-			blockColors[blockColorID(43, 3)] = 0x959595;
-			blockColors[blockColorID(43, 4)] = 0xaa543b;
-			blockColors[blockColorID(43, 5)] = 0x7a7a7a;
-			blockColors[blockColorID(43, 6)] = 0xa8a8a8;
-			blockColors[blockColorID(44, 0)] = 0xa8a8a8; // slabs
-			blockColors[blockColorID(44, 1)] = 0xc6bd6d;
-			blockColors[blockColorID(44, 2)] = 0xbc9862;
-			blockColors[blockColorID(44, 3)] = 0x959595;
-			blockColors[blockColorID(44, 4)] = 0xaa543b;
-			blockColors[blockColorID(44, 5)] = 0x7a7a7a;
-			blockColors[blockColorID(44, 6)] = 0xa8a8a8;
-			blockColors[blockColorID(44, 8)] = 0xa8a8a8; // slabs upside down
-			blockColors[blockColorID(44, 9)] = 0xc6bd6d;
-			blockColors[blockColorID(44, 10)] = 0xbc9862;
-			blockColors[blockColorID(44, 11)] = 0x959595;
-			blockColors[blockColorID(44, 12)] = 0xaa543b;
-			blockColors[blockColorID(44, 13)] = 0x7a7a7a;
-			blockColors[blockColorID(45, 0)] = 0xaa543b;
-			blockColors[blockColorID(46, 0)] = 0xdb441a;
-			blockColors[blockColorID(47, 0)] = 0xb4905a;
-			blockColors[blockColorID(48, 0)] = 0x1f471f;
-			blockColors[blockColorID(49, 0)] = 0x101018;
-			blockColors[blockColorID(50, 0)] = 0xffd800;
-			blockColors[blockColorID(51, 0)] = 0xc05a01;
-			blockColors[blockColorID(52, 0)] = 0x265f87;
-			blockColors[blockColorID(53, 0)] = 0xbc9862;
-			blockColors[blockColorID(53, 1)] = 0xbc9862;
-			blockColors[blockColorID(53, 2)] = 0xbc9862;
-			blockColors[blockColorID(53, 3)] = 0xbc9862;
-			blockColors[blockColorID(54, 0)] = 0x8f691d; // chest
-			blockColors[blockColorID(55, 0)] = 0x480000;
-			blockColors[blockColorID(56, 0)] = 0x747474;
-			blockColors[blockColorID(57, 0)] = 0x82e4e0;
-			blockColors[blockColorID(58, 0)] = 0xa26b3e;
-			blockColors[blockColorID(59, 0)] = 57872;
-			blockColors[blockColorID(60, 0)] = 0x633f24;
-			blockColors[blockColorID(61, 0)] = 0x747474;
-			blockColors[blockColorID(62, 0)] = 0x747474;
-			blockColors[blockColorID(63, 0)] = 0xb4905a;
-			blockColors[blockColorID(64, 0)] = 0x7a5b2b;
-			blockColors[blockColorID(65, 0)] = 0xac8852;
-			blockColors[blockColorID(66, 0)] = 0xa4a4a4;
-			blockColors[blockColorID(67, 0)] = 0x9e9e9e;
-			blockColors[blockColorID(67, 1)] = 0x9e9e9e;
-			blockColors[blockColorID(67, 2)] = 0x9e9e9e;
-			blockColors[blockColorID(67, 3)] = 0x9e9e9e;
-			blockColors[blockColorID(68, 0)] = 0x9f844d;
-			blockColors[blockColorID(69, 0)] = 0x695433;
-			blockColors[blockColorID(70, 0)] = 0x8f8f8f;
-			blockColors[blockColorID(71, 0)] = 0xc1c1c1;
-			blockColors[blockColorID(72, 0)] = 0xbc9862;
-			blockColors[blockColorID(73, 0)] = 0x747474;
-			blockColors[blockColorID(74, 0)] = 0x747474;
-			blockColors[blockColorID(75, 0)] = 0x290000;
-			blockColors[blockColorID(76, 0)] = 0xfd0000;
-			blockColors[blockColorID(77, 0)] = 0x747474;
-			blockColors[blockColorID(78, 0)] = 0xfbffff;
-			blockColors[blockColorID(79, 0)] = 0x8ebfff;
-			blockColors[blockColorID(80, 0)] = 0xffffff;
-			blockColors[blockColorID(81, 0)] = 0x11801e;
-			blockColors[blockColorID(82, 0)] = 0xffffff;
-			blockColors[blockColorID(83, 0)] = 0xa1a7b2;
-			blockColors[blockColorID(84, 0)] = 0x8f691d; // jukebox
-			blockColors[blockColorID(85, 0)] = 0x9b664b;
-			blockColors[blockColorID(86, 0)] = 0xbc9862;
-			blockColors[blockColorID(87, 0)] = 0x582218;
-			blockColors[blockColorID(88, 0)] = 0x996731;
-			blockColors[blockColorID(89, 0)] = 0xcda838;
-			blockColors[blockColorID(90, 0)] = 0x732486;
-			blockColors[blockColorID(91, 0)] = 0xffc88d;
-			blockColors[blockColorID(92, 0)] = 0xe3cccd;
-			blockColors[blockColorID(93, 0)] = 0x979393;
-			blockColors[blockColorID(94, 0)] = 0xc09393;
-			blockColors[blockColorID(95, 0)] = 0x8f691d;
-			blockColors[blockColorID(96, 0)] = 0x7e5d2d;
-			blockColors[blockColorID(97, 0)] = 0x686868;
-			blockColors[blockColorID(98, 0)] = 0x7a7a7a;
-			blockColors[blockColorID(98, 1)] = 0x1f471f;
-			blockColors[blockColorID(98, 2)] = 0x7a7a7a;
-			blockColors[blockColorID(99, 0)] = 0xcaab78;
-			blockColors[blockColorID(100, 0)] = 0xcaab78;
-			blockColors[blockColorID(101, 0)] = 0x6d6c6a;
-			blockColors[blockColorID(102, 0)] = 0xffffff;
-			blockColors[blockColorID(103, 0)] = 0x979924;
-			blockColors[blockColorID(104, 0)] = 39168;
-			blockColors[blockColorID(105, 0)] = 39168;
-			blockColors[blockColorID(106, 0)] = 0x1f4e0a;
-			blockColors[blockColorID(107, 0)] = 0xbc9862;
-			blockColors[blockColorID(108, 0)] = 0xaa543b;
-			blockColors[blockColorID(108, 1)] = 0xaa543b;
-			blockColors[blockColorID(108, 2)] = 0xaa543b;
-			blockColors[blockColorID(108, 3)] = 0xaa543b;
-			blockColors[blockColorID(109, 0)] = 0x7a7a7a;
-			blockColors[blockColorID(109, 1)] = 0x7a7a7a;
-			blockColors[blockColorID(109, 2)] = 0x7a7a7a;
-			blockColors[blockColorID(109, 3)] = 0x7a7a7a;
-			blockColors[blockColorID(110, 0)] = 0x6e646a; // mycelium
-			blockColors[blockColorID(112, 0)] = 0x43262f; // netherbrick
-			blockColors[blockColorID(114, 0)] = 0x43262f; // netherbrick stairs
-			blockColors[blockColorID(114, 1)] = 0x43262f; // netherbrick stairs
-			blockColors[blockColorID(114, 2)] = 0x43262f; // netherbrick stairs
-			blockColors[blockColorID(114, 3)] = 0x43262f; // netherbrick stairs
-			blockColors[blockColorID(121, 0)] = 0xd3dca4; // endstone
-			blockColors[blockColorID(123, 0)] = 0x8f691d; // inactive glowstone lamp
-			blockColors[blockColorID(124, 0)] = 0xcda838; // active glowstone lamp
-			blockColors[blockColorID(125, 0)] = 0xbc9862; // wooden double slab
-			blockColors[blockColorID(125, 1)] = 0x805e36;  
-			blockColors[blockColorID(125, 2)] = 0xd7c185; 
-			blockColors[blockColorID(125, 3)] = 0x9f714a; 
-			blockColors[blockColorID(126, 0)] = 0xbc9862; // wooden slab
-			blockColors[blockColorID(126, 1)] = 0x805e36;  
-			blockColors[blockColorID(126, 2)] = 0xd7c185; 
-			blockColors[blockColorID(126, 3)] = 0x9f714a;
-			blockColors[blockColorID(126, 8)] = 0xbc9862; // wooden slab upside down
-			blockColors[blockColorID(126, 9)] = 0x805e36;  
-			blockColors[blockColorID(126, 10)] = 0xd7c185; 
-			blockColors[blockColorID(126, 11)] = 0x9f714a;
-			blockColors[blockColorID(127, 0)] = 0xae682a;  // cocoa plant
-			blockColors[blockColorID(128, 0)] = 0xc6bd6d;  // sandstone stairs
-			blockColors[blockColorID(128, 1)] = 0xc6bd6d;
-			blockColors[blockColorID(128, 2)] = 0xc6bd6d;
-			blockColors[blockColorID(128, 3)] = 0xc6bd6d;
-			blockColors[blockColorID(129, 0)] = 0x747474; // emerald ore
-			blockColors[blockColorID(130, 0)] = 0x2d0133; // ender chest (using side of enchanting table)
-			blockColors[blockColorID(131, 0)] = 0x7a7a7a; // tripwire hook
-			blockColors[blockColorID(132, 0)] = 0x767676; // tripwire
-			blockColors[blockColorID(133, 0)] = 0x45d56a; // emerald block
-			blockColors[blockColorID(134, 0)] = 0x805e36;  // spruce stairs
-			blockColors[blockColorID(134, 1)] = 0x805e36;
-			blockColors[blockColorID(134, 2)] = 0x805e36;
-			blockColors[blockColorID(134, 3)] = 0x805e36;
-			blockColors[blockColorID(135, 0)] = 0xd7c185;  // birch stairs
-			blockColors[blockColorID(135, 1)] = 0xd7c185;
-			blockColors[blockColorID(135, 2)] = 0xd7c185;
-			blockColors[blockColorID(135, 3)] = 0xd7c185;
-			blockColors[blockColorID(136, 0)] = 0x9f714a;  // jungle stairs
-			blockColors[blockColorID(136, 1)] = 0x9f714a;
-			blockColors[blockColorID(136, 2)] = 0x9f714a;
-			blockColors[blockColorID(136, 3)] = 0x9f714a;
-			if(settingsFile.exists()) {
-				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
-				String sCurrentLine;
-
-				while ((sCurrentLine = in.readLine()) != null) {
-					String[] curLine = sCurrentLine.split(":");
-					try{
-						if(curLine[0].equals("Block")&&curLine.length==4) {
-							int id = Integer.parseInt(curLine[1]);
-							int meta = Integer.parseInt(curLine[2]);
-							blockColors[blockColorID(id, meta)] = Integer.parseInt(curLine[3], 16);
-						}
-					} catch(NumberFormatException e)
-					{
-						e.printStackTrace();
-						//just keep on trucking ...
-					}
-				}
-
-				in.close();
-			}
-
-			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
-			for(int i = 0; i<blockColors.length; i++)
-				if(blockColors[i] != 0xff00ff) {
-					int meta = i >> 8;
-			int id = i & 0xff;
-			out.println("Block:"+id+":"+meta+":"+Integer.toHexString(blockColors[i]));
-				}
-			out.close();
-		} catch (Exception e) {e.printStackTrace();}
 	}
 
 	private final int blockColorID(int blockid, int meta) {
@@ -1154,10 +915,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private void loadTexturePackColors() {
-		File tpFile = new File(getAppDir("minecraft"), "moo");
-		System.out.println(game.renderEngine.getTexture("terrain.png"));
-		this.renderEngine.bindTexture(this.renderEngine.getTexture("terrain.png"));
-		
 		try {
 		    // Read from a file
 		    //File file = new File("image.gif");
@@ -1176,6 +933,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			//java.awt.Image terrain = ImageIO.read(file);
 			InputStream is = pack.getResourceAsStream("/terrain.png");
 			java.awt.Image terrain = ImageIO.read(is);
+			is.close();
 			System.out.println("WIDTH: " + terrain.getWidth(null));
 			terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
 			BufferedImage terrainBuff = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_INT_RGB);
@@ -1184,28 +942,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		    // Paint the image onto the buffered image
 		    gfx.drawImage(terrain, 0, 0, null);
 		    gfx.dispose();
-		    
-		    int initialSize = terrainBuff.getHeight();
-		    int initialTileSize = initialSize/16;
-		    int imageType = terrainBuff.getType();
-			int finalSize = 256;
-			int tileSize = finalSize/16;
-			BufferedImage comp = new BufferedImage(finalSize, finalSize, terrainBuff.getType());
-			gfx = comp.getGraphics();
-			for (int t = 0; t < 16; t++) {
-				for (int s = 0; s < 16; s++) {
-					BufferedImage snip = terrainBuff.getSubimage(initialTileSize*t, initialTileSize*s, initialTileSize, initialTileSize);
-					java.awt.Image snipScaled = snip.getScaledInstance(tileSize, tileSize, java.awt.Image.SCALE_SMOOTH);
-					gfx.drawImage(snipScaled, tileSize*t, tileSize*s, null);
-				}
-			}
-			gfx.dispose ();
-			File file = new File("j:/terrainSmall.png");
-			file.createNewFile();
-			ImageIO.write(comp, "png", file);
-			
-
-		    
+		 		    
 			blockColors[blockColorID(1, 0)] = getColor(terrainBuff, 1);
 //			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 0); // grass
 			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 0), ColorizerGrass.getGrassColor(0.7,  0.7)) & 0x00FFFFFF;
@@ -1520,7 +1257,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				try {
 					GL11.glPushMatrix();
 					this.disp(this.img("/mmarrow.png"));
-					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); // TODO
+					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); 
 					GL11.glRotatef(-this.direction -90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
 					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 					drawPre();
@@ -1597,62 +1334,54 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					} // end if pt enabled
 				} // end for waypoints
 			} else { // else roundmap
-				/*
-		int w = imageBG.getWidth();
-        int h = imageBG.getHeight();
-        Ellipse2D.Double ellipse1 = new Ellipse2D.Double(
-                w/16,h/16,7*w/8,7*h/8); 
-        Ellipse2D.Double ellipse2 = new Ellipse2D.Double(
-                w/4,h/4,w/2,h/2);
-        Area circle = new Area(ellipse1);
-        circle.subtract(new Area(ellipse2));
-
-        Graphics2D g = imageBG.createGraphics();
-        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        g.setRenderingHint(RenderingHints.KEY_DITHERING, RenderingHints.VALUE_DITHER_ENABLE);
-        g.setRenderingHint(RenderingHints.KEY_FRACTIONALMETRICS, RenderingHints.VALUE_FRACTIONALMETRICS_ON);
-        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-        g.setClip(circle);
-        g.drawImage(imageFG, 0, 0, null);
-        g.setClip(null);
-        Stroke s = new BasicStroke(2);
-        g.setStroke(s);
-        g.setColor(Color.BLACK);
-        g.draw(circle);
-        g.dispose();
-				 */
-				int diameter = this.map[this.zoom].getWidth();
+				
+			// have to convert square image into a circle here now that we don't redraw the image from scratch every frame.  Can't just draw it round from the start, makes it impossible to know which ones are new
+			// make into a circle with java2d.  Must do if we store lighting in alpha channel.  slightly slower
+			/*	int diameter = this.map[this.lZoom].getWidth();
 				BufferedImage roundImage = new BufferedImage(diameter, diameter,this.map[this.lZoom].getType());
-				//java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(lZoom,lZoom,diameter-lZoom*2,diameter-lZoom*2);
-				java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(0,0,diameter,diameter);
+				java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double((this.lZoom*10/6),(this.lZoom*10/6),diameter-(this.lZoom*2),diameter-(this.lZoom*2));
+				//java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(0,0,diameter,diameter);
 				java.awt.Graphics2D gfx = roundImage.createGraphics();
-			    java.awt.geom.Area circle = new java.awt.geom.Area(ellipse);
 			    gfx.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
-				gfx.setClip(circle);
-				gfx.drawImage(this.map[this.zoom],0,0,null);
+				gfx.setClip(ellipse);
+		        //gfx.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
+		        //gfx.drawImage(this.map[this.zoom],0,0,diameter,diameter,null); // just draw it enlarged instead of creating a new scaled instance every time
+		        // why enlarge it here at all?  opengl should do it faster.. but it will enlarge (in the case of the smaller ones) the massively aliased clipped one, with huge multi pixel jaggies around the edge.  Enlarge here into a larger (less aliased) clip for smoother edges even while the "pixels" are large
+		        // deal with it, it is faster
+				//gfx.drawImage((this.map[this.zoom]).getScaledInstance(diameter, diameter, BufferedImage.SCALE_REPLICATE),0,0,null);
+		        gfx.drawImage(this.map[this.zoom],0,0,null); //(let opengl do it)
 				gfx.dispose();
-			    
+			 */		    
 				GL11.glPushMatrix();
-
+				
+				// do with opengl.  Faster.  Uses alpha channel, have to set lighting in actual RGB instead of alpha.
+				GL11.glColorMask(false,false,false,true); // draw to alpha (from circle.png) - used to make square map round with GL
+				this.disp(this.img("/circle.png")); // does weird things to f3 text.  deal with it!  Also fux dynamic lighting.  Deal with it :(  (can do if we don't usee alpha channel for lighting info, just darken actual RGB
+				drawPre();
+				this.setMap(scWidth);
+				drawPost();	
+				GL11.glColorMask(true,true,true,true);
+				GL11.glBlendFunc(GL11.GL_DST_ALPHA, GL11.GL_ONE_MINUS_DST_ALPHA); // pasted on image uses alpha of BG - can stencil it out, but images own alpha goes away
+				//GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);  // puts image with alpha channel (darkness) over black BG
 				if (this.zoom == 3) {
 					GL11.glPushMatrix();
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
-					this.q = this.tex(roundImage);
+					this.q = this.tex(this.map[this.lZoom]);
 					GL11.glPopMatrix();
-				} else this.q = this.tex(roundImage);
-
-				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+				} else this.q = this.tex(this.map[this.lZoom]);
+		    	GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
 				GL11.glRotatef(this.direction + 180.0F, 0.0F, 0.0F, 1.0F); 
 				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 
-				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
-				else GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
+				if(this.zoom==0) 
+					GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
+				else 
+					GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
 				drawPre();
 				this.setMap(scWidth);
 				drawPost();
 				GL11.glPopMatrix();
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-
 				GL11.glColor3f(1.0F, 1.0F, 1.0F);
 				this.drawRound(scWidth);
 				this.drawDirections(scWidth);
@@ -1716,8 +1445,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 					}
 				}
-
-			}
+			} // end roundmap
 		}
 	}
 
@@ -2325,7 +2053,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	private void drawDirections(int scWidth) {
 
-		/*int wayX = this.xCoord();
+		/*// this looks to be a way to display an image with NSEW on it, overlaid over the top.  obsoleted, use text
+		int wayX = this.xCoord();
 		int wayY = this.yCoord();
 		float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 		double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
