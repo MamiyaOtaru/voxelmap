@@ -90,17 +90,16 @@ public class GuiWaypoints extends GuiScreen
     {
         StringTranslate stringTranslate = StringTranslate.getInstance();
         int var2 = 0;
-        //this.screenTitle = stringTranslate.translateKey("options.title");
-        this.screenTitle = "Waypoints";
-        
+        this.screenTitle = stringTranslate.translateKey("minimap.waypoints.title");
+                
         this.waypointList = new GuiSlotWaypoints(this);
         this.waypointList.registerScrollButtons(this.controlList, 7, 8);
         
         this.controlList.add(buttonEdit = new GuiButton(-1, this.width / 2 - 154, this.height - 52, 100, 20, stringTranslate.translateKey("selectServer.edit")));
         this.controlList.add(buttonDelete = new GuiButton(-2, this.width / 2 - 50, this.height - 52, 100, 20, stringTranslate.translateKey("selectServer.delete")));
-        this.controlList.add(buttonTeleport = new GuiButton(-3, this.width / 2 + 4 + 50, this.height - 52, 100, 20, "Teleport to"));
+        this.controlList.add(buttonTeleport = new GuiButton(-3, this.width / 2 + 4 + 50, this.height - 52, 100, 20, stringTranslate.translateKey("minimap.waypoints.teleportto")));
         
-        this.controlList.add(new GuiButton(-4, this.width / 2 - 154, this.height - 28, 152, 20, "New Waypoint"));
+        this.controlList.add(new GuiButton(-4, this.width / 2 - 154, this.height - 28, 152, 20, stringTranslate.translateKey("minimap.waypoints.newwaypoint")));
         this.controlList.add(new GuiButton(-200, this.width / 2 + 2, this.height - 28, 152, 20, stringTranslate.translateKey("gui.done")));
         
         // GUI is inited every time it comes up including after leaving another GUI - like the "really delete?" screen.
@@ -166,7 +165,7 @@ public class GuiWaypoints extends GuiScreen
                 {
                     this.deleteClicked = true;
                     StringTranslate var3 = StringTranslate.getInstance();
-                    String var4 = var3.translateKey("Are you sure you want to remove this waypoint?");
+                    String var4 = var3.translateKey("minimap.waypoints.deleteconfirm");
                     String var5 = "\'" + var2 + "\' " + var3.translateKey("selectServer.deleteWarning");
                     String var6 = var3.translateKey("selectServer.deleteButton");
                     String var7 = var3.translateKey("gui.cancel");

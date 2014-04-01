@@ -7,7 +7,9 @@ import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
 import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.InputStream; //
 import java.io.PrintWriter;
@@ -56,9 +58,11 @@ public class ZanRadar {
 	
 	public boolean showNeutrals = false;
 	
-	public boolean filtering = false;
+	public boolean outlines = true;
 	
-	public boolean showHelmets = false;
+	public boolean filtering = true;
+	
+	public boolean showHelmets = true;
 	
 	/*Have we finished loading icons (done in thread)*/
 	private boolean completedLoading = false;
@@ -279,30 +283,15 @@ public class ZanRadar {
 			for (int t = 0; t < icons.length; t++) {
 				if (imageRef[t][0] != -1)
 					glah(imageRef[t][0]);
-				if (imageRef[t][1] != -1 && imageRef[t][1] != imageRef[t][0])
+				if (imageRef[t][1] != -1)
 					glah(imageRef[t][1]);
 				//icons[t]=into128(icons[t]);
-				icons[t][1]=icons[t][0];
-				float scale = icons[t][0].getWidth()/sizeBase[t];
-				//if (t==BAT) System.out.println("bat scale " + icons[t][0].getWidth() + " " + sizeBase[t] + " " + scale);
-				if (scale>2) {
-					icons[t][1] = fillOutline(intoSquare(scaleImage(icons[t][0], (1/scale)*2))); // if icons are more than double, reduce to double for hidef icons
-					icons[t][0] = fillOutline(intoSquare(scaleImage(icons[t][0], (1/scale)))); // if icons are more than default, reduce to default
-				}
-				else if (scale>1) {
-					icons[t][1] = fillOutline(intoSquare(icons[t][0])); // otherwise just fill (assuming they won't end up the same as lodef icons)
-					icons[t][0] = fillOutline(intoSquare(scaleImage(icons[t][0], (1/scale)))); // if icons are more than default, reduce to default
-				}
-				else {
-					icons[t][0] = fillOutline(intoSquare(icons[t][0]));
-					icons[t][1] = icons[t][0];
-				}
+				float scale = (float)(icons[t][0].getWidth())/(float)sizeBase[t];
+				icons[t][1] = fillOutline(intoSquare(scaleImage(icons[t][0], 2f/scale)));
+				icons[t][0] = fillOutline(intoSquare(scaleImage(icons[t][0], 1f/scale)));
 				if (renderEngine!=null) { 
 					imageRef[t][0]=this.tex(icons[t][0]);
-					if (icons[t][1].equals(icons[t][0]))
-						imageRef[t][1] = imageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
-					else
-						imageRef[t][1]=this.tex(icons[t][1]);
+					imageRef[t][1]=this.tex(icons[t][1]);
 				}
 				else {
 					imageRef[t][0]=-1;
@@ -340,29 +329,15 @@ public class ZanRadar {
 			for (int t = 0; t < armorIcons.length; t++) {
 				if (armorImageRef[t][0] != -1)
 					glah(armorImageRef[t][0]);
-				if (armorImageRef[t][1] != -1 && armorImageRef[t][1] != armorImageRef[t][0])
+				if (armorImageRef[t][1] != -1)
 					glah(armorImageRef[t][1]);
 				//icons[t]=into128(icons[t]);
-				armorIcons[t][1]=armorIcons[t][0];
-				float scale = armorIcons[t][0].getWidth()/8;
-				if (scale>2) {
-					armorIcons[t][1] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], (1/scale)*2))); // if icons are more than double, reduce to double for hidef icons
-					armorIcons[t][0] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], (1/scale)))); // if icons are more than default, reduce to default
-				}
-				else if (scale>1) {
-					armorIcons[t][1] = fillOutline(intoSquare(armorIcons[t][0])); // otherwise just fill (assuming they won't end up the same as lodef icons)
-					armorIcons[t][0] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], (1/scale)))); // if icons are more than default, reduce to default
-				}
-				else {
-					armorIcons[t][0] = fillOutline(intoSquare(armorIcons[t][0]));
-					armorIcons[t][1] = armorIcons[t][0];
-				}
+				float scale = (float)(armorIcons[t][0].getWidth())/8f;
+				armorIcons[t][1] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], 2f/scale)), true, t);
+				armorIcons[t][0] = fillOutline(intoSquare(scaleImage(armorIcons[t][0], 1f/scale)), true, t);
 				if (renderEngine!=null) { 
 					armorImageRef[t][0]=this.tex(armorIcons[t][0]);
-					if (armorIcons[t][1].equals(armorIcons[t][0]))
-						armorImageRef[t][1] = armorImageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
-					else
-						armorImageRef[t][1]=this.tex(armorIcons[t][1]);
+					armorImageRef[t][1]=this.tex(armorIcons[t][1]);
 				}
 				else {
 					armorImageRef[t][0]=-1;
@@ -530,28 +505,51 @@ public class ZanRadar {
 	}
 	
 	private BufferedImage fillOutline(BufferedImage image) {
+		return fillOutline(image, false, 0);
+	}
+	
+	private BufferedImage fillOutline(BufferedImage image, boolean armor, int entry) {
+		if (this.outlines && entry != CLOTH+2 && entry != CLOTH+3)
+			image = fillOutline(image, true, armor);
+		image = fillOutline(image, false, armor);
+		return image;
+	}
+	
+	private BufferedImage fillOutline(BufferedImage image, boolean solid, boolean armor) {
 		BufferedImage temp = new BufferedImage(image.getWidth(), image.getHeight(), image.getType());
 		java.awt.Graphics gfx = temp.getGraphics();
 		gfx.drawImage(image, 0, 0, null);
 		gfx.dispose();
+		int imageWidth = image.getWidth();
+		int imageHeight = image.getHeight();
 		for (int t = 0; t < image.getWidth(); t++) {
 			for (int s = 0; s < image.getHeight(); s++) {
 				int color = image.getRGB(s, t);
 				if ((color >> 24 & 255) == 0) { // clear pixel
-					int newColor = getNonTransparentPixel(s, t, temp);
-					if (newColor != 0 << 24) {
-						int alpha = (newColor >> 24 & 255);
-						int red = (newColor >> 16 & 255);
-						int green = (newColor >> 8 & 255);
-						int blue = (newColor >> 0 & 255);
-						newColor = (0) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
-						image.setRGB(s, t, newColor);
+					int newColor = getNonTransparentPixel(s, t, image);
+					if (newColor != -420) {
+						if (solid) {
+							if (!armor || t <= imageWidth/4 || t >= imageWidth-1-imageWidth/4 || s <= imageHeight/4 || s >= imageHeight-1-imageHeight/4)
+								newColor = 255 << 24;
+							else
+								newColor = 0 << 24;
+						}
+						else {
+							int alpha = (newColor >> 24 & 255);
+							int red = (newColor >> 16 & 255);
+							int green = (newColor >> 8 & 255);
+							int blue = (newColor >> 0 & 255);
+							newColor = (0) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+						}
+						temp.setRGB(s, t, newColor);
 					}
 				}
 			}
 		}
-		return image;
+		return temp;
 	}
+
+	
 	
 	/*// optional version to get more than one pixel out.  not needed if we run it after scaling
 	private BufferedImage fillOutline(BufferedImage image) {
@@ -602,46 +600,46 @@ public class ZanRadar {
 		int color;
 		if (x > 0) {
 			color = image.getRGB(x-1, y);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		if (x < image.getWidth()-1) {
 			color = image.getRGB(x+1, y);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		if (y > 0) {
 			color = image.getRGB(x, y-1);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		if (y < image.getHeight()-1) {
 			color = image.getRGB(x, y+1);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		
 		if (x > 0 && y > 0) {
 			color = image.getRGB(x-1, y-1);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		if (x > 0 && y < image.getHeight()-1) {
 			color = image.getRGB(x-1, y+1);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		if (x < image.getWidth()-1 && y > 0) {
 			color = image.getRGB(x+1, y-1);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
 		if (x < image.getWidth()-1 && y < image.getHeight()-1) {
 			color = image.getRGB(x+1, y+1);
-			if ((color >> 24 & 255) != 0)
+			if ((color >> 24 & 255) > 50)
 				return color;
 		}
-		return -1;
+		return -420;
 	}
 	
 	private void replaceGenericPlayerRefs(int oldRef, int newRef) {
@@ -712,17 +710,11 @@ public class ZanRadar {
 			if (renderEngine!=null) { // once we get a render engine (and only once) allocate the images
 				for (int t = 0; t < icons.length; t++) {
 					imageRef[t][0]=this.tex(icons[t][0]);
-					if (icons[t][1].equals(icons[t][0]))
-						imageRef[t][1] = imageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
-					else
-						imageRef[t][1]=this.tex(icons[t][1]);
+					imageRef[t][1]=this.tex(icons[t][1]);
 				}
 				for (int t = 0; t < armorIcons.length; t++) {
 					armorImageRef[t][0]=this.tex(armorIcons[t][0]);
-					if (armorIcons[t][1].equals(armorIcons[t][0]))
-						armorImageRef[t][1] = armorImageRef[t][0]; // if hidef is the same as lodef (8px and lower texture pack) use same reference
-					else
-						armorImageRef[t][1]=this.tex(armorIcons[t][1]);
+					armorImageRef[t][1]=this.tex(armorIcons[t][1]);
 				}
 			}
 		}
@@ -778,7 +770,7 @@ public class ZanRadar {
 
 		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 		
-		if (this.enabled && !this.hide && !minimap.hide  && !minimap.fullscreenMap) {
+		if (this.enabled && !this.hide) {
 			
 			// don't recalculate mobs all the time.  doesn't seem to affect FPS, whatev
 			if (this.timer>95) { // not multiple of 100 so doesn't happen at same time as map render
@@ -904,7 +896,7 @@ public class ZanRadar {
 		String skinURL = ((EntityOtherPlayerMP)entity).skinUrl;
 		Contact mpContact = new Contact(entity, /*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
 		mpContact.setName(playerName);
-		Integer ref = mpContacts.get(playerName); // don't load if already done
+		Integer ref = mpContacts.get(playerName+0); // don't load if already done
 		//System.out.println("***********CHECKING " + ref);
 		if (ref == null) { // if we haven't encountered player yet, try to get MP skin
 			ThreadDownloadImageData imageData = this.renderEngine.obtainImageData(skinURL, new ImageBufferDownload());
@@ -912,14 +904,16 @@ public class ZanRadar {
 				BufferedImage skinImage = loadSkin(playerName); // try to load icon saved to disk
 				if (skinImage != null) { // if there is one, 128it and use
 					//skinImage = intoSquare(skinImage); // actally square it.  actually don't bother should all be 8x8
-					if (skinImage.getWidth() == 8) // if old non blank space around edge image, add it and make ready for filtering
-						skinImage = fillOutline(intoSquare(skinImage));
-					int imageRef = this.tex(skinImage);
+					BufferedImage skinImageSmall = fillOutline(intoSquare(skinImage)); // add space around edge and make ready for filtering
+					BufferedImage skinImageLarge = fillOutline(intoSquare(scaleImage(skinImage, 2)));
+					int imageRef = this.tex(skinImageSmall);
+					mpContacts.put(playerName+0, imageRef);
 					//System.out.println("Loading " + playerName + " from disk: NEW REF " + imageRef);
-					mpContacts.put(playerName, imageRef);
+					imageRef = this.tex(skinImageLarge);
+					mpContacts.put(playerName+1, imageRef);
 				}
 				else { // else default
-					mpContacts.put(playerName, imageRef[PLAYER][1]); // so make image ref for this player the standard player icon.  Try for hidef (if it's the same as lodef, well, lodef will show)
+					mpContacts.put(playerName, -1); // so make image ref for this player the standard player icon.  Try for hidef (if it's the same as lodef, well, lodef will show)
 					//System.out.println("***********DEFAULTING " + imageRef[PLAYER][1]);
 				}
 			}
@@ -928,11 +922,13 @@ public class ZanRadar {
 				//skinImage = into128(addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0));
 				skinImage = addImages(loadImage(skinImage, 8, 8, 8, 8), loadImage(skinImage, 40, 8, 8, 8), 0, 0, 8, 8);
 				saveSkin(skinImage, playerName); // save for future use when skin server is down
-				skinImage = fillOutline(intoSquare(skinImage)); // add space around edge and make ready for filtering
-				//skinImage = intoSquare(skinImage);
-				int imageRef = this.tex(skinImage);
+				BufferedImage skinImageSmall = fillOutline(intoSquare(skinImage)); // add space around edge and make ready for filtering
+				BufferedImage skinImageLarge = fillOutline(intoSquare(scaleImage(skinImage, 2)));
+				int imageRef = this.tex(skinImageSmall);
+				mpContacts.put(playerName+0, imageRef);
 				//System.out.println("***********NEW REF " + imageRef);
-				mpContacts.put(playerName, imageRef);
+				imageRef = this.tex(skinImageLarge);
+				mpContacts.put(playerName+1, imageRef);
 			}
 			if (imageData != null)
 				this.renderEngine.releaseImageData(skinURL); // if it was not null, the reference was incremented.  Decrement it!
@@ -1144,8 +1140,8 @@ public class ZanRadar {
 				try {
 					GL11.glPushMatrix();
 					if (contact.type == PLAYER) {
-						Integer ref = mpContacts.get(contact.name);
-						if (ref == null)
+						Integer ref = mpContacts.get(contact.name + guiScale);
+						if (ref == null || ref == -1)
 							this.disp(imageRef[PLAYER][guiScale]); // display default icon if skin is not loaded yet.
 						else 
 							this.disp(ref); // there is a mapping from name to image (it could be to the default image, if loading finishes and it turns out there is no custom skin)
@@ -1278,12 +1274,40 @@ public class ZanRadar {
 		//System.out.println("time: " + (System.nanoTime()-startTime));
 	}
 	
+	public void loadSettings(File settingsFile) {
+		try {
+			BufferedReader in = new BufferedReader(new FileReader(settingsFile));
+			String sCurrentLine;
+			while ((sCurrentLine = in.readLine()) != null) {
+				String[] curLine = sCurrentLine.split(":");
+				if (curLine[0].equals("Hide Radar"))
+					hide = Boolean.parseBoolean(curLine[1]);
+				else if(curLine[0].equals("Show Hostiles"))
+					showHostiles = Boolean.parseBoolean(curLine[1]);
+				else if(curLine[0].equals("Show Players"))
+					showPlayers = Boolean.parseBoolean(curLine[1]);
+				else if(curLine[0].equals("Show Neutrals"))
+					showNeutrals = Boolean.parseBoolean(curLine[1]);
+				else if(curLine[0].equals("Filter Mob Icons"))
+					filtering = Boolean.parseBoolean(curLine[1]);
+				else if(curLine[0].equals("Outline Mob Icons"))
+					outlines = Boolean.parseBoolean(curLine[1]);
+				else if(curLine[0].equals("Show Helmets"))
+					showHelmets = Boolean.parseBoolean(curLine[1]);
+			}
+			in.close();
+		}
+		catch (Exception e) {
+		}
+	}
+	
 	public void saveAll(PrintWriter out) {
 		out.println("Hide Radar:" + Boolean.toString(hide));
 		out.println("Show Hostiles:" + Boolean.toString(showHostiles));
 		out.println("Show Players:" + Boolean.toString(showPlayers));
 		out.println("Show Neutrals:" + Boolean.toString(showNeutrals));
 		out.println("Filter Mob Icons:" + Boolean.toString(filtering));
+		out.println("Outline Mob Icons:" + Boolean.toString(outlines));
 		out.println("Show Helmets:" + Boolean.toString(showHelmets));
 	}
 	
@@ -1297,6 +1321,7 @@ public class ZanRadar {
 			out.println("Show Players:" + Boolean.toString(showPlayers));
 			out.println("Show Neutrals:" + Boolean.toString(showNeutrals));
 			out.println("Filter Mob Icons:" + Boolean.toString(filtering));
+			out.println("Outline Mob Icons:" + Boolean.toString(outlines));
 			out.println("Show Helmets:" + Boolean.toString(showHelmets));
 			out.close();
 		} catch (Exception local) {
@@ -1339,8 +1364,8 @@ public class ZanRadar {
     public String getKeyText(EnumOptionsMinimap par1EnumOptions)
     {
         StringTranslate stringtranslate = StringTranslate.getInstance();
-//      String s = (new StringBuilder()).append(stringtranslate.translateKey(par1EnumOptions.getEnumString())).append(": ").toString(); // use if I ever do translations
-        String s = (new StringBuilder()).append(par1EnumOptions.getEnumString()).append(": ").toString();
+        String s = (new StringBuilder()).append(stringtranslate.translateKey(par1EnumOptions.getEnumString())).append(": ").toString(); // use if I ever do translations
+        //String s = (new StringBuilder()).append(par1EnumOptions.getEnumString()).append(": ").toString();
 
         if (par1EnumOptions.getEnumBoolean())
         {
@@ -1379,9 +1404,12 @@ public class ZanRadar {
                 return this.showNeutrals;
                 
             case 23:
-                return this.filtering;
+                return this.outlines;
                 
             case 24:
+                return this.filtering;
+                
+            case 25:
                 return this.showHelmets;
         }
 
@@ -1408,10 +1436,19 @@ public class ZanRadar {
                 break;
                 
             case 23:
-                this.filtering = !filtering;
+                this.outlines = !outlines;
+        		for(Map.Entry<String,Integer> entry : mpContacts.entrySet()) {
+        			this.glah(entry.getValue());
+        		}
+                mpContacts.clear();
+                this.loadTexturePackIcons();
                 break;
                 
             case 24:
+                this.filtering = !filtering;
+                break;
+                
+            case 25:
                 this.showHelmets = !showHelmets;
                 break;
         }

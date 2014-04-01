@@ -215,7 +215,7 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.RADARFILTERING.ordinal()] = 23;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.RADAROUTLINES.ordinal()] = 23;
         }
         catch (NoSuchFieldError var4)
         {
@@ -224,7 +224,16 @@ public class EnumOptionsHelperMinimap
         
         try
         {
-            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWHELMETS.ordinal()] = 24;
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.RADARFILTERING.ordinal()] = 24;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.SHOWHELMETS.ordinal()] = 25;
         }
         catch (NoSuchFieldError var4)
         {

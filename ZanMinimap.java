@@ -27,6 +27,7 @@ import net.minecraft.src.mamiyaotaru.GuiScreenAddWaypoint;
 import net.minecraft.src.mamiyaotaru.GuiWaypoints;
 import net.minecraft.src.mamiyaotaru.MapChunkCache;
 import net.minecraft.src.mamiyaotaru.MapData;
+import net.minecraft.src.mamiyaotaru.MinimapTranslate;
 import net.minecraft.src.mamiyaotaru.RenderWaypoint;
 import net.minecraft.src.mamiyaotaru.Waypoint;
 
@@ -70,6 +71,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public ZanRadar radar = null;
 	
 	public ZanColorManager colorManager = null;
+	
+	private MinimapTranslate translationManager = null;
+	
+	private StringTranslate stringtranslate = null;
 	
 	/*Stored data for each zoom level*/
 	private MapData[] mapData = new MapData[4];
@@ -124,6 +129,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Current level of zoom*/
 	private int zoom = 2;
 	
+	/*storage variable for zoom level; remembers old level when we go fullscreen (which is always level 3)*/
+	private int regularZoom = 2;
+	
 	/*grow or shrink map*/
 	public int sizeModifier = 0;
 	
@@ -135,6 +143,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/*center of map y coord*/
 	public int mapY = 37;
+	
+	int scWidth;
+	
+	int scHeight;
 
 	/*Current build version*/
 	public String zmodver = "v2.0";
@@ -155,7 +167,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private String error = "";
 
 	/*Strings to show for menu*/
-	private String[] sMenu = new String[7]; // bump up options here
+	private String[] sMenu = new String[8]; // bump up options here
 
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
@@ -221,10 +233,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Name of World currently loaded*/
 	private String worldName = "";
 	
-    public KeyBinding keyBindZoom = new KeyBinding("Zoom", Keyboard.KEY_Z);
-    public KeyBinding keyBindMenu = new KeyBinding("Menu", Keyboard.KEY_M);
-    public KeyBinding keyBindWaypoint = new KeyBinding("Waypoint Hotkey", Keyboard.KEY_N);
-    public KeyBinding keyBindMobToggle = new KeyBinding("Toggle Mobs", Keyboard.KEY_NONE);
+    public KeyBinding keyBindZoom = new KeyBinding("key.minimap.zoom", Keyboard.KEY_Z);
+    public KeyBinding keyBindFullscreen = new KeyBinding("key.minimap.togglefullscreen", Keyboard.KEY_X);
+    public KeyBinding keyBindMenu = new KeyBinding("key.minimap.menu", Keyboard.KEY_M);
+    public KeyBinding keyBindWaypoint = new KeyBinding("key.minimap.waypointhotkey", Keyboard.KEY_C);
+    public KeyBinding keyBindMobToggle = new KeyBinding("key.minimap.togglemobs", Keyboard.KEY_NONE);
     public KeyBinding[] keyBindings;
     
 	/*set if we want to cooperate with world downloader mod*/
@@ -339,6 +352,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 	public ZanMinimap() {
 		instance=this;
+		stringtranslate = StringTranslate.getInstance();
 		/*	if (classExists("mod_MotionTracker")) {
 			motionTracker = new mod_MotionTracker();		
 			motionTrackerExists = true;
@@ -350,7 +364,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			
 		colorManager = new ZanColorManager(this);
 
-		this.keyBindings = new KeyBinding[] {this.keyBindZoom, this.keyBindMenu, this.keyBindWaypoint, this.keyBindMobToggle}; 
+		this.keyBindings = new KeyBinding[] {this.keyBindMenu, this.keyBindWaypoint, this.keyBindZoom, this.keyBindFullscreen, this.keyBindMobToggle}; 
 
 		zCalc.start();
 		zCalc.setPriority(Thread.MIN_PRIORITY);
@@ -371,111 +385,39 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		this.map[3] = new GLBufferedImage(256,256,BufferedImage.TYPE_4BYTE_ABGR);
 		this.roundImage = new GLBufferedImage(128,128,BufferedImage.TYPE_4BYTE_ABGR);
 		
-		this.sMenu[0] = "§4Zan's§F Mod! " + this.zmodver + " Maintained by MamiyaOtaru";
-		this.sMenu[1] = "Welcome to Zan's Minimap, there are a";
-		this.sMenu[2] = "number of features and commands available to you.";
-		this.sMenu[3] = "- Press §B" + getKeyDisplayString(keyBindZoom.keyCode) + " §Fto zoom in/out, or §B"+ getKeyDisplayString(keyBindMenu.keyCode) + "§F for options.";
-		this.sMenu[4] = "- Press §B" + getKeyDisplayString(keyBindWaypoint.keyCode) + " §Fto quickly add a waypoint without going through the menu.";
-		this.sMenu[5] = "- Press §B" + getKeyDisplayString(keyBindMobToggle.keyCode) + " §Fto quickly toggle mob icons on and off.";
-		this.sMenu[6] = "§7Press §F" + getKeyDisplayString(keyBindZoom.keyCode) + "§7 to hide.";
+		translationManager = new MinimapTranslate(this);
+		this.translationManager.checkForChanges();
+		
+		this.sMenu[0] = "§4Zan's§F Mod! " + this.zmodver + " " + stringtranslate.translateKey("minimap.ui.welcome1");
+		this.sMenu[1] = stringtranslate.translateKey("minimap.ui.welcome2");
+		this.sMenu[2] = stringtranslate.translateKey("minimap.ui.welcome3");
+		this.sMenu[3] = stringtranslate.translateKey("minimap.ui.welcome4");
+		this.sMenu[4] = "§B" + getKeyDisplayString(keyBindZoom.keyCode) + "§F: " + stringtranslate.translateKey("minimap.ui.welcome5a") + ", §B: " + getKeyDisplayString(keyBindMenu.keyCode) + "§F: " + stringtranslate.translateKey("minimap.ui.welcome5b");
+		this.sMenu[5] = "§B" + getKeyDisplayString(keyBindFullscreen.keyCode) + "§F: " + stringtranslate.translateKey("minimap.ui.welcome6");
+		this.sMenu[6] = "§B" + getKeyDisplayString(keyBindWaypoint.keyCode) + "§F: " + stringtranslate.translateKey("minimap.ui.welcome7");
+		//this.sMenu[6] = "§B" + getKeyDisplayString(keyBindMobToggle.keyCode) + "§F: " + stringtranslate.translateKey("minimap.ui.welcome7");
+		this.sMenu[7] = "§F" + getKeyDisplayString(keyBindZoom.keyCode) + "§7: " + stringtranslate.translateKey("minimap.ui.welcome8");
 		
 		if (fboEnabled)
 			setupFBO(); // setup our framebuffer object
 
-		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
-
-		try {
-			if(settingsFile.exists()) {
-				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
-				String sCurrentLine;
-				while ((sCurrentLine = in.readLine()) != null) {
-					String[] curLine = sCurrentLine.split(":");
-
-					if(curLine[0].equals("Show Coordinates"))
-						coords = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Show Map in Nether"))
-						showNether = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Enable Cave Mode"))
-						showCaves = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Dynamic Lighting"))
-						lightmap = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Height Map"))
-						heightmap = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Slope Map"))
-						slopemap = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Filtering"))
-						filtering = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Water Transparency"))
-						waterTransparency = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Block Transparency"))
-						blockTransparency = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Biomes"))
-						biomes = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Square Map"))
-						squareMap = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Old North"))
-						oldNorth = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Waypoint Beacons"))
-						showBeacons = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Waypoint Signs"))
-						showWaypoints = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Welcome Message"))
-						welcome = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("World Download Compatibility"))
-						dlSafe = Boolean.parseBoolean(curLine[1]);	
-					else if(curLine[0].equals("Map Corner"))
-						mapCorner = Integer.parseInt(curLine[1]);
-					else if(curLine[0].equals("Map Size"))
-						sizeModifier = Integer.parseInt(curLine[1]);
-					else if(curLine[0].equals("Zoom Key"))
-						keyBindZoom.keyCode = Keyboard.getKeyIndex(curLine[1]);
-					else if(curLine[0].equals("Menu Key"))
-						keyBindMenu.keyCode = Keyboard.getKeyIndex(curLine[1]);
-					else if(curLine[0].equals("Waypoint Key"))
-						keyBindWaypoint.keyCode = Keyboard.getKeyIndex(curLine[1]);
-					else if(curLine[0].equals("Mob Key"))
-						keyBindMobToggle.keyCode = Keyboard.getKeyIndex(curLine[1]);
-					//else if(curLine[0].equals("Threading"))
-					//	threading=Boolean.parseBoolean(curLine[1]);
-					// radar
-					else if((radar != null) && curLine[0].equals("Hide Radar"))
-						radar.hide = Boolean.parseBoolean(curLine[1]);
-					else if((radar != null) && curLine[0].equals("Show Hostiles"))
-						radar.showHostiles = Boolean.parseBoolean(curLine[1]);
-					else if((radar != null) && curLine[0].equals("Show Players"))
-						radar.showPlayers = Boolean.parseBoolean(curLine[1]);
-					else if((radar != null) && curLine[0].equals("Show Neutrals"))
-						radar.showNeutrals = Boolean.parseBoolean(curLine[1]);
-					else if((radar != null) && curLine[0].equals("Filter Mob Icons"))
-						radar.filtering = Boolean.parseBoolean(curLine[1]);
-					else if((radar != null) && curLine[0].equals("Show Helmets"))
-						radar.showHelmets = Boolean.parseBoolean(curLine[1]);
-				}
-				in.close();
-				doFullRender = true; // fullrender on initial load
-			}
-			//else {
-				saveAll(); // save, to catch welcome being turned off.  If that gets added back as an option, can forego this
-			//}
-		} catch (Exception e) {}
-
+		loadAll();
 		
 		Object renderManager = RenderManager.instance; 
 		if (renderManager == null) {
 			System.out.println("failed to get render manager");
-			return;
 		}
-
-		//Object entityRenderMap = getPrivateFieldByName(renderManager, "o" /*"entityRenderMap"*/); // Map - fieldname needs to be obfuscated name
-		Object entityRenderMap = getPrivateFieldByType(renderManager, Map.class); 
-		if (entityRenderMap == null) {
-			System.out.println("could not get entityRenderMap");
-			return;
+		else {
+			Object entityRenderMap = getPrivateFieldByType(renderManager, Map.class); 
+			if (entityRenderMap == null) {
+				System.out.println("could not get entityRenderMap");
+			}
+			else {
+				RenderWaypoint renderWaypoint = new RenderWaypoint();
+				((java.util.HashMap)entityRenderMap).put(EntityWaypoint.class, renderWaypoint);
+				renderWaypoint.setRenderManager(RenderManager.instance);
+			}
 		}
-
-		RenderWaypoint renderWaypoint = new RenderWaypoint();
-		((java.util.HashMap)entityRenderMap).put(EntityWaypoint.class, renderWaypoint);
-		renderWaypoint.setRenderManager(RenderManager.instance);
 		
 		//this does the same, clunkier than the above though
      /*   ((java.util.HashMap)entityRenderMap).put(EntityWaypoint.class, new RenderWaypoint());
@@ -716,6 +658,25 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			this.SetZoom();
 		}
 		
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindFullscreen.keyCode) && (this.showNether || this.game.thePlayer.dimension!=-1)) {
+			Keyboard.next();
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			if (this.inputFudge <= 0) {
+				this.fullscreenMap = !this.fullscreenMap;
+				if (fullscreenMap) {
+					this.regularZoom = this.zoom;
+					this.zoom = 3;
+				}
+				else
+					this.zoom = this.regularZoom;
+				doFullRender = true;
+				this.inputFudge = 20;
+			}
+		}
+		
 		checkForChanges();
 		if(/*deathMarker &&*/ this.game.currentScreen instanceof GuiGameOver && !(this.guiScreen instanceof GuiGameOver)) {
 			//tamis doid
@@ -798,8 +759,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	        
 	        double scaledWidthD = (double)game.displayWidth / (double)scScale;
 	        double scaledHeightD = (double)game.displayHeight / (double)scScale;
-	        int scWidth = MathHelper.ceiling_double_int(scaledWidthD);
-	        int scHeight = MathHelper.ceiling_double_int(scaledHeightD);
+	        scWidth = MathHelper.ceiling_double_int(scaledWidthD);
+	        scHeight = MathHelper.ceiling_double_int(scaledHeightD);
 	        GL11.glMatrixMode(GL11.GL_PROJECTION);
 	        GL11.glPushMatrix();
 	        GL11.glLoadIdentity();
@@ -808,18 +769,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	        GL11.glPushMatrix();
 	        GL11.glLoadIdentity();
 	        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
-			int yText = 0;
 			if (this.mapCorner == 0 || this.mapCorner == 3)
 				mapX = 37;
 			else
 				mapX = scWidth - 37;
 			if (this.mapCorner == 0 || this.mapCorner == 1) {
 				mapY = 37;
-				yText = mapY + 32 + 4; // 32 being radius of map
 			}
 			else {
 				mapY = scHeight - 37;
-				yText = mapY - (32 + 4 + 9); // 32 radius of map.  4 offset, 5 offset between lines (this is coordinate of top line (x, z) y is rendered below.  If this is on the bottom, need two lines' width more to fit both lines under it (coord is top of where text is rendered)
 			}
 			
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
@@ -845,8 +803,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					renderMap(mapX, mapY, scScale);
 			}		
 
-			if (ztimer > 0)
-				this.write(this.error, 20, 20, 0xffffff);
+			//if (ztimer > 0)
+			//	this.write(this.error, 20, 20, 0xffffff);
 
 			if (this.iMenu>0) showMenu(scWidth, scHeight);
 
@@ -854,9 +812,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				if (radar != null && this.radarAllowed && !this.hide  && !this.fullscreenMap)  
 					radar.OnTickInGame(mc);
 				if(coords) {
-					showCoords(mapX, yText);
+					showCoords(mapX, mapY);
 				}
-				if (squareMap && !this.hide) {
+				if ((squareMap || fullscreenMap) && !this.hide) {
 					if (this.fullscreenMap)
 						drawArrow(scWidth/2, scHeight/2);
 					else
@@ -1004,6 +962,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (changed) {
 			doFullRender = true;
 		}
+		
+		translationManager.checkForChanges(); // see if selected language has changed
 	}
 	
 	public String getMapName()
@@ -1056,31 +1016,25 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private void SetZoom() {
-		if (this.inputFudge > 0) return;
+		if (this.inputFudge > 0 || this.fullscreenMap) return;
 
 		if (this.iMenu != 0) {
 			this.iMenu = 0;
 
 			if(getMenu()!=null) setMenuNull();
 		} else {
-			if (this.zoom == 3) {
-				if(!this.fullscreenMap) {
-					this.fullscreenMap = true;
-				}
-				else {
-					this.zoom = 2;
-					this.fullscreenMap = false;
-					this.error = "Zoom Level: (1.0x)";
-				}
-			} else if (this.zoom == 0) {
+			if (this.zoom == 0) {
 				this.zoom = 3;
-				this.error = "Zoom Level: (0.5x)";
+				this.error = stringtranslate.translateKey("minimap.ui.zoomlevel") + " (0.5x)";
+			} else if (this.zoom == 3) {
+				this.zoom = 2;
+				this.error = stringtranslate.translateKey("minimap.ui.zoomlevel") + " (1.0x)";
 			} else if (this.zoom==2) {
 				this.zoom = 1;
-				this.error = "Zoom Level: (2.0x)";
+				this.error = stringtranslate.translateKey("minimap.ui.zoomlevel") + " (2.0x)";
 			} else {
 				this.zoom = 0;
-				this.error = "Zoom Level: (4.0x)";
+				this.error = stringtranslate.translateKey("minimap.ui.zoomlevel") + " (4.0x)";
 			}
 			doFullRender = true;
 		}
@@ -1781,6 +1735,80 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	//END UPDATE SECTION
+	
+	public void loadAll() {
+		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
+
+		try {
+			if(settingsFile.exists()) {
+				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
+				String sCurrentLine;
+				while ((sCurrentLine = in.readLine()) != null) {
+					String[] curLine = sCurrentLine.split(":");
+
+					if(curLine[0].equals("Show Coordinates"))
+						coords = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Show Map in Nether"))
+						showNether = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Enable Cave Mode"))
+						showCaves = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Dynamic Lighting"))
+						lightmap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Height Map"))
+						heightmap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Slope Map"))
+						slopemap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Filtering"))
+						filtering = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Water Transparency"))
+						waterTransparency = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Block Transparency"))
+						blockTransparency = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Biomes"))
+						biomes = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Square Map"))
+						squareMap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Old North"))
+						oldNorth = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Waypoint Beacons"))
+						showBeacons = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Waypoint Signs"))
+						showWaypoints = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Welcome Message"))
+						welcome = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("World Download Compatibility"))
+						dlSafe = Boolean.parseBoolean(curLine[1]);	
+					else if(curLine[0].equals("Map Corner"))
+						mapCorner = Integer.parseInt(curLine[1]);
+					else if(curLine[0].equals("Map Size"))
+						sizeModifier = Integer.parseInt(curLine[1]);
+					else if(curLine[0].equals("Zoom Key"))
+						keyBindZoom.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					else if(curLine[0].equals("Fullscreen Key"))
+						keyBindFullscreen.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					else if(curLine[0].equals("Menu Key"))
+						keyBindMenu.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					else if(curLine[0].equals("Waypoint Key"))
+						keyBindWaypoint.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					else if(curLine[0].equals("Mob Key"))
+						keyBindMobToggle.keyCode = Keyboard.getKeyIndex(curLine[1]);
+					//else if(curLine[0].equals("Threading"))
+					//	threading=Boolean.parseBoolean(curLine[1]);
+					// radar
+				}
+				if (radar != null)
+					radar.loadSettings(settingsFile);
+				in.close();
+			}
+			doFullRender = true; // fullrender on initial load
+			//else {
+			saveAll(); // save, to catch welcome being turned off.  If that gets added back as an option, can forego this
+			//}
+		} 
+		catch (Exception e) {
+		}
+
+	}
 
 	public void saveAll() {
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
@@ -1806,6 +1834,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			out.println("Map Size:" + Integer.toString(sizeModifier));
 			//out.println("Threading:" + Boolean.toString(threading));
 			out.println("Zoom Key:" + getKeyDisplayString(keyBindZoom.keyCode));
+			out.println("Fullscreen Key:" + getKeyDisplayString(keyBindFullscreen.keyCode));
 			out.println("Menu Key:" + getKeyDisplayString(keyBindMenu.keyCode));
 			out.println("Waypoint Key:" + getKeyDisplayString(keyBindWaypoint.keyCode));
 			out.println("Mob Key:" + getKeyDisplayString(keyBindMobToggle.keyCode));
@@ -2708,6 +2737,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private void showCoords (int x, int y) { // x and y for drawing are counted from top left, not from 0,0 origina at center
+		int textStart;
+		if (y > scHeight - 37 - 32 - 4 - 15) // bottom
+			textStart = y - 32 - 4 - 9;
+		else
+			textStart = y + 32 + 4;
 		if(!this.hide && !this.fullscreenMap) {
 			GL11.glPushMatrix();
 			GL11.glScalef(0.5f, 0.5f, 1.0f);
@@ -2717,15 +2751,28 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			else
 				xy = this.dCoord(xCoord()*8) + ", " + this.dCoord(zCoord()*8);
 			int m = this.chkLen(xy)/2;
-			this.write(xy, x*2-m, y*2, 0xffffff);
+			this.write(xy, x*2-m, textStart*2, 0xffffff);
 			xy = Integer.toString(this.yCoord());
 			m = this.chkLen(xy)/2;
 			//	xy="" + this.getWorld().skylightSubtracted + " " + this.getWorld().calculateSkylightSubtracted(1.0F) + " " + this.getWorld().func_35464_b(1.0F); // always 0 in SMP. method works, not value.  it's never updated, no world tick in SMP.  Fscks lightmap functionality
-			this.write(xy, x*2-m, y*2 + 10, 0xffffff);
+			this.write(xy, x*2-m, textStart*2 + 10, 0xffffff);
+			if (ztimer > 0) {
+				m = this.chkLen(this.error)/2;
+				this.write(this.error, x*2-m, textStart*2 + 19, 0xffffff);
+			}
 			GL11.glPopMatrix();
 		} else {
-			if (this.game.thePlayer.dimension!=-1) this.write("(" + this.dCoord(xCoord()) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
-			else this.write("(" + this.dCoord(xCoord()*8) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()*8) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+			String stats = "";
+			if (this.game.thePlayer.dimension!=-1)
+				stats = "(" + this.dCoord(xCoord()) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()) + ") " + (int) this.direction + "'";
+			else
+				stats = "(" + this.dCoord(xCoord()*8) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()*8) + ") " + (int) this.direction + "'";
+			int m = this.chkLen(stats)/2;
+			this.write(stats, scWidth/2-m, 5, 0xffffff);
+			if (ztimer > 0) {
+				m = this.chkLen(this.error)/2;
+				this.write(this.error, scWidth/2*2-m, 15, 0xffffff);
+			}
 		}
 	}
 	
@@ -2821,9 +2868,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
      */
     public String getKeyText(EnumOptionsMinimap par1EnumOptions)
     {
-        StringTranslate stringtranslate = StringTranslate.getInstance();
-//      String s = (new StringBuilder()).append(stringtranslate.translateKey(par1EnumOptions.getEnumString())).append(": ").toString(); // use if I ever do translations
-        String s = (new StringBuilder()).append(par1EnumOptions.getEnumString()).append(": ").toString();
+        String s = (new StringBuilder()).append(stringtranslate.translateKey(par1EnumOptions.getEnumString())).append(": ").toString(); // use if I ever do translations
+//        String s = (new StringBuilder()).append(par1EnumOptions.getEnumString()).append(": ").toString();
 
         if (par1EnumOptions.getEnumFloat())
         {
@@ -2941,29 +2987,29 @@ public class ZanMinimap implements Runnable { // implements Runnable
     {
         if (par1EnumOptions == EnumOptionsMinimap.TERRAIN)
         {
-        	if (this.slopemap && this.heightmap) return "Both";
-        	else if (this.heightmap) return "Height";
-            else if (this.slopemap) return "Slope";
-            else return "Off";
+        	if (this.slopemap && this.heightmap) return stringtranslate.translateKey("options.minimap.terrain.both");
+        	else if (this.heightmap) return stringtranslate.translateKey("options.minimap.terrain.height");
+            else if (this.slopemap) return stringtranslate.translateKey("options.minimap.terrain.slope");
+            else return stringtranslate.translateKey("options.off");
         }
         else if (par1EnumOptions == EnumOptionsMinimap.BEACONS)
         {
-            if (this.showBeacons && this.showWaypoints) return "Both";
-            else if (this.showBeacons) return "Beacons";
-            else if (this.showWaypoints) return "Signs"; 
-            else return "Off";
+            if (this.showBeacons && this.showWaypoints) return stringtranslate.translateKey("options.minimap.ingamewaypoints.both");
+            else if (this.showBeacons) return stringtranslate.translateKey("options.minimap.ingamewaypoints.beacons");
+            else if (this.showWaypoints) return stringtranslate.translateKey("options.minimap.ingamewaypoints.signs"); 
+            else return stringtranslate.translateKey("options.off");
         }
         else if (par1EnumOptions == EnumOptionsMinimap.LOCATION) {
-        	if (this.mapCorner == 0) return "Top Left";
-        	else if (this.mapCorner == 1) return "Top Right";
-        	else if (this.mapCorner == 2) return "Bottom Right";
-        	else if (this.mapCorner == 3) return "Bottom Left";
+        	if (this.mapCorner == 0) return stringtranslate.translateKey("options.minimap.location.topleft");
+        	else if (this.mapCorner == 1) return stringtranslate.translateKey("options.minimap.location.topright");
+        	else if (this.mapCorner == 2) return stringtranslate.translateKey("options.minimap.location.bottomright");
+        	else if (this.mapCorner == 3) return stringtranslate.translateKey("options.minimap.location.bottomleft");
         	else return "Error";
         }
         else if (par1EnumOptions == EnumOptionsMinimap.SIZE) {
-        	if (sizeModifier == -1) return "Small";
-        	else if (sizeModifier == 0) return "Regular";
-        	else if (sizeModifier == 1) return "Large";
+        	if (sizeModifier == -1) return stringtranslate.translateKey("options.minimap.size.small");
+        	else if (sizeModifier == 0) return stringtranslate.translateKey("options.minimap.size.medium");
+        	else if (sizeModifier == 1) return stringtranslate.translateKey("options.minimap.size.large");
         	else return "error";
         }
         else

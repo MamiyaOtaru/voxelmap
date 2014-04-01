@@ -6,45 +6,33 @@ public enum EnumOptionsMinimap
 {
 //	out.println("Zoom Key:" + Keyboard.getKeyName(zoomKey));
 //	out.println("Menu Key:" + Keyboard.getKeyName(menuKey));
-
 	
-	/*COORDS("options.minimapCoords", false, true), // use if I ever do translations, or built in options
-	SHOWNETHER("options.minimapShowInNether", false, true),
-	CAVEMODE("options.minimapCaveMode", false, true),
-	LIGHTING("option.minimapDynamicLighting", false, true),
-	TERRAIN("option.minimapTerrainDepth", false, true),
-	SQUARE("option.minimapSquareMap", false, true),
-	OLDNORTH("option.minimapOldNorth", false, true),
-	BEACONS("option.minimapBeacon", false, true),
-	WELCOME("option.minimapWelcome", false, true),
-	THREADING("option.minimapThreading", false, true),
-	ZOOM("option.minimapZoom", false, true); */
-	
-	COORDS("Display Coordinates", false, true, false),
-	HIDE("Hide Minimap", false, true, false),
+	COORDS("options.minimap.showcoordinates", false, true, false),
+	HIDE("options.minimap.hideminimap", false, true, false),
 	SHOWNETHER("Function in Nether", false, true, false),
-	CAVEMODE("Enable Cave Mode", false, true, false),
-	LIGHTING("Dynamic Lighting", false, true, false),
-	TERRAIN("Terrain Depth", false, false, true),
-	SQUARE("Square Map", false, true, false),
-	OLDNORTH("Old North", false, true, false),
-	BEACONS("Ingame Waypoints", false, false, true),
+	CAVEMODE("options.minimap.cavemode", false, true, false),
+	LIGHTING("options.minimap.dynamiclighting", false, true, false),
+	TERRAIN("options.minimap.terraindepth", false, false, true),
+	SQUARE("options.minimap.squaremap", false, true, false),
+	OLDNORTH("options.minimap.oldnorth", false, true, false),
+	BEACONS("options.minimap.ingamewaypoints", false, false, true),
 	WELCOME("Welcome Screen", false, true, false),
 	THREADING("Threading", false, true, false),
 	ZOOM("option.minimapZoom", false, true, false),
 	MOTIONTRACKER("Motion Tracker", false, true, false),
-	LOCATION("Location", false, false, true),
-	SIZE("Size", false, false, true),
-	FILTERING("Filtering", false, true, false),
-	WATERTRANSPARENCY("Water Transparency", false, true, false),
-	BLOCKTRANSPARENCY("Block Transparency", false, true, false),
-	BIOMES("Biomes", false, true, false),
-	HIDERADAR("Hide Radar", false, true, false),
-	SHOWHOSTILES("Show Hostiles", false, true, false),
-	SHOWPLAYERS("Show Players", false, true, false),
-	SHOWNEUTRALS("Show Neutrals", false, true, false),
-	RADARFILTERING("Icon Filtering", false, true, false), 
-	SHOWHELMETS("Show Helmets (MP)", false, true, false); 
+	LOCATION("options.minimap.location", false, false, true),
+	SIZE("options.minimap.size", false, false, true),
+	FILTERING("options.minimap.filtering", false, true, false),
+	WATERTRANSPARENCY("options.minimap.watertransparency", false, true, false),
+	BLOCKTRANSPARENCY("options.minimap.blocktransparency", false, true, false),
+	BIOMES("options.minimap.biomes", false, true, false),
+	HIDERADAR("options.minimap.radar.hideradar", false, true, false),
+	SHOWHOSTILES("options.minimap.radar.showhostiles", false, true, false),
+	SHOWPLAYERS("options.minimap.radar.showplayers", false, true, false),
+	SHOWNEUTRALS("options.minimap.radar.showneutrals", false, true, false),
+	RADAROUTLINES("options.minimap.radar.iconoutlines", false, true, false),
+	RADARFILTERING("options.minimap.radar.iconfiltering", false, true, false), 
+	SHOWHELMETS("options.minimap.radar.showmphelmets", false, true, false); 
 
 
 	

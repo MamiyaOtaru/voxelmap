@@ -51,7 +51,7 @@ public class GuiMinimapControls extends GuiScreen
         }
 
         this.controlList.add(new GuiButton(200, this.width / 2 - 100, this.height / 6 + 168, var1.translateKey("gui.done")));
-        this.screenTitle = "Minimap " + var1.translateKey("controls.title");
+        this.screenTitle = var1.translateKey("controls.minimap.title");
     }
 
     /**
@@ -121,6 +121,7 @@ public class GuiMinimapControls extends GuiScreen
      */
     public void drawScreen(int par1, int par2, float par3)
     {
+    	StringTranslate var1 = StringTranslate.getInstance();
         this.drawDefaultBackground();
         this.drawCenteredString(this.fontRenderer, this.screenTitle, this.width / 2, 20, 16777215);
         int var4 = this.func_73907_g();
@@ -174,8 +175,8 @@ public class GuiMinimapControls extends GuiScreen
             }
         }
         
-        this.drawCenteredString(this.fontRenderer, "To unbind a key, select it and press 'Escape'.", this.width / 2, this.height / 6 + 115, 16777215);
-        this.drawCenteredString(this.fontRenderer, "(Except for the Menu Key - it can't be unbound)", this.width / 2, this.height / 6 + 129, 16777215);
+        this.drawCenteredString(this.fontRenderer, var1.translateKey("controls.minimap.unbind1"), this.width / 2, this.height / 6 + 115, 16777215);
+        this.drawCenteredString(this.fontRenderer, var1.translateKey("controls.minimap.unbind2"), this.width / 2, this.height / 6 + 129, 16777215);
 
 
         super.drawScreen(par1, par2, par3);

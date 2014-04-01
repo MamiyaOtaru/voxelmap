@@ -246,16 +246,16 @@ public class GuiScreenAddWaypoint extends GuiScreen
      */
     public void drawScreen(int par1, int par2, float par3)
     {
-    	buttonEnabled.displayString = "Enabled: " + ((waypoint.enabled)?"On":"Off");
         StringTranslate var4 = StringTranslate.getInstance();
+    	buttonEnabled.displayString = var4.translateKey("minimap.waypoints.enabled") + " " + ((waypoint.enabled)?var4.translateKey("options.on"):var4.translateKey("options.off"));
         this.drawDefaultBackground();
-        this.drawCenteredString(this.fontRenderer, ((this.parentGui != null) && this.parentGui.editClicked)?"Edit Waypoint":"New Waypoint", this.width / 2, 20, 16777215);
+        this.drawCenteredString(this.fontRenderer, ((this.parentGui != null) && this.parentGui.editClicked)?var4.translateKey("minimap.waypoints.edit"):var4.translateKey("minimap.waypoints.new"), this.width / 2, 20, 16777215);
         //  this.height / 6 + 24 * 
-        this.drawString(this.fontRenderer, var4.translateKey("Waypoint Name"), this.width / 2 - 100, this.height / 6 + 41 * 0, 10526880);
+        this.drawString(this.fontRenderer, var4.translateKey("minimap.waypoints.name"), this.width / 2 - 100, this.height / 6 + 41 * 0, 10526880);
         this.drawString(this.fontRenderer, var4.translateKey("X"), this.width / 2 - 100, this.height / 6 + 41 * 1, 10526880);
         this.drawString(this.fontRenderer, var4.translateKey("Z"), this.width / 2 - 28, this.height / 6 + 41 * 1, 10526880);
         this.drawString(this.fontRenderer, var4.translateKey("Y"), this.width / 2 + 44, this.height / 6 + 41 * 1, 10526880);
-        this.drawString(this.fontRenderer, "Choose Color: ", this.width / 2 - 46, this.height / 6 + 41 * 3 - 4, 10526880);
+        this.drawString(this.fontRenderer, var4.translateKey("minimap.waypoints.choosecolor"), this.width / 2 - 46, this.height / 6 + 41 * 3 - 4, 10526880);
 
         this.waypointName.drawTextBox();
         this.waypointX.drawTextBox();

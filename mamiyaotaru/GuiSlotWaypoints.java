@@ -20,6 +20,7 @@ class GuiSlotWaypoints extends GuiSlot
     private ZanMinimap minimap;
 
     final GuiWaypoints parentGui;
+    private StringTranslate translate;
 
     public GuiSlotWaypoints(GuiWaypoints par1GuiWaypoints)
     {
@@ -27,6 +28,7 @@ class GuiSlotWaypoints extends GuiSlot
         this.parentGui = par1GuiWaypoints;
         this.minimap = parentGui.minimap;
         this.waypoints = this.minimap.wayPts;
+        translate = StringTranslate.getInstance();
         
 /*		for(Waypoint pt:waypoints) {
 			if I need to add to a local array or something instead of directly using minimap.wayPts
@@ -113,7 +115,7 @@ class GuiSlotWaypoints extends GuiSlot
     		String tooltip;
         	if (this.mouseX >= par2 + 215 - 16 - var10 && this.mouseX <= par2 + 215 + var10)
         	{
-        		tooltip = waypoint.enabled?"Disable Waypoint":"Enable Waypoint";
+        		tooltip = waypoint.enabled?translate.translateKey("minimap.waypoints.disable"):translate.translateKey("minimap.waypoints.enable");
         	}
         	else {
         		tooltip = "X: " + waypoint.x + " Z: " + waypoint.z;
