@@ -321,7 +321,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				else if (!threading)
 				{
 					if (this.enabled && !this.hide)
-						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.yCoord()) || (this.timer>300)))
+						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
 							mapCalc();
 				}
 		
@@ -430,11 +430,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
 			}
 
-			private int yCoord() {
+			private int zCoord() {
 				return (int)(this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
 			}
 
-			private int zCoord() {
+			private int yCoord() {
 				return (int)this.game.thePlayer.posY;
 			}
 
@@ -490,10 +490,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 			private void mapCalcNether() {
 				World data = getWorld();
+				int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
 				this.lZoom = this.zoom;
 				int multi = (int)Math.pow(2, this.lZoom);
 				int startX = this.xCoord(); // 1
-				int startZ = this.yCoord(); // j
+				int startZ = this.zCoord(); // j
 				this.lastX = startX;
 				this.lastZ = startZ;
 				startX -= 16*multi;
@@ -509,9 +510,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 						if (Math.sqrt((16 * multi - imageY) * (16 * multi - imageY) + (16 * multi - imageX) * (16 * multi - imageX)) < ((16 * multi)-((int)Math.sqrt(multi)))) check = true;
 						
-						height = getBlockHeightNether(data, startX + imageX, startZ + imageY, this.zCoord());		
+						height = getBlockHeightNether(data, startX + imageX, startZ + imageY, this.yCoord());		
 						if (height == -1) {
-							height = this.zCoord() + 1;
+							height = this.yCoord() + 1;
 							solidNether = true;
 						}
 						else {
@@ -529,7 +530,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (showmap) || (this.full))) {
 							if (heightmap) {
-								int i2 = height-this.zCoord();
+								int i2 = height-this.yCoord();
 								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
 								int r = color24 / 0x10000;
 								int g = (color24 - r * 0x10000)/0x100;
@@ -552,7 +553,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							int i3 = 255;
 
 							if (lightmap)
-								i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17;
+								//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+								i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
 							else if (solidNether)
 								i3 = 32;
 
@@ -570,10 +572,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			}
 			private void mapCalcOverworld() {
 				World data = getWorld();
+				int skylightsubtract = data.calculateSkylightSubtracted(1.0F);
 				this.lZoom = this.zoom;
 				int multi = (int)Math.pow(2, this.lZoom);
 				int startX = this.xCoord(); // 1
-				int startZ = this.yCoord(); // j
+				int startZ = this.zCoord(); // j
 				this.lastX = startX;
 				this.lastZ = startZ;
 				startX -= 16*multi;
@@ -607,7 +610,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 						if ((color24 != this.blockColors[0]) && (color24 != 0) && ((check) || (showmap) || (this.full))) {
 							if (heightmap) {
-								int i2 = height-this.zCoord();
+								int i2 = height-this.yCoord();
 								double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D;
 								int r = color24 / 0x10000;
 								int g = (color24 - r * 0x10000)/0x100;
@@ -630,7 +633,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							int i3 = 255;
 
 							if (lightmap)
-								i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17;
+								//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+								i3 = calcLightSMPtoo(startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
 
 							if(i3 > 255) i3 = 255;
 
@@ -646,10 +650,29 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			private void mapCalc() {
 
 				if (this.game.thePlayer.dimension!=-1)
-					if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0)
+					//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
+					//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
+					if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, this.yCoord(), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
 						mapCalcNether();
 					else
 						mapCalcOverworld();
+/*					if (showCaves) {
+						Chunk chunk = getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord());
+						ExtendedBlockStorage[] extendedblockstoragearray = chunk.func_48495_i();
+						ExtendedBlockStorage extendedblockstorage = extendedblockstoragearray[this.zCoord() >> 4];
+						int level = 0;
+						if (extendedblockstorage == null) 
+							level = EnumSkyBlock.Sky.defaultLightValue;
+						else
+							level = extendedblockstorage.func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf);
+						if (level <= 0)
+							mapCalcNether();
+						else
+							mapCalcOverworld();
+					}
+					else
+						mapCalcOverworld();
+*/
 				else if (showNether)
 					mapCalcNether();
 
@@ -666,6 +689,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 */
 			}
 			
+			private int calcLightSMPtoo(int x, int y, int z, int skylightsubtract) {
+//				return getWorld().getBlockLightValue_do(x, z, y, false);
+				World data = getWorld();
+				Chunk chunk = data.getChunkFromChunkCoords(x >> 4, z >> 4);
+		        return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); // call calculate since the var calc sets can't be counted on to be set in SMP.  ie it isn't
+		        																		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
+			}
+			
 			public void run() {
 				if (this.game == null)
 					return;
@@ -675,7 +706,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						this.active = true;
 						while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
 						  if (this.enabled && !this.hide)
-							  if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.yCoord()) || (this.timer>300)))
+							  if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300)))
 								  try {this.mapCalc(); this.timer = 1;} catch (Exception local) {}
 						  this.timer++;
 						  this.active = false;
@@ -826,7 +857,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
   			blockColors[blockColorID(22, 0)] = 0xd2eb2;
   			blockColors[blockColorID(23, 0)] = 0x747474;
   			blockColors[blockColorID(24, 0)] = 0xc6bd6d;
-  			blockColors[blockColorID(25, 0)] = 0xaadb74;
+  			blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
   			blockColors[blockColorID(35, 0)] = 0xf4f4f4;
   			blockColors[blockColorID(35, 1)] = 0xeb843e;
   			blockColors[blockColorID(35, 2)] = 0xc55ccf;
@@ -875,7 +906,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
   			blockColors[blockColorID(53, 1)] = 0xbc9862;
   			blockColors[blockColorID(53, 2)] = 0xbc9862;
   			blockColors[blockColorID(53, 3)] = 0xbc9862;
-  			blockColors[blockColorID(54, 0)] = 0x8f691d;
+  			blockColors[blockColorID(54, 0)] = 0x8f691d; // chest
   			blockColors[blockColorID(55, 0)] = 0x480000;
   			blockColors[blockColorID(56, 0)] = 0x747474;
   			blockColors[blockColorID(57, 0)] = 0x82e4e0;
@@ -908,7 +939,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
   			blockColors[blockColorID(81, 0)] = 0x11801e;
   			blockColors[blockColorID(82, 0)] = 0xffffff;
   			blockColors[blockColorID(83, 0)] = 0xa1a7b2;
-  			blockColors[blockColorID(84, 0)] = 0xaadb74;
+  			blockColors[blockColorID(84, 0)] = 0x8f691d; // jukebox
   			blockColors[blockColorID(85, 0)] = 0x9b664b;
   			blockColors[blockColorID(86, 0)] = 0xbc9862;
   			blockColors[blockColorID(87, 0)] = 0x582218;
@@ -949,6 +980,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(114, 2)] = 0x43262f; // netherbrick stairs
 			blockColors[blockColorID(114, 3)] = 0x43262f; // netherbrick stairs
 			blockColors[blockColorID(121, 0)] = 0xd3dca4; // endstone
+			blockColors[blockColorID(123, 0)] = 0x8f691d; // inactive glowstone lamp
+			blockColors[blockColorID(124, 0)] = 0xcda838; // active glowstone lamp
 			if(settingsFile.exists()) {
 				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
 				String sCurrentLine;
@@ -1140,11 +1173,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						int wayY = 0;
 						if (this.game.thePlayer.dimension!=-1) {
 							wayX = this.xCoord() - pt.x;
-							wayY = this.yCoord() - pt.z;
+							wayY = this.zCoord() - pt.z;
 						}
 						else {
 							wayX = this.xCoord() - (pt.x / 8);
-							wayY = this.yCoord() - (pt.z / 8);
+							wayY = this.zCoord() - (pt.z / 8);
 						}
 
 						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 31 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 32) {
@@ -1220,11 +1253,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						int wayY = 0;
 						if (this.game.thePlayer.dimension!=-1) {
 							wayX = this.xCoord() - pt.x;
-							wayY = this.yCoord() - pt.z;
+							wayY = this.zCoord() - pt.z;
 						}
 						else {
 							wayX = this.xCoord() - (pt.x / 8);
-							wayY = this.yCoord() - (pt.z / 8);
+							wayY = this.zCoord() - (pt.z / 8);
 						}
 						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
@@ -1485,9 +1518,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								this.next=3;
 							}
 							if (this.game.thePlayer.dimension!=-1)
-								this.inStr = Integer.toString(this.yCoord());
+								this.inStr = Integer.toString(this.zCoord());
 							else
-								this.inStr = Integer.toString(this.yCoord()*8);
+								this.inStr = Integer.toString(this.zCoord()*8);
 						} else {
 							this.next = 3;
 
@@ -1548,7 +1581,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} catch(Exception localException) {}
 			else if (this.iMenu==7)
 				try {
-					if(Integer.parseInt(this.inStr)==this.yCoord()) this.write("(Current)", (int)leftX + border + this.chkLen(this.inStr) + 5, (int)topY + border, 0xa0a0a0);
+					if(Integer.parseInt(this.inStr)==this.zCoord()) this.write("(Current)", (int)leftX + border + this.chkLen(this.inStr) + 5, (int)topY + border, 0xa0a0a0);
 				} catch(Exception localException) {}
 
 			this.blink++;
@@ -1566,18 +1599,19 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			GL11.glScalef(0.5f, 0.5f, 1.0f);
 			String xy ="";
 			if (this.game.thePlayer.dimension!=-1)
-				xy = this.dCoord(xCoord()) + ", " + this.dCoord(yCoord());
+				xy = this.dCoord(xCoord()) + ", " + this.dCoord(zCoord());
 			else
-				xy = this.dCoord(xCoord()*8) + ", " + this.dCoord(yCoord()*8);
+				xy = this.dCoord(xCoord()*8) + ", " + this.dCoord(zCoord()*8);
 			int m = this.chkLen(xy)/2;
 			this.write(xy, scWidth*2-32*2-m, 146, 0xffffff);
-			xy = Integer.toString(this.zCoord());
+			xy = Integer.toString(this.yCoord());
 			m = this.chkLen(xy)/2;
+		//	xy="" + this.getWorld().skylightSubtracted + " " + this.getWorld().calculateSkylightSubtracted(1.0F) + " " + this.getWorld().func_35464_b(1.0F); // always 0 in SMP. method works, not value.  it's never updated, no world tick in SMP.  Fscks lightmap functionality
 			this.write(xy, scWidth*2-32*2-m, 156, 0xffffff);
 			GL11.glPopMatrix();
 		} else {
-			if (this.game.thePlayer.dimension!=-1) this.write("(" + this.dCoord(xCoord()) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
-			else this.write("(" + this.dCoord(xCoord()*8) + ", " + this.zCoord() + ", " + this.dCoord(yCoord()*8) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+			if (this.game.thePlayer.dimension!=-1) this.write("(" + this.dCoord(xCoord()) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+			else this.write("(" + this.dCoord(xCoord()*8) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()*8) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
 		}
 	}
 
