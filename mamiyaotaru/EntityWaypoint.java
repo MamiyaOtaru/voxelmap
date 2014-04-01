@@ -4,6 +4,7 @@ import java.util.Iterator;
 import java.util.List;
 
 import net.minecraft.src.EntityWeatherEffect;
+import net.minecraft.src.MathHelper;
 import net.minecraft.src.NBTTagCompound;
 import net.minecraft.src.Vec3;
 import net.minecraft.src.World;
@@ -28,10 +29,10 @@ public class EntityWaypoint extends EntityWeatherEffect
         	this.posX=waypoint.x;
         	this.posZ=waypoint.z;
         }
-        this.posY=0;
+        this.posY = waypoint.y;
         this.lastTickPosX=posX;
         this.lastTickPosZ=posZ;
-        this.lastTickPosY=0;
+        this.lastTickPosY=posY;
    //     this.chunk = this.worldObj.getChunkFromBlockCoords(((int)(this.posX)), ((int)(this.posY)));
     }
 
@@ -51,11 +52,10 @@ public class EntityWaypoint extends EntityWeatherEffect
         	this.posX=waypoint.x;
         	this.posZ=waypoint.z;
         }
+        this.posY = waypoint.y;
         this.lastTickPosX=this.posX;
         this.lastTickPosZ=this.posZ;
-        this.posY=0;
-        //this.posY = this.worldObj.getHeightValue(((int)(this.posX)), ((int)(this.posZ)));
-        //this.lastTickPosY=posY;
+        this.lastTickPosY=posY;
         //this.setPosition(this.posX, this.posY, this.posZ);
     }
 
@@ -87,6 +87,19 @@ public class EntityWaypoint extends EntityWeatherEffect
         double var8 = var2 * var2 + var4 * var4 + var6 * var6;
         return var8 < 64 * 64; */
     	// the and stuff is to not bother with checking if the chunk is loaded if the waypoint (or beacons) isn't even set to be displayed
-        return (this.waypoint.enabled && this.waypoint.showInWorld && this.worldObj.getChunkFromBlockCoords(((int)(this.posX)), ((int)(this.posZ))).isChunkLoaded);
+        return (this.waypoint.enabled);// && this.worldObj.getChunkFromBlockCoords(((int)(this.posX)), ((int)(this.posZ))).isChunkLoaded);
+    }
+    
+    public int getBrightnessForRender(float par1)
+    {
+        return 15728880;
+    }
+
+    /**
+     * Gets how bright this entity is.
+     */
+    public float getBrightness(float par1)
+    {
+        return 1.0F;
     }
 }

@@ -1,7 +1,10 @@
 package net.minecraft.src;
 
+import java.awt.Color;
 import java.awt.Graphics2D; //
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
+import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.io.File;
 import java.io.FileWriter;
@@ -70,44 +73,51 @@ public class ZanRadar {
 	
 	public TreeMap<String, Integer> mpContacts = new TreeMap(String.CASE_INSENSITIVE_ORDER);
 
-	private TexturePackBase pack = null;
+	private ITexturePack pack = null;
 	
-	private final int BLAZE = 0;
-	private final int CAVESPIDER = 1;
-	private final int CHICKEN = 2;
-	private final int COW = 3;
-	private final int CREEPER = 4;
-	private final int ENDERDRAGON = 5;
-	private final int ENDERMAN = 6;
-	private final int GHAST = 7;
-	private final int GHASTATTACKING = 8;
-	private final int IRONGOLEM = 9;
-	private final int MAGMA = 10;
-	private final int MOOSHROOM = 11;
-	private final int OCELOT = 12;
-	private final int PIG = 13;
-	private final int PIGZOMBIE = 14;
-	private final int PLAYER = 15;
-	private final int SHEEP = 16;
-	private final int SILVERFISH = 17;
-	private final int SKELETON = 18;
-	private final int SLIME = 19;
-	private final int SNOWGOLEM = 20;
-	private final int SPIDER = 21;
-	private final int SQUID = 22;
-	private final int VILLAGER = 23;
-	private final int WOLF = 24;
-	private final int ZOMBIE = 25;
+	private final int BAT = 0;
+	private final int BLAZE = 1;
+	private final int CAVESPIDER = 2;
+	private final int CHICKEN = 3;
+	private final int COW = 4;
+	private final int CREEPER = 5;
+	private final int ENDERDRAGON = 6;
+	private final int ENDERMAN = 7;
+	private final int GHAST = 8;
+	private final int GHASTATTACKING = 9;
+	private final int IRONGOLEM = 10;
+	private final int MAGMA = 11;
+	private final int MOOSHROOM = 12;
+	private final int OCELOT = 13;
+	private final int PIG = 14;
+	private final int PIGZOMBIE = 15;
+	private final int PLAYER = 16;
+	private final int SHEEP = 17;
+	private final int SILVERFISH = 18;
+	private final int SKELETON = 19;
+	private final int SKELETONWITHER = 20;
+	private final int SLIME = 21;
+	private final int SNOWGOLEM = 22;
+	private final int SPIDER = 23;
+	private final int SQUID = 24;
+	private final int VILLAGER = 25;
+	private final int WITCH = 26;
+	private final int WITHER = 27;
+	private final int WITHERINVULNERABLE = 28;
+	private final int WOLF = 29;
+	private final int ZOMBIE = 30;
+	private final int ZOMBIEVILLAGER = 31;
 	
-	private BufferedImage[][] icons = new BufferedImage[26][2];
+	private BufferedImage[][] icons = new BufferedImage[32][2];
 	
-	private int[][] imageRef = new int[26][2];
+	private int[][] imageRef = new int[32][2];
 	
 	/** hardcoding size here instead of after squarifiying images, in case I ever want to allow higher def images in icons 
 	 * 	currently full screen is showing icons at double their resolution.  Can allow higher.  Reading size then would just
 	 * display them even bigger, and still double their resolution.  Code here what they should be, then can worry about resolution later
 	 */
-	private int[] size = {8, 8, 8, 8, 8, 16, 8, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 8, 8};//new int[26]; 
+	private int[] size = {16, 8, 8, 8, 8, 8, 16, 8, 16, 16, 16, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 16, 16, 32, 32, 8, 8, 16};//new int[26]; 
+	// bat is 8 without ears 16 with
 	
 	public ZanRadar(ZanMinimap minimap) {
 		this.minimap = minimap;
@@ -154,8 +164,10 @@ public class ZanRadar {
 			//java.awt.Image terrain = ImageIO.read(file);
 
 			//System.out.println("WIDTH: " + terrain.getWidth(null));
+//			icons[BAT][0] = loadImage("bat", 6, 6, 6, 6, 64, 64); // without initial whitespace
+			icons[BAT][0] = addImages(addImages(addImages(blankImage("bat", 8, 10, 64, 64), loadImage("bat", 25, 1, 3, 4), 0, 0, 8, 10), flipHorizontal(loadImage("bat", 25, 1, 3, 4)), 5, 0, 8, 10), loadImage("bat", 6, 6, 6, 6), 1, 2, 8, 10); // ears then head
 			icons[BLAZE][0] = loadImage("fire", 8, 8, 8, 8);
-			icons[CAVESPIDER][0] = addImages(addImages(loadImage("cavespider", 40, 12, 8, 8), loadImage("cavespider", 6, 6, 6, 6), 1, 1, 8, 8), loadImage("cavespider", 40, 12, 8, 8), 0, 0, 8, 8); // head first (it's the biggest) then thorax then head. In case head is invisible, this gives us the thorax
+			icons[CAVESPIDER][0] = addImages(addImages(blankImage("cavespider", 8, 8), loadImage("cavespider", 6, 6, 6, 6), 1, 1, 8, 8), loadImage("cavespider", 40, 12, 8, 8), 0, 0, 8, 8); // head first (it's the biggest)((NOPE, blank image first)) then thorax then head. In case head is invisible, this gives us the thorax
 			icons[CHICKEN][0] = addImages(loadImage("chicken", 2, 3, 6, 6), loadImage("chicken", 16, 2, 4, 2), 1, 2, 6, 6);
 			icons[COW][0] = loadImage("cow", 6, 6, 8, 8);
 			icons[CREEPER][0] = loadImage("creeper", 8, 8, 8, 8);
@@ -166,20 +178,28 @@ public class ZanRadar {
 			icons[IRONGOLEM][0] = loadImage("villager_golem", 8, 8, 8, 10, 128, 128);
 			icons[MAGMA][0] = addImages(addImages(loadImage("lava", 8, 8, 8, 8), loadImage("lava", 32, 18, 8, 1), 0, 3, 8, 8), loadImage("lava", 32, 27, 8, 1), 0, 4, 8, 8);
 			icons[MOOSHROOM][0] = loadImage("redcow", 6, 6, 8, 8);
-			icons[OCELOT][0] = addImages(loadImage("ozelot", 5, 5, 5, 5), loadImage("ozelot", 2, 26, 3, 2), 1, 2, 5, 5);
+//			icons[OCELOT][0] = addImages(loadImage("ozelot", 5, 5, 5, 5), loadImage("ozelot", 2, 26, 3, 2), 1, 2, 5, 5); // pre ears
+			icons[OCELOT][0] = addImages(addImages(addImages(addImages(blankImage("ozelot", 5, 5), loadImage("ozelot", 5, 5, 5, 4), 0, 1, 5, 5), loadImage("ozelot", 2, 26, 3, 2), 1, 3, 5, 5), loadImage("ozelot", 2, 12, 1, 1), 1, 0, 5, 5), loadImage("ozelot", 8, 12, 1, 1), 3, 0, 5, 5);;
 			icons[PIG][0] = addImages(loadImage("pig", 8, 8, 8, 8), loadImage("pig", 16, 17, 6, 3), 1, 4, 8, 8);
 			icons[PIGZOMBIE][0] = addImages(loadImage("pigzombie", 8, 8, 8, 8), loadImage("pigzombie", 40, 8, 8, 8), 0, 0, 8, 8);
 			icons[PLAYER][0] = loadImage("char", 8, 8, 8, 8);
 			icons[SHEEP][0] = loadImage("sheep", 8, 8, 6, 6);
 			icons[SILVERFISH][0] = addImages(loadImage("silverfish", 22, 20, 6, 6), loadImage("silverfish", 2, 2, 3, 2), 2, 2, 6, 6);
 			icons[SKELETON][0] = addImages(loadImage("skeleton", 8, 8, 8, 8), loadImage("skeleton", 40, 8, 8, 8), 0, 0, 8, 8);
+			icons[SKELETONWITHER][0] = addImages(loadImage("skeleton_wither", 8, 8, 8, 8), loadImage("skeleton_wither", 40, 8, 8, 8), 0, 0, 8, 8);
 			icons[SLIME][0] = addImages(addImages(addImages(loadImage("slime", 8, 8, 8, 8), loadImage("slime", 6, 22, 6 ,6), 1, 1, 8, 8), loadImage("slime", 34, 6, 2, 2), 1, 2, 8, 8), loadImage("slime", 34, 2, 2, 2), 5, 2, 8, 8);
 			icons[SNOWGOLEM][0] = loadImage("snowman", 8, 8, 8, 8, 64, 64);
-			icons[SPIDER][0] = addImages(addImages(loadImage("spider", 40, 12, 8, 8), loadImage("spider", 6, 6, 6, 6), 1, 1, 8, 8), loadImage("spider", 40, 12, 8, 8), 0, 0, 8, 8);
+			icons[SPIDER][0] = addImages(addImages(blankImage("spider", 8, 8), loadImage("spider", 6, 6, 6, 6), 1, 1, 8, 8), loadImage("spider", 40, 12, 8, 8), 0, 0, 8, 8);
 			icons[SQUID][0] = scaleImage(loadImage("squid", 12, 12, 12, 16), 0.5f); // squid is too big for what it is
 			icons[VILLAGER][0] = addImages(loadImage("villager/farmer", 8, 8, 8, 10, 64, 64), loadImage("villager/farmer", 26, 2, 2, 3, 64, 64), 3, 7, 8, 10);
-			icons[WOLF][0] = addImages(loadImage("wolf", 4, 4, 6, 6), loadImage("wolf", 4, 14, 3, 3), 1.5f, 3, 6, 6);
-			icons[ZOMBIE][0] = addImages(loadImage("zombie", 8, 8, 8, 8), loadImage("zombie", 40, 8, 8, 8), 0, 0, 8, 8);
+//			icons[WITCH][0] = addImages(addImages(loadImage("villager/witch", 8, 8, 8, 10, 64, 128), loadImage("villager/witch", 26, 2, 2, 3, 64, 128), 3, 7, 8, 10), loadImage("villager/witch", 11, 75, 8, 2, 64, 128), 0, 0, 8, 10); // onld one pre grabbing whitespace first
+			icons[WITCH][0] = addImages(addImages(addImages(addImages(addImages(blankImage("villager/witch", 10, 16, 64, 128), loadImage("villager/witch", 8, 8, 8, 10, 64, 128), 1, 5, 10, 16), loadImage("villager/witch", 26, 2, 2, 4, 64, 128), 4, 12, 10, 16), loadImage("villager/witch", 10, 74, 10, 3, 64, 128), 0, 4, 10, 16), loadImage("villager/witch", 7, 83, 7, 4, 64, 128), 1.5f, 0, 10, 16), loadImage("villager/witch", 1, 1, 1, 1, 64, 128), 5, 14, 10, 16); // base face nose hatbrim hatnext
+			icons[WITHER][0] = addImages(addImages(addImages(blankImage("wither", 24, 10, 64, 64), loadImage("wither", 8, 8, 8, 8, 64, 64), 8, 0, 24, 10), loadImage("wither", 38, 6, 6, 6, 64, 64), 0, 2, 24, 10), loadImage("wither", 38, 6, 6, 6, 64, 64), 18, 2, 24, 10);
+			icons[WITHERINVULNERABLE][0] = addImages(addImages(addImages(blankImage("wither_invul", 24, 10, 64, 64), loadImage("wither_invul", 8, 8, 8, 8, 64, 64), 8, 0, 24, 10), loadImage("wither_invul", 38, 6, 6, 6, 64, 64), 0, 2, 24, 10), loadImage("wither_invul", 38, 6, 6, 6, 64, 64), 18, 2, 24, 10);
+//			icons[WOLF][0] = addImages(loadImage("wolf", 4, 4, 6, 6), loadImage("wolf", 4, 14, 3, 3), 1.5f, 3, 6, 6); // square before blankimage
+			icons[WOLF][0] = addImages(addImages(addImages(addImages(blankImage("wolf", 6, 8), loadImage("wolf", 4, 4, 6, 6), 0, 2, 6, 8), loadImage("wolf", 4, 14, 3, 3), 1.5f, 5, 6, 8), loadImage("wolf", 17, 15, 2, 2), 0, 0, 6, 8), loadImage("wolf", 17, 15, 2, 2), 4, 0, 6, 8);
+			icons[ZOMBIE][0] = addImages(loadImage("zombie", 8, 8, 8, 8, 64, 64), loadImage("zombie", 40, 8, 8, 8, 64, 64), 0, 0, 8, 8); // height changed.  doesn't actually matter, scale is done by checking image width.  Just for consistency though
+			icons[ZOMBIEVILLAGER][0] = addImages(loadImage("zombie_villager", 8, 40, 8, 10, 64, 64), loadImage("zombie_villager", 26, 34, 2, 3, 64, 64), 3, 7, 8, 10); 
 			
 			for (int t = 0; t < icons.length; t++) {
 				//icons[t]=into128(icons[t]);
@@ -244,6 +264,28 @@ public class ZanRadar {
 		
 	}
 	
+	private BufferedImage blankImage(String path, int w, int h) {
+		return blankImage(path, w, h, 64, 32);
+	}
+	
+	private BufferedImage blankImage(String path, int w, int h, int imageWidth, int imageHeight) {
+		try {
+			String fullPath = "/mob/" + path + ".png";
+			InputStream is = pack.getResourceAsStream(fullPath);
+			BufferedImage mobSkin = ImageIO.read(is);
+			is.close();
+			BufferedImage temp = new BufferedImage(w * mobSkin.getWidth() / imageWidth, h * mobSkin.getWidth() / imageWidth, BufferedImage.TYPE_4BYTE_ABGR);
+			Graphics2D g2 = temp.createGraphics();
+			g2.setColor(new Color(0, 0, 0, 0));
+			g2.dispose();
+			return temp;
+		}
+		catch (Exception e) {
+			System.out.println("Failed getting mob: " + path + " - " + e.getLocalizedMessage());
+			return null;
+		}
+	}
+	
 	// load image with the default dimensions (most common anyway, 64x32 in default)
 	private BufferedImage loadImage(String path, int x, int y, int w, int h) {
 		return loadImage(path, x, y, w, h, 64, 32);
@@ -285,7 +327,7 @@ public class ZanRadar {
 			mobSkin = temp;
 		}
 		
-		float scale = mobSkin.getWidth(null) / imageWidth; // float for dealing with lower res texture packs
+		float scale = mobSkin.getWidth(null) / imageWidth; // is float for dealing with lower res texture packs
 		BufferedImage base = mobSkin.getSubimage((int)(x*scale), (int)(y*scale), (int)(w*scale), (int)(h*scale));
 	//	if (scale != 1)  // scale down hidef (or up lodef?  haha) // scale at the end, after it's all added together
 	//		base = scaleImage (base, 1/scale);
@@ -295,7 +337,7 @@ public class ZanRadar {
 	private BufferedImage addImages(BufferedImage base, BufferedImage overlay, float x, int y, int baseWidth, int baseHeight) {
 		int scale = base.getWidth()/baseWidth;
 		java.awt.Graphics gfx = base.getGraphics();
-		gfx.drawImage(overlay, (int)(x*scale), y*scale, null); // float for x here simply allows us to center the wolf nose in double and higher resolution packs
+		gfx.drawImage(overlay, (int)(x*scale), y*scale, null); // float for x here simply allows us to center the wolf nose in double and higher resolution packs (maybe witch hat too)
 		gfx.dispose();
 		return base;
 	}
@@ -308,6 +350,13 @@ public class ZanRadar {
 		g2.dispose();
 		image = tmp;
 		return image;
+	}
+	
+	private BufferedImage flipHorizontal(BufferedImage image) {
+		AffineTransform tx = AffineTransform.getScaleInstance(-1, 1);
+		tx.translate(-image.getWidth(null), 0);
+		AffineTransformOp op = new AffineTransformOp(tx, AffineTransformOp.TYPE_NEAREST_NEIGHBOR);
+		return op.filter(image, null);
 	}
 	
 	private BufferedImage into128(BufferedImage base) {
@@ -332,7 +381,7 @@ public class ZanRadar {
 		return frame;
 	}
 	
-	public void setTexturePack(TexturePackBase pack) {
+	public void setTexturePack(ITexturePack pack) {
 		this.pack = pack;
 	}
 	
@@ -483,18 +532,16 @@ public class ZanRadar {
 					int wayX = this.xCoord() - (int)(entity.posX);
 					int wayZ = this.zCoord() - (int)(entity.posZ);
 					int wayY = this.yCoord() - (int)(entity.posY);
-					double hypot = Math.sqrt((wayX*wayX)+(wayZ*wayZ));
-					double hypot3d = Math.sqrt((hypot*hypot)+(wayY*wayY));
-					//hypot = hypot/(Math.pow(2,minimap.lZoom)/2);
-					hypot3d = hypot3d/(Math.pow(2,minimap.lZoom)/2);
+					double hypot = Math.sqrt((wayX*wayX)+(wayZ*wayZ)+(wayY*wayY));
+					hypot = hypot/(Math.pow(2,minimap.lZoom)/2);
 					//if (hypot < 31.0D && Math.abs(this.zCoord() - (int)(entity.posY)) < 12) {					
-					if (hypot3d < 31.0D) {
+					if (hypot < 31.0D) {
 						if (isPlayer(entity)) 
 							contacts.add(handleMPplayer(entity));
 						else  {
 							Contact contact = new Contact((int)(entity.posX), (int)(entity.posZ), (int)(entity.posY), getContactType(entity));
-							if (contact.type == GHAST) {
-								contact.setEntity(entity); // allows us to display firing vs non firing icons for ghasts.  Need reference to the actual entity
+							if (contact.type == GHAST || contact.type == WITHER) {
+								contact.setEntity(entity); // allows us to display firing vs non firing icons for ghasts, and invulnerable vs normal wither.  Need reference to the actual entity
 							}
 							contacts.add(contact);
 						}
@@ -581,7 +628,9 @@ public class ZanRadar {
 	}
 	
 	private int getContactType(Entity entity) {
-		if (entity instanceof EntityBlaze)
+		if (entity instanceof EntityBat)
+			return BAT;
+		else if (entity instanceof EntityBlaze)
 			return BLAZE;
 		else if (entity instanceof EntityCaveSpider)
 			return CAVESPIDER;
@@ -616,7 +665,7 @@ public class ZanRadar {
 		else if (entity instanceof EntitySilverfish)
 			return SILVERFISH;
 		else if (entity instanceof EntitySkeleton)
-			return SKELETON;
+			return (((EntitySkeleton)entity).getTexture().contains("wither"))?SKELETONWITHER:SKELETON;
 		else if (entity instanceof EntitySlime)
 			return SLIME;
 		else if (entity instanceof EntitySnowman)
@@ -627,10 +676,14 @@ public class ZanRadar {
 			return SQUID;
 		else if (entity instanceof EntityVillager)
 			return VILLAGER;
+		else if (entity instanceof EntityWitch)
+			return WITCH;
+		else if (entity instanceof EntityWither)
+			return WITHER;
 		else if (entity instanceof EntityWolf)
 			return WOLF;
-		else if (entity instanceof EntityZombie)
-			return ZOMBIE;
+		else if (entity instanceof EntityZombie) 
+			return (((EntityZombie)entity).getTexture().contains("villager"))?ZOMBIEVILLAGER:ZOMBIE;
 		return ZOMBIE;
 	}
 	
@@ -683,9 +736,10 @@ public class ZanRadar {
 						}
 						else  {
 							if (contact.entity != null) {
-								byte var1 = ((EntityGhast)contact.entity).dataWatcher.getWatchableObjectByte(16);
-						        System.out.println("should be ghast " + contact.type);
-						        contact.type = var1 == 1 ? GHASTATTACKING : GHAST;
+								if (contact.entity instanceof EntityGhast) 
+									contact.type = (((EntityGhast)contact.entity).getTexture().contains("fire"))?GHASTATTACKING : GHAST;
+								else if (contact.entity instanceof EntityWither) 
+									contact.type = (((EntityWither)contact.entity).getTexture().contains("invul"))?WITHERINVULNERABLE : WITHER;
 							}
 							this.disp(imageRef[contact.type][guiScale]);
 						}
@@ -727,8 +781,10 @@ public class ZanRadar {
 						}
 						else  {
 							if (contact.entity != null) {
-								byte var1 = ((EntityGhast)contact.entity).dataWatcher.getWatchableObjectByte(16);
-						        contact.type = var1 == 1 ? GHASTATTACKING : GHAST;
+								if (contact.entity instanceof EntityGhast) 
+									contact.type = (((EntityGhast)contact.entity).getTexture().contains("fire"))?GHASTATTACKING : GHAST;
+								else if (contact.entity instanceof EntityWither) 
+									contact.type = (((EntityWither)contact.entity).getTexture().contains("invul"))?WITHERINVULNERABLE : WITHER;
 							}
 							this.disp(imageRef[contact.type][guiScale]);
 						}

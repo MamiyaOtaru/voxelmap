@@ -1,6 +1,7 @@
 package net.minecraft.src.mamiyaotaru;
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.server.MinecraftServer;
 import net.minecraft.src.EnumOptions;
 import net.minecraft.src.FontRenderer;
 import net.minecraft.src.GuiButton;
@@ -70,8 +71,6 @@ public class GuiWaypoints extends GuiScreen
     
     protected Waypoint newWaypoint = null; 
 
-	public boolean canTeleport = false;
- 
 	public FontRenderer getFontRenderer() {
 		return this.fontRenderer;
 	}
@@ -123,7 +122,7 @@ public class GuiWaypoints extends GuiScreen
         boolean isSomethingSelected = this.selectedWaypoint != null;
         this.buttonEdit.enabled = isSomethingSelected;
         this.buttonDelete.enabled = isSomethingSelected;
-        this.buttonTeleport.enabled = isSomethingSelected;
+        this.buttonTeleport.enabled = isSomethingSelected && this.canTeleport();
     }
 
     /**
@@ -153,6 +152,28 @@ public class GuiWaypoints extends GuiScreen
                 newWaypoint = new Waypoint("", (minimap.game.thePlayer.dimension != -1)?minimap.xCoord():minimap.xCoord()*8, (minimap.game.thePlayer.dimension != -1)?minimap.zCoord():minimap.zCoord()*8, minimap.yCoord()-1, true, 0, 1, 0, "");
                 this.mc.displayGuiScreen(new GuiScreenAddWaypoint(this, this.newWaypoint)); // = new ServerData(var9.serverName, var9.serverIP)));
                 //edit shit
+            }
+            
+            if (par1GuiButton.id == -3) 
+            {
+            	//teleport
+            	if (this.minimap.game.isIntegratedServerRunning()) {
+            		this.minimap.game.thePlayer.sendChatMessage("/ztp " + this.selectedWaypoint.name);
+            		this.minimap.game.displayGuiScreen((GuiScreen)null);
+            	}
+            	else { // multiplayer
+            		if (this.minimap.game.thePlayer.dimension != -1) { // not in nether
+            			if (this.selectedWaypoint.y > 0) {// 3d waypoint
+            				this.minimap.game.thePlayer.sendChatMessage("/tp " + this.minimap.game.thePlayer.username + " " + this.selectedWaypoint.x + " " + this.selectedWaypoint.y + " " + this.selectedWaypoint.z); 
+                    		this.minimap.game.thePlayer.sendChatMessage("/tppos " + this.selectedWaypoint.x + " " + this.selectedWaypoint.y + " " + this.selectedWaypoint.z);
+            			}
+            			else { 
+            				this.minimap.game.thePlayer.sendChatMessage("/tp " + this.minimap.game.thePlayer.username + " " + this.selectedWaypoint.x + " " + "128" + " " + this.selectedWaypoint.z); // hopefully above everything.  this one sends you to that y location, so don't do all the way up
+            				this.minimap.game.thePlayer.sendChatMessage("/tppos " + this.selectedWaypoint.x + " " + "256" + " " + this.selectedWaypoint.z); // hopefully above everything.  this one puts you on the ground under the given y value, so 256 is fine
+            			}
+                		this.minimap.game.displayGuiScreen((GuiScreen)null);
+            		}
+            	}
             }
 
             if (par1GuiButton.id == -2)
@@ -278,6 +299,17 @@ public class GuiWaypoints extends GuiScreen
     {
         return par0GuiWaypoints.tooltip = par1Str;
     }
+   	
+	public boolean canTeleport() {
+		boolean notInNether = (this.minimap.game.thePlayer.dimension != -1);
+		boolean singlePlayer = (this.minimap.game.isIntegratedServerRunning());
+		if (singlePlayer)
+			return (MinecraftServer.getServer().getConfigurationManager().areCommandsAllowed(this.minimap.game.thePlayer.username));
+		else
+			return notInNether;
+
+		
+	}
    	
     /**
      * Return buttonEdit GuiButton

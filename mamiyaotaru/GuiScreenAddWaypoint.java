@@ -20,6 +20,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
     private GuiTextField waypointY;
     private GuiButton buttonEnabled;
     private Waypoint waypoint;
+    private boolean choosingColor = false;
     
 	private Random generator = new Random();
 
@@ -182,18 +183,30 @@ public class GuiScreenAddWaypoint extends GuiScreen
      */
     protected void mouseClicked(int par1, int par2, int par3)
     {
-        super.mouseClicked(par1, par2, par3);
-        this.waypointName.mouseClicked(par1, par2, par3);
-        this.waypointX.mouseClicked(par1, par2, par3);
-        this.waypointZ.mouseClicked(par1, par2, par3);
-        this.waypointY.mouseClicked(par1, par2, par3);
-    	if (par1 >= this.width / 2 + 9 && par1 <= this.width / 2 + 25 && par2 >= this.height / 6 + 41 * 3 - 4 && par2 <= this.height / 6 + 41 * 3 + 6)
-    	{
-			waypoint.red = generator.nextFloat();
-			waypoint.green = generator.nextFloat();
-			waypoint.blue = generator.nextFloat();
+    	if (!choosingColor) { 
+    		super.mouseClicked(par1, par2, par3);
+    		this.waypointName.mouseClicked(par1, par2, par3);
+    		this.waypointX.mouseClicked(par1, par2, par3);
+    		this.waypointZ.mouseClicked(par1, par2, par3);
+    		this.waypointY.mouseClicked(par1, par2, par3);
+    		if (par1 >= this.width / 2 + 29 && par1 <= this.width / 2 + 45 && par2 >= this.height / 6 + 41 * 3 - 4 && par2 <= this.height / 6 + 41 * 3 + 6)
+    		{
+    			this.choosingColor = true;
+    			//waypoint.red = generator.nextFloat();
+    			//waypoint.green = generator.nextFloat();
+    			//waypoint.blue = generator.nextFloat();
+    		}
     	}
-
+    	else {
+    		if (par1 >= this.width / 2 -128 && par1 <= this.width / 2 + 128 && par2 >= this.height / 2 - 128 && par2 <= this.height / 2 + 128) { // clicked on the color picker
+    			// check if color is chosen.  check x, y, get color of pixel at corresponding spot on color picker image
+    			int color = this.parentGui.minimap.colorPicker.getRGB(par1 - (this.width / 2 - 128), par2 - (this.height / 2 - 128));
+    			waypoint.red = (float)(color >> 16 & 255)/255;
+    			waypoint.green = (float)(color >> 8 & 255)/255;
+    			waypoint.blue = (float)(color >> 0 & 255)/255;
+    			this.choosingColor = false;
+    		}    		
+    	}
     }
 
     /**
@@ -210,7 +223,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
         this.drawString(this.fontRenderer, var4.translateKey("X"), this.width / 2 - 100, this.height / 6 + 41 * 1, 10526880);
         this.drawString(this.fontRenderer, var4.translateKey("Z"), this.width / 2 - 28, this.height / 6 + 41 * 1, 10526880);
         this.drawString(this.fontRenderer, var4.translateKey("Y"), this.width / 2 + 44, this.height / 6 + 41 * 1, 10526880);
-        this.drawString(this.fontRenderer, "Color: ", this.width / 2 - 25, this.height / 6 + 41 * 3 - 4, 10526880);
+        this.drawString(this.fontRenderer, "Choose Color: ", this.width / 2 - 46, this.height / 6 + 41 * 3 - 4, 10526880);
 
         this.waypointName.drawTextBox();
         this.waypointX.drawTextBox();
@@ -218,7 +231,12 @@ public class GuiScreenAddWaypoint extends GuiScreen
         this.waypointY.drawTextBox();
         GL11.glColor4f(waypoint.red, waypoint.green, waypoint.blue, 1.0F);
         this.parentGui.minimap.game.renderEngine.bindTexture(this.parentGui.minimap.game.renderEngine.getTexture("/mamiyaotaru/color.png"));
-        parentGui.drawTexturedModalRect(this.width / 2 + 9, this.height / 6 + 41 * 3 - 4, 0, 0, 16, 10);
+        parentGui.drawTexturedModalRect(this.width / 2 + 29, this.height / 6 + 41 * 3 - 4, 0, 0, 16, 10);
         super.drawScreen(par1, par2, par3);
+        if (choosingColor) {
+        	GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+        	this.parentGui.minimap.game.renderEngine.bindTexture(this.parentGui.minimap.game.renderEngine.getTexture("/mamiyaotaru/colorPicker.png"));
+        	parentGui.drawTexturedModalRect(this.width / 2 -128, this.height / 2 - 128, 0, 0, 256, 256);
+        }
     }
 }

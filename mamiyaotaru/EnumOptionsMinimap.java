@@ -28,7 +28,7 @@ public enum EnumOptionsMinimap
 	TERRAIN("Terrain Depth", false, false, true),
 	SQUARE("Square Map", false, true, false),
 	OLDNORTH("Old North", false, true, false),
-	BEACONS("Waypoint Beacons", false, true, false),
+	BEACONS("Ingame Waypoints", false, false, true),
 	WELCOME("Welcome Screen", false, true, false),
 	THREADING("Threading", false, true, false),
 	ZOOM("option.minimapZoom", false, true, false),

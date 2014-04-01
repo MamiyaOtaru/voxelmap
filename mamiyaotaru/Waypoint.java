@@ -6,7 +6,6 @@ public class Waypoint {
     public int z;
     public int y;
     public boolean enabled;
-    public boolean showInWorld = true; // same for all waypoints: if in world display is on
     public boolean isDead = false; // has been deleted
     public float red = 0.0F;
     public float green = 1.0F;
@@ -29,12 +28,8 @@ public class Waypoint {
     }
         
     public void kill() {
-    	this.setDisplayInWorld(false);
+    	this.enabled = false;
     	this.isDead = true;
     }
     
-    public void setDisplayInWorld(boolean showInWorld) {
-    	this.showInWorld = showInWorld;
-    }
-
 }

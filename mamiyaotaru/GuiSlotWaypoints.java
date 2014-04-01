@@ -27,7 +27,6 @@ class GuiSlotWaypoints extends GuiSlot
         this.parentGui = par1GuiWaypoints;
         this.minimap = parentGui.minimap;
         this.waypoints = this.minimap.wayPts;
-  
         
 /*		for(Waypoint pt:waypoints) {
 			if I need to add to a local array or something instead of directly using minimap.wayPts
@@ -68,7 +67,7 @@ class GuiSlotWaypoints extends GuiSlot
         
         GuiWaypoints.getButtonEdit(this.parentGui).enabled = true;
         GuiWaypoints.getButtonDelete(this.parentGui).enabled = true;
-        GuiWaypoints.getButtonTeleport(this.parentGui).enabled = parentGui.canTeleport;
+        GuiWaypoints.getButtonTeleport(this.parentGui).enabled = parentGui.canTeleport();
         
         int leftEdge = this.parentGui.width / 2 - 92 - 16;
         byte var10 = 4;
@@ -107,7 +106,7 @@ class GuiSlotWaypoints extends GuiSlot
     protected void drawSlot(int par1, int par2, int par3, int par4, Tessellator par5Tessellator)
     {
     	Waypoint waypoint = this.waypoints.get(par1);
-        this.parentGui.drawCenteredString(this.parentGui.getFontRenderer(), waypoint.name, this.parentGui.width / 2, par3 + 1, waypoint.getUnified());
+        this.parentGui.drawCenteredString(this.parentGui.getFontRenderer(), waypoint.name, this.parentGui.width / 2, par3 + 3, waypoint.getUnified());
         
         // tooltip(s? maybe have different ones when moused over display or not icon)
         //System.out.println("par1: " + par1 + " x: " + this.mouseX + " par2: " + par2 + " y: " + this.mouseY + " par3: " + par3 + " par4: " + par4);

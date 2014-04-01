@@ -63,6 +63,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/*Textures for each zoom level*/
 	private BufferedImage[] map = new BufferedImage[4];
+	
+	/*color picker used by menu for waypoint color*/
+	public BufferedImage colorPicker;
 
 	/*Block colour array*/
 	private int[] blockColors = new int[4096];
@@ -155,12 +158,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 	/*Setting file access*/
 	private File settingsFile;
-
+	
+	/*current (integrated) server.  for injecting command when logging in to same singleplayer world twice in a row*/
+	MinecraftServer server;
+	
 	/*Name of World currently loaded*/
 	private String worldName = "";
 	
 	/*Current Texture Pack*/
-	private TexturePackBase pack = null;
+	private ITexturePack pack = null;
 
 	/*Is the scrollbar being dragged?*/
 	private boolean scrClick = false;
@@ -213,7 +219,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public int northRotate = 0;
 	
 	/*Waypoint in world beacon toggle*/
-	private boolean showBeacons = true;
+	public boolean showBeacons = true;
+	
+	/*Waypoint in world beacon toggle*/
+	public boolean showWaypoints = false;
 
 	/*Show welcome message toggle*/
 	private boolean welcome = true;
@@ -223,6 +232,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/*old 2d Waypoint names and data*/
 	public ArrayList<Waypoint> old2dWayPts;
+	
+	/*waypionts that have ben updated and should be removed from old2dwaypoints*/
+	public ArrayList<Waypoint> updatedPts;
 
 	/*Map calculation thread*/
 	public Thread zCalc = new Thread(this);
@@ -422,23 +434,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
 		
-		if (this.timer == 200 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
-			if (old2dWayPts.size() < 1)
-				return; // don't bother if there are no old waypoints
-			ArrayList<Waypoint> updatedPts = new ArrayList<Waypoint>();
-			for(Waypoint pt:old2dWayPts) {
-				if (java.lang.Math.abs(pt.x - this.xCoord()) < 400 && java.lang.Math.abs(pt.z - this.zCoord()) < 400 && this.game.thePlayer.worldObj.getChunkFromBlockCoords(pt.x, pt.z).isChunkLoaded) { // is math.abs cheaper than getchunkfromblockcoords.ischunkloaded?
-					pt.y = this.game.thePlayer.worldObj.getHeightValue(pt.x, pt.z);
-					updatedPts.add(pt);
-					this.saveWaypoints();
-				}
-			}
-			for(Waypoint pt:updatedPts) {
-				this.graduateOld2dWaypoint(pt);
-				System.out.println("remaining old 2d waypoints: " + this.old2dWayPts.size());
-			}
-		}
-		
 		if (this.enabled) {
 
 			GL11.glDisable(GL11.GL_DEPTH_TEST);
@@ -465,6 +460,23 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				if(coords) showCoords(scWidth, scHeight);
 				if (radar != null && this.radarAllowed)
 					radar.OnTickInGame(mc);
+			}
+		}
+		
+		if (this.timer == 200 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
+			if (old2dWayPts.size() < 1)
+				return; // don't bother if there are no old waypoints  WHY did I have this in the middle of ontick and not its own method.  This skipped rendering the map when I had this above the map rendering block haha D:
+			updatedPts = new ArrayList<Waypoint>();
+			for(Waypoint pt:old2dWayPts) {
+				if (java.lang.Math.abs(pt.x - this.xCoord()) < 400 && java.lang.Math.abs(pt.z - this.zCoord()) < 400 && this.game.thePlayer.worldObj.getChunkFromBlockCoords(pt.x, pt.z).isChunkLoaded) { // is math.abs cheaper than getchunkfromblockcoords.ischunkloaded?
+					pt.y = this.game.thePlayer.worldObj.getHeightValue(pt.x, pt.z);
+					updatedPts.add(pt);
+					this.saveWaypoints();
+				}
+			}
+			for(Waypoint pt:updatedPts) {
+				this.graduateOld2dWaypoint(pt);
+				System.out.println("remaining old 2d waypoints: " + this.old2dWayPts.size());
 			}
 		}
 	
@@ -502,18 +514,19 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			if (mapName != null) {
 				mapName = mapName.toLowerCase(); //.split(":"); we are fine with port.  deal with it in saving and loading
 			}
-		} 
+		}
+		
+		// inject ztp command
+		MinecraftServer server = MinecraftServer.getServer();
+		if (server != null && server != this.server) {
+			this.server = server;
+			ICommandManager commandManager = server.getCommandManager();
+			ServerCommandManager manager = ((ServerCommandManager) commandManager);
+			manager.registerCommand(new CommandServerZanTp(this));
+		}
 
 		if(!worldName.equals(mapName) && (mapName != null)) {
 		
-			// inject ztp command
-			MinecraftServer server = MinecraftServer.getServer();
-    		if (server != null) {
-    			ICommandManager commandManager = server.getCommandManager();
-    			ServerCommandManager manager = ((ServerCommandManager) commandManager);
-    			manager.registerCommand(new CommandServerZanTp(this));
-    		}
-			
 			worldName = mapName;
 			loadWaypoints();
 			populateOld2dWaypoints();
@@ -559,6 +572,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		
 		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
 			pack = game.texturePackList.getSelectedTexturePack();
+			loadColorPicker();
 			try {
 			//	new Thread(new Runnable() { // load in a thread so we aren't blocking, particularly for giant texture packs
 			//		public void run() {
@@ -589,7 +603,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (toDel != -1)
 			this.deleteWaypoint(toDel); // remove previous
 		
-		addWaypoint("Latest Death", this.xCoord(), this.zCoord(), this.yCoord(), true, 255, 255, 255, "skull");
+		addWaypoint("Latest Death", this.xCoord(), this.zCoord(), this.yCoord(), true, 1, 1, 1, "skull");
 		
 		this.hide = currentlyHiding;
 	}
@@ -940,6 +954,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						oldNorth = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Waypoint Beacons"))
 						showBeacons = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Waypoint Signs"))
+						showWaypoints = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Welcome Message"))
 						welcome = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Zoom Key"))
@@ -999,6 +1015,11 @@ public class ZanMinimap implements Runnable { // implements Runnable
         }*/
 
 	}
+	
+    public static ZanMinimap getInstance()
+    {
+        return instance;
+    }
 	
 	public Object getPrivateFieldByName (Object o, String fieldName) {   
 
@@ -1281,6 +1302,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		blockColors[blockColorID(136, 1)] = 0x9f714a;
 		blockColors[blockColorID(136, 2)] = 0x9f714a;
 		blockColors[blockColorID(136, 3)] = 0x9f714a;
+		blockColors[blockColorID(137, 0)] = 0xb88f74; // command block
+		blockColors[blockColorID(138, 0)] = 0x7be0da; // beacon block
 	}
 
 	private final int blockColorID(int blockid, int meta) {
@@ -1331,6 +1354,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			out.println("Square Map:" + Boolean.toString(squareMap));
 			out.println("Old North:" + Boolean.toString(oldNorth));
 			out.println("Waypoint Beacons:" + Boolean.toString(showBeacons));
+			out.println("Waypoint Signs:" + Boolean.toString(showWaypoints));
 			out.println("Welcome Message:" + Boolean.toString(welcome));
 			out.println("Threading:" + Boolean.toString(threading));
 			out.println("Zoom Key:" + Keyboard.getKeyName(zoomKey));
@@ -1442,7 +1466,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public void loadWaypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
 		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
 		wayPts.add(newWaypoint);
-		newWaypoint.setDisplayInWorld(this.showBeacons);
 	}
 	
 	// get a list of all the waypoints that don't have a yvalue yet.  
@@ -1482,7 +1505,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public void addWaypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
 		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
 		wayPts.add(newWaypoint);
-		newWaypoint.setDisplayInWorld(this.showBeacons);
 		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
 		this.getWorld().addWeatherEffect(ewpt);
 		this.saveWaypoints();
@@ -1490,7 +1512,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	public void addWaypoint(Waypoint newWaypoint) {
 		wayPts.add(newWaypoint);
-		newWaypoint.setDisplayInWorld(this.showBeacons);
 		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
 		this.getWorld().addWeatherEffect(ewpt);
 		this.saveWaypoints();
@@ -1504,10 +1525,19 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			}
 		}
 	}
-	
-	private void displayWaypointEntities(boolean show) {
-		for(Waypoint wpt:wayPts) {
-			wpt.setDisplayInWorld(show);
+		
+	private void loadColorPicker() {
+		try {
+			InputStream is = pack.getResourceAsStream("/mamiyaotaru/colorPicker.png");
+			java.awt.Image picker = ImageIO.read(is);
+			colorPicker = new BufferedImage(picker.getWidth(null), picker.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+			java.awt.Graphics gfx = colorPicker.createGraphics();
+			// Paint the image onto the buffered image
+			gfx.drawImage(picker, 0, 0, null);
+			gfx.dispose();
+		}
+		catch (Exception e) {
+			System.out.println(e);
 		}
 	}
 	
@@ -1818,6 +1848,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(136, 1)] = getColor(terrainBuff, 199);
 			blockColors[blockColorID(136, 2)] = getColor(terrainBuff, 199);
 			blockColors[blockColorID(136, 3)] = getColor(terrainBuff, 199);
+			blockColors[blockColorID(137, 0)] = getColor(terrainBuff, 184); // command block
+			blockColors[blockColorID(138, 0)] = getColor(terrainBuff, 41); // beacon block
 
 		    this.timer = 300; // force rerender with texture pack colors now that they are loaded
 		}
@@ -1896,7 +1928,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			gfx.dispose();
     			waterMult = waterColorBuff.getRGB(waterColorBuff.getWidth()*76/256, waterColorBuff.getHeight()*112/256) & 0x00FFFFFF;
     		}
-    		if (waterMult != -1) 
+    		if (waterMult != -1 && waterMult != 0) // && != 0 cause some packs (ravands!) have completely transparent areas in watercolorX (ie no multiplier applied at all most of the time)
     			waterRGB = this.colorMultiplier(waterBase, waterMult);
     		else
     			waterRGB = waterBase;
@@ -2143,6 +2175,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					if (scaleChanged) {
 						GL11.glClearColor (0.0f, 0.0f, 0.0f, 0.0f);
 						GL11.glClear (GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);            
+						// "draw same circle each time" means we only need to draw the circle when the scale changes: move it inside the if block
+						// this works beccause the blendfuncseparate that sets source alpha to dst color doesn't seem to care what that color is.  Anything but see through means it's drawn on
+						// so last tick's round map serves fine as the stencil for the next one
+						// except when not all local chunks are loaded, then we get artifacts when turning.  It's only right at the start, but looks bad man.  back out
 					}
 					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);  
 					this.disp(scScale>=3?this.img("/mamiyaotaru/circle2x.png"):this.img("/mamiyaotaru/circle.png")); 
@@ -2168,7 +2204,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					else 
 						GL11.glTranslatef(-1.0f, 1.0f, 0.0f);
 					drawPre();
-					// position of the texture to put on the vertexes is flipped in Y (ie last number is 1 instead of 0 and vice versa) because minecraft has things upside down in the ortho.  Upside down FBO makes it upside down twice, akaa out of whack with minecraft 
+					// position of the texture to put on the vertexes is flipped in Y (ie last number is 1 instead of 0 and vice versa) because minecraft has things upside down in the ortho.  Upside down FBO makes it upside down twice, aka out of whack with minecraft 
 					ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
 					ldrawthree(256, 256, 1.0D, 1.0D, 0.0D);
 					ldrawthree(256, 0, 1.0D, 1.0D, 1.0D);  
@@ -2201,16 +2237,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					java.awt.Graphics2D gfx = roundImage.createGraphics();
 					gfx.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON);
 					gfx.setClip(ellipse);
+					//gfx.drawImage((this.map[this.zoom]).getScaledInstance(diameter, diameter, BufferedImage.SCALE_REPLICATE),0,0,null);
+					// just draw it enlarged instead of creating a new scaled instance every time
 					//gfx.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_NEAREST_NEIGHBOR);
-					//gfx.drawImage(this.map[this.zoom],0,0,diameter,diameter,null); // just draw it enlarged instead of creating a new scaled instance every time
+					//gfx.drawImage(this.map[this.zoom],0,0,diameter,diameter,null); 
 					// why enlarge it here at all?  opengl should do it faster.. but it will enlarge (in the case of the smaller ones) the massively aliased clipped one, with huge multi pixel jaggies around the edge.  Enlarge here into a larger (less aliased) clip for smoother edges even while the "pixels" are large
 					// deal with it, it is faster
-					//gfx.drawImage((this.map[this.zoom]).getScaledInstance(diameter, diameter, BufferedImage.SCALE_REPLICATE),0,0,null);
 					gfx.drawImage(this.map[this.zoom],0,0,null); //(let opengl do it)
 					gfx.dispose();
 					
 								// 	GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // used for light info stored in alpha channel
-					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); // pasted on image uses alpha of BG - can stencil it out, but images own alpha goes away
+					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); 
 					if (this.zoom == 3) {
 						GL11.glPushMatrix();
 						GL11.glScalef(0.5f, 0.5f, 1.0f);
@@ -2366,13 +2403,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	     GL11.glBindTexture(GL11.GL_TEXTURE_2D, fboTextureID); // Bind the colorbuffer texture
 	    // GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, GL11.GL_REPEAT);
 	    // GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, GL11.GL_REPEAT);
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
+	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST); 
+	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); // TODO
+	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 	     GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA, GL11.GL_BYTE, byteBuffer); // Create the texture data
 
 	     EXTFramebufferObject.glFramebufferTexture2DEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, EXTFramebufferObject.GL_COLOR_ATTACHMENT0_EXT, GL11.GL_TEXTURE_2D, fboTextureID, 0);  // attach it to the framebuffer
 	     
-	     EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // Swithch back to normal framebuffer rendering
+	     EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // Switch back to normal framebuffer rendering
 	}
 
 	private void showMenu (int scWidth, int scHeight) { 
@@ -2770,6 +2809,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
             else if (this.slopemap) return "Slope";
             else return "Off";
         }
+        if (par1EnumOptions == EnumOptionsMinimap.BEACONS)
+        {
+            if (this.showBeacons && this.showWaypoints) return "Both";
+            else if (this.showBeacons) return "Beacons";
+            else if (this.showWaypoints) return "Signs"; 
+            else return "Off";
+        }
         else
         {
             return "";
@@ -2824,8 +2870,22 @@ public class ZanMinimap implements Runnable { // implements Runnable
                 break;
                 
             case 8:
-            	showBeacons = !showBeacons;
-            	this.displayWaypointEntities(showBeacons); // calls method to iterate through them and tell them to be off so the renderers (not referenced here) know to turn off 
+                if (this.showBeacons && this.showWaypoints) {
+                	this.showBeacons = false;
+                	this.showWaypoints = false;
+                }
+                else if (this.showBeacons) {
+                	this.showBeacons = false;
+                	this.showWaypoints = true;
+                }
+                else if (this.showWaypoints) {
+                	this.showWaypoints = true;
+                	this.showBeacons = true;
+                }
+                else {
+                	this.showBeacons = true;
+                	this.showWaypoints = false;
+                }
                 break;
                 
             case 9:
@@ -2845,8 +2905,5 @@ public class ZanMinimap implements Runnable { // implements Runnable
         }
 		this.timer=500; // re-render immediately for new options
 	}
-
-    
-    
 	
 }
