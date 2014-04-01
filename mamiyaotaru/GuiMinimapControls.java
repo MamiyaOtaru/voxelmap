@@ -180,4 +180,11 @@ public class GuiMinimapControls extends GuiScreen
 
         super.drawScreen(par1, par2, par3);
     }
+    
+    /**
+     * Called when the screen is unloaded. Used to disable keyboard repeat events
+     */
+    public void onGuiClosed() {
+    	this.options.saveAll();
+    }  
 }

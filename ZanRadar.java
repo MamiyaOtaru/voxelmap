@@ -69,10 +69,10 @@ public class ZanRadar {
 	private float direction = 0.0f;
 	
 	/*Last X coordinate rendered*/
-	private int lastX = 0;
+	private double lastX = 0;
 
 	/*Last Z coordinate rendered*/
-	private int lastZ = 0;
+	private double lastZ = 0;
 	
 	/*Last Y coordinate rendered*/
 	private int lastY = 0;
@@ -574,7 +574,7 @@ public class ZanRadar {
 		if (this.enabled && !this.hide && !minimap.hide  && !minimap.fullscreenMap) {
 			
 			// don't recalculate mobs all the time.  doesn't seem to affect FPS, whatev
-			if (this.timer>95) { // not multiple of 100 so doesn't happen at same time as map render
+			if (this.timer>0) { // not multiple of 100 so doesn't happen at same time as map render
 				calculateMobs();
 				timer = 0;
 			}
@@ -620,6 +620,14 @@ public class ZanRadar {
 	private int yCoord() {
 		return (int)this.game.thePlayer.posY - 1; // player is one higher than other entities, even other players (WTF)
 	}
+	
+	public double xCoordDouble() {
+		return (this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
+	}
+
+	public double zCoordDouble() {
+		return (this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
+	}
 
 	
 	public void calculateMobs () {
@@ -647,7 +655,7 @@ public class ZanRadar {
 						if (isPlayer(entity)) 
 							contacts.add(handleMPplayer(entity));
 						else  {
-							Contact contact = new Contact((int)(entity.posX), (int)(entity.posZ), (int)(entity.posY), getContactType(entity));
+							Contact contact = new Contact(/*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
 							if (contact.type == GHAST || contact.type == WITHER) {
 								contact.setEntity(entity); // allows us to display firing vs non firing icons for ghasts, invulnerable vs normal wither.  Need reference to the actual entity
 							}
@@ -671,8 +679,8 @@ public class ZanRadar {
 				return contact1.y - contact2.y;
 			}
 		});
-		this.lastX = this.xCoord();
-		this.lastZ = this.zCoord();
+		this.lastX = this.xCoordDouble();
+		this.lastZ = this.zCoordDouble();
 		this.lastY = this.yCoord();
 		this.lastZoom = this.minimap.lZoom;
 	}
@@ -680,7 +688,7 @@ public class ZanRadar {
 	private Contact handleMPplayer(Entity entity) {
 		String playerName = scrubCodes(((EntityOtherPlayerMP)entity).username);
 		String skinURL = ((EntityOtherPlayerMP)entity).skinUrl;
-		Contact mpContact = new Contact((int)(entity.posX), (int)(entity.posZ), (int)(entity.posY), getContactType(entity));
+		Contact mpContact = new Contact(/*(int)*/(entity.posX), /*(int)*/(entity.posZ), (int)(entity.posY), getContactType(entity));
 		mpContact.setName(playerName);
 		Integer ref = mpContacts.get(playerName); // don't load if already done
 		//System.out.println("***********CHECKING " + ref);
@@ -817,25 +825,25 @@ public class ZanRadar {
 		//return BLANK; // blank is a more sensible default than zombie
 	}
 	
+	private boolean singlePixelPer(int scale, int zoom) {
+		if (scale > 4)
+			return false;
+		if (scale >= 4)
+			return (zoom >= 3);
+		if (scale >= 3) 
+			return (zoom >= 3);
+		if (scale >= 2)
+			return (zoom >= 2);
+		if (scale >= 1)
+			return (zoom >= 1);
+		return true;
+	}
+	
 	public void renderMapMobs (int x, int y, int guiScale) {
 		//final long startTime = System.nanoTime();
 		// 0 is closest zoom.  16.  1 is out, 32. 2 is out 64
 		// so max distance is pow(2,lzoom)*16
 		double max = (Math.pow(2,minimap.lZoom) * 16 - 0);
-		if (this.lastX != this.xCoord() || this.lastZ != this.zCoord() || this.lastZoom != this.minimap.lZoom) {
-			this.lastX = this.xCoord();
-			this.lastZ = this.zCoord();
-			for(int j = 0; j < contacts.size(); j++) {
-				Contact contact = contacts.get(j);
-				int contactX = contact.x;
-				int contactZ = contact.z;
-				int wayX = this.xCoord() - contactX;
-				int wayZ = this.zCoord() - contactZ;
-				contact.angle = (float)Math.toDegrees(Math.atan2(wayX, wayZ));
-				// pow2,0 is 1.  /2 is 1/2.  so if hypot max 16/.5 < 31.  pow2,1 is 2. /2 is 1.  hypot max 32/1 < 31.  pow2,2 is 4. /2 is 2.  hypot max 64/2 < 31  
-				contact.distance = Math.sqrt((wayX*wayX)+(wayZ*wayZ))/(Math.pow(2,minimap.lZoom)/2);
-			}
-		}
 		if (this.lastY != this.yCoord() || this.lastZoom != this.minimap.lZoom) {
 			this.lastY = this.yCoord();
 			for(int j = 0; j < contacts.size(); j++) {
@@ -855,11 +863,29 @@ public class ZanRadar {
 		this.lastZoom = this.minimap.lZoom;
 		for(int j = 0; j < contacts.size(); j++) {
 			Contact contact = contacts.get(j);
-			int contactX = contact.x;
-			int contactZ = contact.z;
+			double contactX = contact.x;
+			double contactZ = contact.z;
 			int contactY = contact.y;
-			int wayX = this.xCoord() - contactX;
-			int wayZ = this.zCoord() - contactZ;
+			double wayX;
+			double wayZ;
+			if (false && singlePixelPer(this.minimap.scScale, this.lastZoom)) {
+				wayX = this.minimap.lastX - (int)contactX;
+				wayZ = this.minimap.lastZ - (int)contactZ;
+				wayX+=this.minimap.percentX*Math.pow(2,minimap.lZoom-1);
+				wayZ+=this.minimap.percentY*Math.pow(2,minimap.lZoom-1);
+				//System.out.println("precision not needed " + this.minimap.scScale + " " + this.lastZoom);
+			}
+			else {
+				wayX = this.minimap.lastXDouble - contactX;
+				wayZ = this.minimap.lastZDouble - contactZ;
+			}
+			if (this.minimap.lastXDouble < 0)
+				wayX++;
+			if (this.minimap.lastZDouble < 0)
+				wayZ++;
+			contact.angle = (float)Math.toDegrees(Math.atan2(wayX, wayZ));
+			// pow2,0 is 1.  /2 is 1/2.  so if hypot max 16/.5 < 31.  pow2,1 is 2. /2 is 1.  hypot max 32/1 < 31.  pow2,2 is 4. /2 is 2.  hypot max 64/2 < 31  
+			contact.distance = Math.sqrt((wayX*wayX)+(wayZ*wayZ))/(Math.pow(2,minimap.lZoom)/2);
 			int wayY = this.yCoord() - contactY;
 			//System.out.println("adjusted diff: " + adjustedDiff + " max: " + max + " brightness: " + brightness);
 			if (wayY < 0)
@@ -868,7 +894,7 @@ public class ZanRadar {
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // blacken out.  I guess GL_ONE could brighten up?  test if mapY is + or - if we go that way
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, contact.brightness);		
 
-			if ( (minimap.squareMap && Math.abs(wayX)/(Math.pow(2,this.minimap.lZoom)/2) <= 31 && Math.abs(wayZ)/(Math.pow(2,this.minimap.lZoom)/2) <= 31) || (!minimap.squareMap && contact.distance < 31) ) {
+			if ( (minimap.squareMap && Math.abs(wayX)/(Math.pow(2,this.minimap.lZoom)/2) <= 28.5 && Math.abs(wayZ)/(Math.pow(2,this.minimap.lZoom)/2) <= 28.5) || (!minimap.squareMap && contact.distance < 31) ) {
 				try {
 					GL11.glPushMatrix();
 					if (contact.type == PLAYER) {
@@ -886,6 +912,8 @@ public class ZanRadar {
 								contact.type = (((EntityWither)contact.entity).getTexture().equals("/mob/wither_invul.png"))?WITHERINVULNERABLE : WITHER;
 						}
 						this.disp(imageRef[contact.type][guiScale]);
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST); 
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST);
 					}
 					GL11.glTranslatef(x, y, 0.0F);
 					GL11.glRotatef(-contact.angle + (minimap.squareMap?minimap.northRotate:-this.direction), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top

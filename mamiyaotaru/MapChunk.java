@@ -61,6 +61,13 @@ public class MapChunk {
 	}
 	
 	public void checkIfChunkChanged() {
+		/*Chunk check = ZanMinimap.instance.getWorld().getChunkFromChunkCoords(x, z);
+		if (!chunk.equals(check)) {
+			chunk = check;
+			this.isLoaded = chunk.isChunkLoaded;
+			System.out.println("loading new chunk");
+			this.hasChanged = this.isLoaded;
+		}*/
 		if (!this.isLoaded) {
 			chunk = ZanMinimap.instance.getWorld().getChunkFromChunkCoords(x, z);
 			if (chunk.isChunkLoaded) {
@@ -69,6 +76,7 @@ public class MapChunk {
 				//System.out.println("chunk loaded " + this.x + " " + this.z);
 			}
 		}
+		//chunk = ZanMinimap.instance.getWorld().getChunkFromChunkCoords(x, z);
 		else if (chunk.isModified) {
 			//System.out.println("chunk modified " + this.x + " " + this.z);
 			this.hasChanged = true;

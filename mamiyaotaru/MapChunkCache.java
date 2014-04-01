@@ -85,7 +85,7 @@ public class MapChunkCache {
 		}
 	}
 	
-	private void fillAllChunks(int playerX, int playerZ) {
+	public void fillAllChunks(int playerX, int playerZ) {
 		Chunk currentChunk = ZanMinimap.instance.getWorld().getChunkFromBlockCoords(playerX, playerZ);
 		int middleX = width / 2;
 		int middleZ = height / 2;

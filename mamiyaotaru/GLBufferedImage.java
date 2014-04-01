@@ -22,6 +22,7 @@ import org.lwjgl.opengl.GL12;
 import net.minecraft.client.Minecraft;
 import net.minecraft.src.GLAllocation;
 import net.minecraft.src.RenderEngine;
+import net.minecraft.src.ZanMinimap;
 
 public class GLBufferedImage extends BufferedImage{
 
@@ -35,6 +36,11 @@ public class GLBufferedImage extends BufferedImage{
 		bytes = ((DataBufferByte) (this.getRaster().getDataBuffer())).getData();
 		buffer = ByteBuffer.allocateDirect(bytes.length).order(ByteOrder.nativeOrder());
 	}
+	
+	public void baleet() {
+		if (index != 0) 
+			GL11.glDeleteTextures(index);
+	}
 
 	public void write() {
 		if (index != 0) 
@@ -42,9 +48,27 @@ public class GLBufferedImage extends BufferedImage{
 
 		index = GL11.glGenTextures();
 		buffer.clear();
+
 		synchronized (lock) {
 			buffer.put(this.bytes);
 			this.buffer.position(0).limit(bytes.length);
+			// erase first row and column to deal with float precision in the map moving it as much as a (map sized) pixel
+			if (ZanMinimap.instance.squareMap) {
+				for (int t = 0; t < this.getWidth(); t++) {
+					buffer.put(t*4+3, (byte)0);
+					buffer.put(t*this.getWidth()*4+3, (byte)0);
+				}
+			}
+			if (ZanMinimap.instance.squareMap && (ZanMinimap.instance.lZoom > 0 || ZanMinimap.instance.percentX > 1)) {
+				for (int t = 0; t < this.getWidth(); t++) {
+					buffer.put(t*this.getWidth()*4+7, (byte)0);
+				}
+			}
+			if (ZanMinimap.instance.squareMap && (ZanMinimap.instance.lZoom > 0 || ZanMinimap.instance.percentY > 1)) {
+				for (int t = 0; t < this.getWidth(); t++) {
+					buffer.put(t*4+3+this.getWidth()*4, (byte)0);
+				}
+			}
 		}
 		GL11.glBindTexture(GL11.GL_TEXTURE_2D, index);
 		GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);

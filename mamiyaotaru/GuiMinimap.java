@@ -104,7 +104,6 @@ public class GuiMinimap extends GuiScreen
 
             if (par1GuiButton.id == 100)
             {
-                this.minimap.saveAll();
                 this.mc.displayGuiScreen(new GuiWaypoints(this, minimap));
             }
             

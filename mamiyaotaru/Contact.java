@@ -3,8 +3,8 @@ package net.minecraft.src.mamiyaotaru;
 import net.minecraft.src.Entity;
 
 public class Contact {
-	public int x;
-	public int z;
+	public double x;
+	public double z;
 	public int y;
 	public float angle;
 	public double distance;
@@ -16,7 +16,7 @@ public class Contact {
 	public Entity entity = null;
 
 	
-	public Contact(int x, int z, int y, int type) {
+	public Contact(double x, double z, int y, int type) {
 		this.x = x;
 		this.z = z;
 		this.y =y;

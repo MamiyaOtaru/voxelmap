@@ -3,6 +3,8 @@
  * and open the template in the editor.
  */
 package net.minecraft.src;
+import java.awt.AlphaComposite;
+import java.awt.Color;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.image.BufferedImage;
@@ -86,15 +88,24 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*color picker used by menu for waypoint color*/
 	public BufferedImage colorPicker;
 	
+	/*map Image, assembled in part from mapimage of texture pack*/
+	public BufferedImage mapImage;
+	
+	/*reference to it so I don't continually allocate it, and can delete it*/
+	private int mapImageInt = -1;
+	
 	/*watercolorX as a buffered image from which we can getRGB*/
 	private BufferedImage waterColorBuff;
 
 	/*Block colour array*/
 	private int[] blockColors = new int[65536]; // 4096 good enough for 256 blocks.  for 4096 blocks need 65536
 	
-	private static int COLOR_NOT_LOADED = 0xff00ff;
+	private static int COLOR_NOT_LOADED = 0xffff00ff;
 	
-	private static int COLOR_FAILED_LOAD = 0xff01ff;
+	private static int COLOR_FAILED_LOAD = 0xffff01ff;
+	
+	/* blocks that are rendered as a cross (from above).  mostly plants.  Also fire.  Keep fire?*/
+	private Integer[] vegetationIDS = {6, 31, 32, 37, 38, 39, 40, 51, 59, 83, 104, 105, 141, 142};
 	
 	/*use internal linear scale or more logarithmic looking minecraft scale*/
 	private boolean useInternalLightTable = false;
@@ -179,6 +190,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Key entry interval (ie, can only zoom once every 20 ticks)*/
 	private int inputFudge = 0;
 	
+	/*reset heightmap after some ticks*/
+	private int heightMapFudge = 0;
+	
 	/*needed for doing tasks occasionally, like checking for old waypoints*/
 	private int timer = 0;
 	
@@ -186,25 +200,40 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private boolean doFullRender = true;
 	
 	/*Last X coordinate rendered*/
-	private int lastX = 0;
+	public int lastX = 0;
 
 	/*Last Z coordinate rendered*/
-	private int lastZ = 0;
+	public int lastZ = 0;
 	
 	/*Last Y coordinate rendered*/
 	private int lastY = 0;
+	
+	/*Last X coordinate rendered - greater precision*/
+	public double lastXDouble = 0;
+
+	/*Last Z coordinate rendered - greater precision*/
+	public double lastZDouble = 0;
 	
 	/*Last gamma setting*/
 	private float lastGamma = 0;
 	
 	/*Last UI scale factor*/
-	private int scScale = 0;
+	public int scScale = 0;
 	
 	/*Last zoom level rendered at*/
 	public int lZoom = 0;
 	
 	/*Direction you're facing*/
 	private float direction = 0.0f;
+	
+	/*fine adjustment for player's position for positioning map image*/
+	public float percentX;
+	
+	public float percentY;
+	
+	/* only for squaremap, zoomed all the way in, with filtering.  to know whether to draw image again, while cutting off more of the edge*/
+	public boolean lastPercentXOver = false;
+	public boolean lastPercentYOver = false;
 
 	/*Setting file access*/
 	private File settingsFile;
@@ -220,11 +249,6 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	private BufferedImage terrainBuff = null;
 	private BufferedImage terrainBuffTrans = null;
-	
-	/*Current texture pack's water alpha level*/
-	int waterAlpha = 0;
-	
-	private int waterBase = -1;
 	
     public KeyBinding keyBindZoom = new KeyBinding("Zoom", Keyboard.KEY_Z);
     public KeyBinding keyBindMenu = new KeyBinding("Menu", Keyboard.KEY_M);
@@ -250,6 +274,12 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/*Terrain depth toggle*/
 	private boolean heightmap = multicore;
 	
+	/*rerender height mapping after height changes by this much*/
+	private int heightMapResetHeight = multicore?2:5;
+	
+	/*or after this amount of time has passed*/
+	private int heightMapResetTime = multicore?300:3000;
+	
 	/*Terrain bump toggle*/
 	private boolean slopemap = true;
 	
@@ -257,13 +287,16 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	boolean filtering = true;
 	
 	/*Transparency (water only ATM) toggle */
-	boolean transparency = multicore;
+	boolean waterTransparency = multicore;
 	
 	/*Show biome colors*/
 	boolean biomes = multicore;
 	
 	/*Square map toggle*/
 	public boolean squareMap = false;
+	
+	/*keep track if squaremap has changed*/
+	public boolean lastSquareMap = false;
 
 	/*Old north toggle*/
 	public boolean oldNorth = false;
@@ -387,8 +420,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						slopemap = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Filtering"))
 						filtering = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Transparency"))
-						transparency = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Water Transparency"))
+						waterTransparency = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Biomes"))
 						biomes = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Square Map"))
@@ -801,12 +834,21 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			GL11.glDepthMask(false);
 			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO);//GL11.GL_ONE_MINUS_SRC_ALPHA);
 			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+			float multi = 2f/(float)Math.pow(2, this.lZoom);
+			percentX = (float)this.xCoordDouble()-lastX;
+			if (lastX < 0)
+				percentX = percentX + 1f;
+			percentX = percentX * multi;
+			percentY = (float)this.zCoordDouble()-lastZ;
+			if (lastZ < 0)
+				percentY = percentY + 1;
+			percentY = percentY * multi;
 			if (this.showNether || this.game.thePlayer.dimension!=-1) {
 				if(this.fullscreenMap) 
 					renderMapFull(scWidth,scHeight);
 				else 
 					renderMap(mapX, mapY, scScale);
-			}					
+			}		
 
 			if (ztimer > 0)
 				this.write(this.error, 20, 20, 0xffffff);
@@ -944,16 +986,18 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			}
 		}
 		
-		if (this.getWorld() != null && !(this.getWorld().equals(world)) && this.wayPts != null) {
+		if (this.getWorld() != null && !(this.getWorld().equals(world))) {
 			changed = true;
 			this.world = this.getWorld();
 			injectWaypointEntities();
+			this.chunkCache[this.lZoom].fillAllChunks(this.xCoord(), this.zCoord());
 		}
 		
 		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
 			changed = true;
 			pack = game.texturePackList.getSelectedTexturePack();
 			loadColorPicker();
+			loadMapImage();
 			try {
 			//	new Thread(new Runnable() { // load in a thread so we aren't blocking, particularly for giant texture packs
 			//		public void run() {
@@ -1063,7 +1107,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		//zoom 2 = 64
 		//zoom 1 = 128
 		//zoom .5 = 256
+		//final long startTime = System.nanoTime();
 		this.chunkCache[this.lZoom].checkIfChunksChanged(this.xCoord(), this.zCoord());
+		//System.out.println(System.nanoTime()-startTime);
+
 	}
 		
 	private void mapCalc(boolean full) {
@@ -1076,6 +1123,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		int offsetY = startY - lastY;
 		this.lastX = startX;
 		this.lastZ = startZ;
+		this.lastXDouble = this.xCoordDouble();
+		this.lastZDouble = this.zCoordDouble();
 		this.lZoom = this.zoom;
 		int multi = (int)Math.pow(2, this.lZoom);
 		World world=this.getWorld();
@@ -1100,9 +1149,14 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				lastDaylight = skylightsubtract;
 			}
 		}
-		if (full || Math.abs(offsetY) > 1) {
+		if (offsetY != 0)
+			this.heightMapFudge++;
+		else if (heightMapFudge != 0)
+			heightMapFudge++;
+		if (full || Math.abs(offsetY) >= heightMapResetHeight || heightMapFudge > heightMapResetTime) {
 			this.lastY = startY;
 			needHeightMap = true;
+			heightMapFudge = 0;
 		}
 		if (offsetX > 32*multi || offsetX < -32*multi || offsetZ > 32*multi || offsetZ < -32*multi)
 			full = true;
@@ -1119,21 +1173,19 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (this.game.thePlayer.dimension!=-1)
 			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
 			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
-			if (cavesAllowed && showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+			if (cavesAllowed && showCaves && getWorld().getChunkFromBlockCoords(lastX, lastZ).getSavedLightValue(EnumSkyBlock.Sky, lastX & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), lastZ & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
 				caves = true;
 			else
 				caves = false;
 		else if (showNether) {
 			nether = true;
-			netherPlayerInOpen = (world.getHeightValue(xCoord(), zCoord()) < yCoord());
+			netherPlayerInOpen = (world.getHeightValue(lastX, lastZ) < yCoord());
 		}
 		else
 			return; // if we are nether and nether mapping is not on, just exit;
-		if (this.showCaves || this.showNether){
-			if (lastBeneathRendering != (caves || nether)) {
-				lastBeneathRendering = (caves || nether);
-				full = true;
-			}
+		if (lastBeneathRendering != (caves || nether)) {
+			lastBeneathRendering = (caves || nether);
+			full = true;
 		}
 		if (!full && offsetX == 0 && offsetZ == 0 && !needHeightMap && !needLight) // exit if nothing needs to be changed 
 			return;
@@ -1192,18 +1244,18 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (this.game.thePlayer.dimension!=-1)
 			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
 			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
-			if (cavesAllowed && showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+			if (cavesAllowed && showCaves && getWorld().getChunkFromBlockCoords(this.lastX, this.lastZ).getSavedLightValue(EnumSkyBlock.Sky, lastX & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), lastZ & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
 				caves = true;
 			else
 				caves = false;
 		else if (showNether) {
 			nether = true;
-			netherPlayerInOpen = (world.getHeightValue(xCoord(), zCoord()) < yCoord());
+			netherPlayerInOpen = (world.getHeightValue(lastX, lastZ) < yCoord());
 		}
 		else
 			return; // if we are nether and nether mapping is not on, just exit;
-		int startX = this.xCoord(); 
-		int startZ = this.zCoord();
+		int startX = this.lastX; 
+		int startZ = this.lastZ;
 		int multi = (int)Math.pow(2, this.lZoom);
 		startX -= 16*multi;
 		startZ -= 16*multi;
@@ -1244,6 +1296,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		int color24 = 0;
 		int height = 0;
 		boolean solid = false;
+		needMaterial = true;
 		if (needHeight) {
 			height = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
 			mapData[this.lZoom].setHeight(imageX, imageY, height); 
@@ -1255,36 +1308,38 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			solid = true;
 		}
 
-		int material = -1;
+		int blockID = -1;
 		int metadata = 0;
 		if (needMaterial) {
-			material = world.getBlockId(startX + imageX, height - 1, startZ + imageY);
+			blockID = world.getBlockId(startX + imageX, height - 1, startZ + imageY);
 			metadata = world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY);
-			mapData[this.lZoom].setMaterial(imageX, imageY, material);
+			if (biomes && blockID != mapData[this.lZoom].getMaterial(imageX, imageY))
+				needTint = true;
+			mapData[this.lZoom].setMaterial(imageX, imageY, blockID);
 			mapData[this.lZoom].setMetadata(imageX, imageY, metadata);
 		}
 		else {
-			material = mapData[this.lZoom].getMaterial(imageX, imageY);
+			blockID = mapData[this.lZoom].getMaterial(imageX, imageY);
 			metadata = mapData[this.lZoom].getMetadata(imageX, imageY);
 		}
 		if (this.rc) {
 			if ((world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-				color24 = getBlockColor(80,0); // snow
+				color24 = getBlockColor(80,0,false); // snow
 			else {
-				color24 = getBlockColor(material, metadata);
+				color24 = getBlockColor(blockID, metadata, false);
 			}
 		} 
 		else 
-			color24 = 0xFFFFFF;
+			color24 = 0xFFFFFFFF;
 		
 		if (color24 == this.COLOR_FAILED_LOAD)
 			color24 = 0;
 		
-		if (biomes && material != -1) {
+		if (biomes && blockID != -1) {
 			int tint = -1;
 			if (needTint) {
-				if (color24 != getBlockColor(80,0))
-					tint = getBiomeTint(material, metadata, startX + imageX, startZ + imageY);
+				if (color24 != getBlockColor(80,0,false))
+					tint = getBiomeTint(blockID, metadata, startX + imageX, startZ + imageY);
 				mapData[this.lZoom].setBiomeTint(imageX, imageY, tint);
 			}
 			else
@@ -1302,9 +1357,18 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		else {
 			light = mapData[this.lZoom].getLight(imageX, imageY);
 		}
-		color24 = light * 0x1000000 + color24 ;
+		if (light != 255) {
+	    	int alpha = (color24 >> 24 & 255);
+	        int r = (color24 >> 16 & 255);
+	        int g = (color24 >> 8 & 255);
+	        int b = (color24 >> 0 & 255);
+			r=r*light/255;
+			g=g*light/255;
+			b=b*light/255;
+			color24 = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
+		}
 
-		if (transparency && world.getBlockMaterial(startX + imageX, height - 1, startZ + imageY) == Material.water) { // fuuu get color from seafloor
+		if (waterTransparency && world.getBlockMaterial(startX + imageX, height - 1, startZ + imageY) == Material.water) { // fuuu get color from seafloor
 			int seafloorHeight;
 			if (needHeight) {
 				seafloorHeight = height - 1; // start one down obviously don't check if it's water again
@@ -1318,17 +1382,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			
 			int seafloorColor = 0;
 			if (needMaterial) {
-				material = world.getBlockId(startX + imageX, seafloorHeight - 1, startZ + imageY);
+				blockID = world.getBlockId(startX + imageX, seafloorHeight - 1, startZ + imageY);
 				metadata = world.getBlockMetadata(startX + imageX, seafloorHeight - 1, startZ + imageY);
-				mapData[this.lZoom].setOceanFloorMaterial(imageX, imageY, material);
+				mapData[this.lZoom].setOceanFloorMaterial(imageX, imageY, blockID);
 				mapData[this.lZoom].setOceanFloorMetadata(imageX, imageY, metadata);
 			}
 			else {
-				material = mapData[this.lZoom].getOceanFloorMaterial(imageX, imageY);
+				blockID = mapData[this.lZoom].getOceanFloorMaterial(imageX, imageY);
 				metadata = mapData[this.lZoom].getOceanFloorMetadata(imageX, imageY);
 			}
 			if (this.rc) {
-				seafloorColor = getBlockColor(material, metadata);
+				seafloorColor = getBlockColor(blockID, metadata, false);
 			} else seafloorColor = 0xFFFFFF;
 			//System.out.println(color24 + " - " + seafloorColor);
 			seafloorColor = applyHeight(seafloorColor, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
@@ -1340,9 +1404,69 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			else {
 				seafloorLight = mapData[this.lZoom].getOceanFloorLight(imageX, imageY);
 			}
-			seafloorColor = seafloorLight * 0x1000000 + seafloorColor ;
+			if (seafloorLight != 255) {
+		    	int alpha = (seafloorColor >> 24 & 255);
+		        int r = (seafloorColor >> 16 & 255);
+		        int g = (seafloorColor >> 8 & 255);
+		        int b = (seafloorColor >> 0 & 255);
+				r=r*seafloorLight/255;
+				g=g*seafloorLight/255;
+				b=b*seafloorLight/255;
+				seafloorColor = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
+			}
 			color24 = colorAdder(color24, seafloorColor);
 		}
+		
+		if (true /*blockTransparency*/) {
+			int transparentID = 0;
+			int transparentMetadata = 0;
+			Material material = world.getBlockMaterial(startX + imageX, height, startZ + imageY);
+			if (material != Material.snow && material != Material.air) { // apply colors
+				transparentID = world.getBlockId(startX + imageX, height, startZ + imageY);
+				transparentMetadata = world.getBlockMetadata(startX + imageX, height, startZ + imageY);
+				//if (Arrays.asList(vegetationIDS).contains(transparentID)) { // this is a plant
+					int color = getBlockColor(transparentID, transparentMetadata, true);
+					if (transparentID == 31) {
+						int tint = mapData[this.lZoom].getBiomeTint(imageX, imageY);
+						color = colorMultiplier(color, tint);
+					}
+					color = applyHeight(color, nether, netherPlayerInOpen, caves, world, multi, startX, startZ, imageX, imageY, height, solid);
+					if (light != 255) {
+				    	int alpha = (color >> 24 & 255);
+				        int r = (color >> 16 & 255);
+				        int g = (color >> 8 & 255);
+				        int b = (color >> 0 & 255);
+						r=r*light/255;
+						g=g*light/255;
+						b=b*light/255;
+						color = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
+					}
+					
+					color24 = colorAdder(color, color24);
+					
+				//}
+			}
+		}
+		/* transparency of plants etc
+		 * 
+		 * for grass, flowers, shrooms
+		 * look at
+		 * RenderBlocks.renderCrossedSquares() <- gets biome color
+		 * drawCrossedSquares() <- draws.  gets the icon
+		 * 
+		 * cactus: 
+		 * renderBlockCactus()
+		 * renderBlockCactusImpl()
+		 * renderTopFace()
+		 * func_94170_a() returns icon  (1 is top face)
+		 * 
+		 * fence:
+		 * renderBlockFence()
+		 * gets to renderStandardBlockWithAmbientOcclusion() eventually
+		 * grabis icon with func_94170_a()
+		 * 
+		 * 
+		 */
 		return color24;
 	}
 	
@@ -1391,13 +1515,32 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	            }
 	        }
 
-	        tint = (r / 9 & 255) << 16 | (g / 9 & 255) << 8 | b / 9 & 255;
+	        tint = 255 << 24 | (r / 9 & 255) << 16 | (g / 9 & 255) << 8 | b / 9 & 255;
 		}
 		return tint;
 	}
 	
     private int colorAdder(int color1, int color2)
     {
+    	int waterAlpha = (int)((color1 >> 24 & 255));// * waterAlpha/256);
+        int red1 = (int)((color1 >> 16 & 255) * waterAlpha/255);
+        int green1 = (int)((color1 >> 8 & 255) * waterAlpha/255);
+        int blue1 = (int)((color1 >> 0 & 255) * waterAlpha/255);
+
+        int red2 = (int)((color2 >> 16 & 255)* (255-waterAlpha)/255);
+        int green2 = (int)((color2 >> 8 & 255)* (255-waterAlpha)/255);
+        int blue2 = (int)((color2 >> 0 & 255)* (255-waterAlpha)/255);
+        
+        int red = red1 + red2;// / 2;
+        int green = green1 + green2;// / 2;
+        int blue = blue1 + blue2;// / 2;
+       
+        return 255 << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+       // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
+       // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
+       // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
+        
+        /*// lighting in alpha
     	int alpha1 = 0;
     	int alpha2 = 0;
     	if ((color1 >> 24 & 255) > (color2 >> 24 & 255)) {
@@ -1423,6 +1566,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
         int blue = Math.max(0, Math.min(255, (blue1 + blue2)));
 
         return (alpha) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+        */
     }
     /*
      * adder for when light is stored directly in colors instead of in alpha
@@ -1525,22 +1669,24 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					sc = Math.log10(Math.abs(diff)/8.0D+1.0D)/1.8D;
 					if (diff < 0) sc = 0 - sc;
 				}
+				
+		    	int alpha = (color24 >> 24 & 255);
+		        int r = (color24 >> 16 & 255);
+		        int g = (color24 >> 8 & 255);
+		        int b = (color24 >> 0 & 255);
 
-				int r = color24 / 0x10000;
-				int g = (color24 - r * 0x10000)/0x100;
-				int b = (color24 - r * 0x10000-g*0x100);
-
-				if (sc>=0) {
+				if (sc>0) {
 					r = (int)(sc * (0xff-r)) + r;
 					g = (int)(sc * (0xff-g)) + g;
 					b = (int)(sc * (0xff-b)) + b;
-				} else {
+				} 
+				else if (sc<0) {
 					sc=Math.abs(sc);
 					r = r -(int)(sc * r);
 					g = g -(int)(sc * g);
 					b = b -(int)(sc * b);
 				}
-				color24 = r * 0x10000 + g * 0x100 + b;
+				color24 = alpha * 0x1000000 + r * 0x10000 + g * 0x100 + b;
 			}
 		}
 		return color24;
@@ -1565,7 +1711,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				}
 			}
 			/*else*/ if (solid) 
-				i3 = 26; // needs to be at least 26 if storing light in the alpha channel
+				i3 = 27; // needs to be at least 26 if storing light in the alpha channel
 
 			if(i3 > 255) i3 = 255;
 
@@ -1575,8 +1721,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						i3 = 76; // nether shows some light even in the dark so you can see nether surface that isn't lit.  If it's solid though leave it black
 				}
 				else {
-					if(i3<26) 
-						i3 = 26; // solid is black
+					if(i3<0) 
+						i3 = 0; // solid is black
 				}
 			}
 			else if (caves) {
@@ -1585,8 +1731,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						i3 = 32; // caves darker than nether
 				}
 				else {
-					if(i3<26) 
-						i3 = 26; // solid is black
+					if(i3<0) 
+						i3 = 0; // solid is black
 				}
 			}
 			else { // overworld
@@ -1615,6 +1761,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
 		Chunk chunk = world.getChunkFromChunkCoords(x >> 4, z >> 4);
 		return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); 
+		
 	}
 	
 	//END UPDATE SECTION
@@ -1625,15 +1772,22 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		return (blockid) | (meta << 12);  //  8 is good enough for 256 blocks.  for 4096 blocks need to shift 12
 	}
 
-	private final int getBlockColor(int blockid, int meta) {
+	private final int getBlockColor(int blockid, int meta, boolean transparency) {
 		try {
 			if (blockColors[blockColorID(blockid, meta)] == COLOR_NOT_LOADED)
-				blockColors[blockColorID(blockid, meta)] = getColor(terrainBuff, blockid, meta); 
+				if (transparency)
+					blockColors[blockColorID(blockid, meta)] = getColor(terrainBuffTrans, blockid, meta, true);
+				else
+					blockColors[blockColorID(blockid, meta)] = getColor(terrainBuff, blockid, meta);			
 			int col = blockColors[blockColorID(blockid, meta)];
 			if (col != COLOR_FAILED_LOAD) 
 				return col;
-			if (blockColors[blockColorID(blockid, 0)] == COLOR_NOT_LOADED)
-				blockColors[blockColorID(blockid, 0)] = getColor(terrainBuff, blockid, 0); 
+			if (blockColors[blockColorID(blockid, 0)] == COLOR_NOT_LOADED) {
+				if (transparency)
+					blockColors[blockColorID(blockid, 0)] = getColor(terrainBuffTrans, blockid, 0, true);
+				else
+					blockColors[blockColorID(blockid, 0)] = getColor(terrainBuff, blockid, 0);
+			}
 			col = blockColors[blockColorID(blockid, 0)];
 			if (col != COLOR_FAILED_LOAD) 
 				return col;
@@ -1661,6 +1815,34 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			// Paint the image onto the buffered image
 			gfx.drawImage(picker, 0, 0, null);
 			gfx.dispose();
+		}
+		catch (Exception e) {
+			System.out.println(e);
+		}
+	}
+	
+	private void loadMapImage() {
+		if (this.mapImageInt != -1)
+			this.glah(mapImageInt);
+		try {
+			InputStream is = pack.getResourceAsStream("/misc/mapbg.png");
+			java.awt.Image tpMap = ImageIO.read(is);
+			is.close();
+			mapImage = new BufferedImage(tpMap.getWidth(null), tpMap.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+			java.awt.Graphics2D gfx = mapImage.createGraphics();
+			gfx.setColor(Color.DARK_GRAY);
+			gfx.fillRect(0, 0, mapImage.getWidth(), mapImage.getHeight());
+			// Paint the image onto the buffered image
+			gfx.drawImage(tpMap, 0, 0, null);
+			int border;
+			//if (mapImage.getWidth() > 64) // bleed through with filtering fuuuu
+			//	border = mapImage.getWidth()*7/128;
+			//else
+				border = mapImage.getWidth()*8/128;
+			gfx.setComposite(AlphaComposite.Clear);
+			gfx.fillRect(border, border, mapImage.getWidth()-border*2, mapImage.getHeight()-border*2);
+			gfx.dispose();
+			this.mapImageInt = this.tex(mapImage);
 		}
 		catch (Exception e) {
 			System.out.println(e);
@@ -1755,8 +1937,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			if (biomes)
 				blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 2, 0);
 			else // apply a default color
-				blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
-			getWaterColor(transparency?terrainBuffTrans:terrainBuff);
+				blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) | 0xFF000000;
+			getWaterColor(waterTransparency?terrainBuffTrans:terrainBuff);
 			getLavaColor(terrainBuff);
 			//blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 53); // leaves
 			//blockColors[blockColorID(18, 1)] = getColor(terrainBuff, 133);
@@ -1769,10 +1951,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 18, 3);
 			}
 			else {
-				blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
-				blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
-				blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
-				blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
+				blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
+				blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) | 0xFF000000;
+				blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) | 0xFF000000;
+				blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
 			}
 			
 			getCTMcolors();
@@ -1790,7 +1972,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		if (biomes)
 			blockColors[blockColorID(2, 0)] = getColor(terrainBuff, 2, 0);
 		else // apply a default color
-			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) & 0x00FFFFFF;
+			blockColors[blockColorID(2, 0)] = colorMultiplier(getColor(terrainBuff, 2, 0), ColorizerGrass.getGrassColor(0.7, 0.8)) | 0xFF000000;
 
 		if (biomes) {
 			blockColors[blockColorID(18, 0)] = getColor(terrainBuff, 18, 0);
@@ -1799,10 +1981,10 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(18, 3)] = getColor(terrainBuff, 18, 3);
 		}
 		else {
-			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
-			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) & 0x00FFFFFF;
-			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) & 0x00FFFFFF;
-			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) & 0x00FFFFFF;
+			blockColors[blockColorID(18, 0)] = colorMultiplier(getColor(terrainBuff, 18, 0), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
+			blockColors[blockColorID(18, 1)] = colorMultiplier(getColor(terrainBuff, 18, 1), ColorizerFoliage.getFoliageColorPine()) | 0xFF000000;
+			blockColors[blockColorID(18, 2)] = colorMultiplier(getColor(terrainBuff, 18, 2), ColorizerFoliage.getFoliageColorBirch()) | 0xFF000000;
+			blockColors[blockColorID(18, 3)] = colorMultiplier(getColor(terrainBuff, 18, 3), ColorizerFoliage.getFoliageColor(0.7,  0.8)) | 0xFF000000;
 		}
 	}
 	
@@ -1810,30 +1992,48 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		getWaterColor(transparency?terrainBuffTrans:terrainBuff);
 	}
 	
+	// default to not retaining transparency
 	private int getColor(BufferedImage image, int blockID, int metadata) {
+		return getColor(image, blockID, metadata, false);
+	}
+	
+	private int getColor(BufferedImage image, int blockID, int metadata, boolean retainTransparency) {
 		try {
-	    Icon icon = Block.blocksList[blockID].getBlockTextureFromSideAndMetadata(1, metadata); // 1 is top
-	    int left = (int)(icon.func_94209_e()*image.getWidth());
-	    int right = (int)(icon.func_94212_f()*image.getWidth());
-	    int top = (int)(icon.func_94206_g()*image.getHeight());
-	    int bottom = (int)(icon.func_94210_h()*image.getHeight());
-	    		
-	    BufferedImage blockTexture = image.getSubimage(left, top, right-left, bottom-top);
-	    System.out.println(blockID + " " + metadata + " " + this.blockColorID(blockID, metadata));
-	    //System.out.println("dims: " + blockTexture.getWidth() + " " + blockTexture.getHeight());
-	    java.awt.Image singlePixel = blockTexture.getScaledInstance(1, 1, java.awt.Image.SCALE_SMOOTH);
-	    
-	    //System.out.println(blockID + " " + left + " " + top);
-	    
-	    BufferedImage singlePixelBuff = new BufferedImage(1, 1, image.getType());
-		java.awt.Graphics gfx = singlePixelBuff.createGraphics();
-	    //Paint the image onto the buffered image
-	    gfx.drawImage(singlePixel, 0, 0, null);
-	    gfx.dispose();
-		
-		return (singlePixelBuff.getRGB(0, 0) & 0x00FFFFFF); // the and dumps the alpha, in hex the ff at the beginning
+			int side = 1;
+			if (Arrays.asList(vegetationIDS).contains(blockID)) // if this is a plant, there is no top
+				side = 2;
+			if (blockID == 55)
+				System.out.println("here");
+			Icon icon = Block.blocksList[blockID].getBlockTextureFromSideAndMetadata(side, metadata); // 1 is top
+			if (blockID == 55)
+				System.out.println(icon.func_94215_i() + " " + icon.toString());
+			int left = (int)(icon.func_94209_e()*image.getWidth());
+			int right = (int)(icon.func_94212_f()*image.getWidth());
+			int top = (int)(icon.func_94206_g()*image.getHeight());
+			int bottom = (int)(icon.func_94210_h()*image.getHeight());
+
+			BufferedImage blockTexture = image.getSubimage(left, top, right-left, bottom-top);
+			//System.out.println(blockID + " " + metadata + " " + this.blockColorID(blockID, metadata));
+			//System.out.println("dims: " + blockTexture.getWidth() + " " + blockTexture.getHeight());
+			java.awt.Image singlePixel = blockTexture.getScaledInstance(1, 1, java.awt.Image.SCALE_SMOOTH);
+
+			//System.out.println(blockID + " " + left + " " + top);
+
+			BufferedImage singlePixelBuff = new BufferedImage(1, 1, image.getType());
+			java.awt.Graphics gfx = singlePixelBuff.createGraphics();
+			//Paint the image onto the buffered image
+			gfx.drawImage(singlePixel, 0, 0, null);
+			gfx.dispose();
+			
+			int color = singlePixelBuff.getRGB(0, 0);
+			if (retainTransparency)
+				return color;
+			else
+				return (color | 0xFF000000); // the or dumps the alpha, in hex the ff at the beginning (this sets it to 255, where the below sets it to 0)
+				//return (color & 0x00FFFFFF); // the and dumps the alpha, in hex the ff at the beginning
 		}
 		catch (Exception e) {
+			System.out.println("failed getting color: " + blockID + " " + metadata);
 			return COLOR_FAILED_LOAD;
 		}
 	}
@@ -1848,29 +2048,29 @@ public class ZanMinimap implements Runnable { // implements Runnable
 //		System.out.println("22 int: " + (image.getRGB(texX, texY) & 0x00FFFFFF));
 //		System.out.println("22 hex: " +  java.lang.Integer.toHexString(image.getRGB(texX, texY) & 0x00FFFFFF));
 		
-		return (image.getRGB(texX, texY) & 0x00FFFFFF); // the and dumps the alpha, in hex the ff at the beginning
+		return (image.getRGB(texX, texY) | 0xFF000000); // the and dumps the alpha, in hex the ff at the beginning
 	}
 	
     private int colorMultiplier(int color1, int color2)
     {
     	
-    	//int alpha1 = (color1 >> 24 & 255);
+    	int alpha1 = (color1 >> 24 & 255);
         int red1 = (color1 >> 16 & 255);
         int green1 = (color1 >> 8 & 255);
         int blue1 = (color1 >> 0 & 255);
 
-    	//int alpha2 = (color2 >> 24 & 255);
+    	int alpha2 = (color2 >> 24 & 255);
         int red2 = (color2 >> 16 & 255);
         int green2 = (color2 >> 8 & 255);
         int blue2 = (color2 >> 0 & 255);
         
-        //int alpha = alpha1 * alpha2 / 256;
-        int red = red1 * red2 / 256;
-        int green = green1 * green2 / 256;
-        int blue = blue1 * blue2 / 256;
+        int alpha = alpha1 * alpha2 / 255;
+        int red = red1 * red2 / 255;
+        int green = green1 * green2 / 255;
+        int blue = blue1 * blue2 / 255;
         
         
-        return /*(alpha & 255) << 24 |*/ (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+        return (alpha & 255) << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
        // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
        // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
        // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
@@ -1879,6 +2079,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
     
     private void getWaterColor(BufferedImage image) {
     	try {
+    		int waterBase;
     		int waterRGB = -1;
     		//int waterBase = -1;
     		InputStream is = pack.getResourceAsStream("/anim/custom_water_still.png");
@@ -1886,7 +2087,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			is = pack.getResourceAsStream("/custom_water_still.png");
     		}
     		if (is == null) {
-    			if (this.transparency) {
+    			if (this.waterTransparency) {
         			Icon icon = Block.blocksList[9].getBlockTextureFromSideAndMetadata(1, 0); // 1 is top
         		    int left = (int)(icon.func_94209_e()*image.getWidth());
         		    int right = (int)(icon.func_94212_f()*image.getWidth());
@@ -1903,12 +2104,12 @@ public class ZanMinimap implements Runnable { // implements Runnable
         		    gfx.dispose();
         		    
     				waterBase = singlePixelBuff.getRGB(0, 0); // the and dumps the alpha, in hex the ff at the beginning
-    				waterAlpha = waterBase >> 24 & 255;
-    				waterBase = waterBase & 0x00FFFFFF;
+    				//waterAlpha = waterBase >> 24 & 255;
+    				//waterBase = waterBase & 0x00FFFFFF;
     			}
     			else {
         			waterBase = getColor(image, 9, 0);
-    				waterAlpha = 180;
+    				//waterAlpha = 180;
     			}
     		}
     		else {
@@ -1921,8 +2122,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			gfx.drawImage(water, 0, 0, null);
     			gfx.dispose();
     			waterBase = waterBuff.getRGB(0, 0);
-   				waterAlpha = waterBase >> 24 & 255;
-    			waterBase = waterBase & 0x00FFFFFF; 
+   				//waterAlpha = waterBase >> 24 & 255;
+    			//waterBase = waterBase & 0x00FFFFFF; 
     		}
     		int waterMult = -1;
     		waterColorBuff = null;
@@ -2038,7 +2239,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
         if (tilesInts.length > 0) {
         	tilesInt = tilesInts[0];
         }
-        System.out.println("block: " + blockNum + ", metadata: " + metadata + ", tile: " + tilesInt);
+        //System.out.println("block: " + blockNum + ", metadata: " + metadata + ", tile: " + tilesInt);
 
 
         if (method.equals("sandstone") || method.equals("top") || faces.contains("top")) {
@@ -2154,7 +2355,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			out.println("Height Map:" + Boolean.toString(heightmap));
 			out.println("Slope Map:" + Boolean.toString(slopemap));
 			out.println("Filtering:" + Boolean.toString(filtering));
-			out.println("Transparency:" + Boolean.toString(transparency));
+			out.println("Water Transparency:" + Boolean.toString(waterTransparency));
 			out.println("Biomes:" + Boolean.toString(biomes));
 			out.println("Square Map:" + Boolean.toString(squareMap));
 			out.println("Old North:" + Boolean.toString(oldNorth));
@@ -2421,11 +2622,22 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		
 	private void renderMap (int x, int y, int scScale) {
 		if (!this.hide && !this.fullscreenMap) {
-			boolean scaleChanged = (this.scScale != scScale);
+			boolean scaleChanged = (this.scScale != scScale || this.squareMap != this.lastSquareMap);
 			this.scScale = scScale;
+			this.lastSquareMap = this.squareMap;
 
 			if (squareMap) { // square map
-				if (imageChanged) {
+				// shifted stuff is to keep squaremap from bleeding over with filtering on, zoomed all the way in.  Redraw image (redraw checcks if it needs to omit 2 lines instead of 1)
+				boolean shifted = false;;
+				if (this.filtering && this.lZoom == 0 && this.lastPercentXOver != (percentX > 1)) {
+					this.lastPercentXOver = (percentX > 1);
+					shifted = true;
+				}
+				if (this.filtering && this.lZoom == 0 && this.lastPercentYOver != (percentY > 1)) {
+					this.lastPercentYOver = (percentY > 1);
+					shifted = true;
+				}
+				if (imageChanged || shifted) {
 					this.map[this.lZoom].write();
 					imageChanged = false;
 				}
@@ -2447,6 +2659,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				GL11.glRotatef(northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
 				GL11.glTranslatef(-x, -y, 0.0F);
 				// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
+				GL11.glTranslatef(-percentX, -percentY, 0.0f);
 				drawPre();
 				this.setMap(x, y);
 				drawPost();
@@ -2454,7 +2667,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				GL11.glPopMatrix();
 
 				try {
-					this.disp(this.img("/mamiyaotaru/minimap.png"));
+					//this.disp(this.img("/mamiyaotaru/minimap.png"));
+					this.disp(mapImageInt);
 					drawPre();
 					this.setMap(x, y);
 					drawPost();
@@ -2468,17 +2682,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						double wayX = 0;
 						double wayY = 0;
 						if (this.game.thePlayer.dimension!=-1) {
-							wayX = this.xCoord() - pt.x;
-							wayY = this.zCoord() - pt.z;
+							wayX = this.lastXDouble - pt.x;
+							wayY = this.lastZDouble - pt.z;
 						}
 						else {
-							wayX = this.xCoord() - (pt.x / 8);
-							wayY = this.zCoord() - (pt.z / 8);
+							wayX = this.lastXDouble - (pt.x / 8);
+							wayY = this.lastZDouble - (pt.z / 8);
 						}
-						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 31 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 31) {
+						if (Math.abs(wayX)/(Math.pow(2,this.zoom)/2) > 28.5 || Math.abs(wayY)/(Math.pow(2,this.zoom)/2) > 28.5) {
 							float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 							double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY));
-							hypot = hypot / Math.max(Math.abs(wayX), Math.abs(wayY)) * 34;
+							hypot = hypot / Math.max(Math.abs(wayX), Math.abs(wayY)) * 30;
 							try {
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
@@ -2508,10 +2722,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								//this.disp(this.img("/waypoint.png"));
 								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
-								if (scScale == 3 || scScale > 4) { // filter on odd zoom levels
-									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-								}
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 							//	GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
 								// from here
 								GL11.glTranslatef(x, y, 0.0F);
@@ -2637,6 +2849,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 					// Clear Screen And Depth Buffer on the fbo to black.  We draw same circle each time, so only need to do it on scale change (when we start drawing a new circle)
 					if (scaleChanged) {
+						System.out.println("clearing");
 						GL11.glClearColor (0.0f, 0.0f, 0.0f, 0.0f);
 						GL11.glClear (GL11.GL_COLOR_BUFFER_BIT | GL11.GL_DEPTH_BUFFER_BIT);            
 						// "draw same circle each time" means we only need to draw the circle when the scale changes: move it inside the if block
@@ -2655,9 +2868,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					drawPost();
 
 					// brightness baked into RGB
-					//GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ZERO); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
+					GL14.glBlendFuncSeparate(GL11.GL_ONE, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ZERO); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
 					// brightness as alpha channel
-					GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ONE); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
+					//GL14.glBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ZERO, GL11.GL_DST_COLOR, GL11.GL_ONE); // source image's alpha is based on the color of the destination.  Don't need DST_ALPHA (thanks nvidia)
 					if (imageChanged) {
 						this.map[this.lZoom].write();
 						imageChanged = false;
@@ -2677,11 +2890,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glTranslatef(128, 128, 0.0F); 
 					GL11.glRotatef(this.direction-this.northRotate, 0.0F, 0.0F, 1.0F); 
 					GL11.glTranslatef(-(128), -128F, 0.0F);
+					// float precision
+					GL11.glTranslatef(-percentX*4, percentY*4, 0.0f);
 					
-					if(this.zoom==0) 
-						GL11.glTranslatef(-2.2f, 1.6f, 0.0f);
-					else 
-						GL11.glTranslatef(-1.0f, 1.0f, 0.0f);
 					drawPre();
 					// position of the texture to put on the vertexes is flipped in Y (ie last number is 1 instead of 0 and vice versa) because minecraft has things upside down in the ortho.  Upside down FBO makes it upside down twice, aka out of whack with minecraft 
 					ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
@@ -2715,6 +2926,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				//	}
 					if (this.imageChanged){ 
 						int diameter = this.map[this.lZoom].getWidth();
+						if (roundImage != null)
+							roundImage.baleet();
 						roundImage = new GLBufferedImage(diameter, diameter,BufferedImage.TYPE_4BYTE_ABGR);
 						java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double((this.lZoom*10/6),(this.lZoom*10/6),diameter-(this.lZoom*2),diameter-(this.lZoom*2));
 						//java.awt.geom.Ellipse2D.Double ellipse = new java.awt.geom.Ellipse2D.Double(0,0,diameter,diameter);
@@ -2733,8 +2946,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						this.imageChanged = false;
 					}
 					
-					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // used for light info stored in alpha channel
-					//GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); 
+					//GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ZERO); // used for light info stored in alpha channel
+					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA); 
 					if (this.zoom == 3) {
 						GL11.glPushMatrix();
 						GL11.glScalef(0.5f, 0.5f, 1.0f);
@@ -2755,10 +2968,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glRotatef(-this.direction+this.northRotate, 0.0F, 0.0F, 1.0F); 
 					GL11.glTranslatef(-x, -y, 0.0F);
 
-					if(this.zoom==0) 
-						GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
-					else 
-						GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
+					// float precision
+					GL11.glTranslatef(-percentX, -percentY, 0.0f);
 				}
 				
 
@@ -2777,15 +2988,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
-						int wayX = 0;
-						int wayY = 0;
+						double wayX = 0;
+						double wayY = 0;
 						if (this.game.thePlayer.dimension!=-1) {
-							wayX = this.xCoord() - pt.x;
-							wayY = this.zCoord() - pt.z;
+							wayX = this.lastXDouble - pt.x;
+							wayY = this.lastZDouble - pt.z;
 						}
 						else {
-							wayX = this.xCoord() - (pt.x / 8);
-							wayY = this.zCoord() - (pt.z / 8);
+							wayX = this.lastXDouble - (pt.x / 8);
+							wayY = this.lastZDouble - (pt.z / 8);
 						}
 						float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
 						double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
@@ -2818,10 +3029,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								//this.disp(this.img("/waypoint.png"));
 								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
-								if (scScale == 3 || scScale > 4) { // filter on odd zoom levels
-									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-								}
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 								GL11.glTranslatef(x, y, 0.0F);
 								GL11.glRotatef(-locate -this.direction+this.northRotate, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
@@ -2906,25 +3115,25 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private void setupFBO () {
-		 fboID = EXTFramebufferObject.glGenFramebuffersEXT(); // create a new framebuffer
-	     fboTextureID = GL11.glGenTextures(); // and a new texture used as a color buffer
-	     int width = 256;
-	     int height = 256;
-	     EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, fboID); // switch to the new framebuffer
-	     ByteBuffer byteBuffer = BufferUtils.createByteBuffer(4 * width * height);
+		fboID = EXTFramebufferObject.glGenFramebuffersEXT(); // create a new framebuffer
+		fboTextureID = GL11.glGenTextures(); // and a new texture used as a color buffer
+		int width = 256;
+		int height = 256;
+		EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, fboID); // switch to the new framebuffer
+		ByteBuffer byteBuffer = BufferUtils.createByteBuffer(4 * width * height);
 
-	     GL11.glBindTexture(GL11.GL_TEXTURE_2D, fboTextureID); // Bind the colorbuffer texture
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, 10496 );
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, 10496 );
-	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
-	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST); 
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
-	     GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA, GL11.GL_BYTE, byteBuffer); // Create the texture data
+		GL11.glBindTexture(GL11.GL_TEXTURE_2D, fboTextureID); // Bind the colorbuffer texture
+		GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_S, 10496 );
+		GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, 10496 );
+		//GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
+		//GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST); 
+		GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+		GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+		GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA, GL11.GL_BYTE, byteBuffer); // Create the texture data
 
-	     EXTFramebufferObject.glFramebufferTexture2DEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, EXTFramebufferObject.GL_COLOR_ATTACHMENT0_EXT, GL11.GL_TEXTURE_2D, fboTextureID, 0);  // attach it to the framebuffer
-	     
-	     EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // Switch back to normal framebuffer rendering
+		EXTFramebufferObject.glFramebufferTexture2DEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, EXTFramebufferObject.GL_COLOR_ATTACHMENT0_EXT, GL11.GL_TEXTURE_2D, fboTextureID, 0);  // attach it to the framebuffer
+
+		EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // Switch back to normal framebuffer rendering
 	}
 	
 	private void drawRound(int x, int y, int scScale) {
@@ -3051,7 +3260,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		float distance;
 		if (this.squareMap) {
 			rotate = -90;
-			distance = 58;
+			distance = 52;
 		}
 		else {
 			rotate = -this.direction - 90;
@@ -3188,6 +3397,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
     /**
      * Gets a key binding. // aka the text on the button?
+     * called getKeyBinding in MCP - wtf
      */
     public String getKeyText(EnumOptionsMinimap par1EnumOptions)
     {
@@ -3295,7 +3505,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
                 return this.filtering;
                 
             case 19:
-                return this.transparency;
+                return this.waterTransparency;
                 
             case 20:
                 return this.biomes;
@@ -3337,6 +3547,21 @@ public class ZanMinimap implements Runnable { // implements Runnable
         {
             return "";
         }
+    }
+    
+    /**
+     * If the specified option is controlled by a slider (float value), this will set the float value.
+     */
+    public void setOptionFloatValue(EnumOptionsMinimap par1EnumOptions, float par2)
+    {
+    	// TODO add option for waypoint in game view distance
+    	/*
+ 		if (par1EnumOptions == EnumOptions.MUSIC)
+        {
+            this.musicVolume = par2;
+            this.mc.sndManager.onSoundOptionsChanged();
+        }
+        */
     }
 
 	public void setOptionValue(EnumOptionsMinimap par1EnumOptions, int i) {
@@ -3433,14 +3658,14 @@ public class ZanMinimap implements Runnable { // implements Runnable
             	break;
             	
             case 19:
-            	this.transparency = !transparency;
-            	reloadWaterColor(transparency);
+            	this.waterTransparency = !waterTransparency;
+            	reloadWaterColor(waterTransparency);
             	break;
             	
             case 20:
             	this.biomes = !biomes;
             	reloadBiomeColors(biomes);
-            	reloadWaterColor(transparency);
+            	reloadWaterColor(waterTransparency);
             	break;
             	
             case 21: 

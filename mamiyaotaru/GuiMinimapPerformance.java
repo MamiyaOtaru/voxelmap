@@ -114,4 +114,12 @@ public class GuiMinimapPerformance extends GuiScreen
         this.drawCenteredString(this.fontRenderer, this.screenTitle, this.width / 2, 20, 16777215);
         super.drawScreen(par1, par2, par3);
     }
+    
+    /**
+     * Called when the screen is unloaded. Used to disable keyboard repeat events
+     */
+    public void onGuiClosed() {
+    	this.options.saveAll();
+    }  
+    
 }
