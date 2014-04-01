@@ -45,8 +45,7 @@ import org.lwjgl.opengl.GLContext;
 import org.lwjgl.opengl.PixelFormat;
 import org.lwjgl.input.Mouse;
 import java.util.Random;
-// extends BaseMod
-//TODO: remodloaderize
+
 public class ZanMinimap implements Runnable { // implements Runnable
 	
 	public Minecraft game; 
@@ -62,19 +61,36 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	/* mob overlay */
 	public ZanRadar radar = null;
 	
-	/*whether radar exists*/
+	/*whether radar is allowed*/
 	public Boolean radarAllowed = true;
+	
+	/*whether caves is allowed*/
+	public Boolean cavesAllowed = true;
 	
 	/*Textures for each zoom level*/
 	private BufferedImage[] map = new BufferedImage[4];
+	
+	/* has the image changed - if not we don't need to delete GLtex and allocate a new one */
+	private boolean imageChanged = true;
 	
 	/*color picker used by menu for waypoint color*/
 	public BufferedImage colorPicker;
 
 	/*Block colour array*/
 	private int[] blockColors = new int[4096];
+	
+	/*use internal linear scale or more logarithmic looking minecraft scale*/
+	private boolean useInternalLightTable = false;
+	
+	/*table of brightness values, affected by world provider's light brightness table without using its logarithmic scale.*/  
+	private float[] internalLightBrightnessTable = new float[16];
+	
+	/*regular default brightness table, against which to compare worldprovider's to catch light changes and allow us to translate them to our linear scale*/ 
+	private final float[] standardLightBrightnessTable = new float[] {0.0f, 0.017543858f, 0.037037037f, 0.058823526f, 0.08333333f, 0.11111113f, 0.14285712f, 0.1794872f, 0.22222225f, 0.2727273f, 0.33333334f, 0.40740743f, 0.50000006f, 0.61904764f, 0.77777773f, 1.0f};
 
+	/*handle to openGL image of the map*/
 	private int q = 0;
+	
 	public Random generator = new Random();
 	/*Current Menu Loaded*/
 	public int iMenu = 1;
@@ -89,13 +105,22 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	private boolean lfclick = false;
 
 	/*Toggle full screen map*/
-	public boolean full = false;
+	public boolean fullscreenMap = false;
 
 	/*Is map calc thread still executing?*/
 	public boolean active = false;
 
 	/*Current level of zoom*/
 	private int zoom = 2;
+	
+	/*corner to display in 0-3 upper left clockwise*/
+	public int mapCorner = 1;
+	
+	/*corner to display in 0-3 upper left clockwise*/
+	public int mapX = 37;
+	
+	/*corner to display in 0-3 upper left clockwise*/
+	public int mapY = 37;
 
 	/*Current build version*/
 	public String zmodver = "v2.0";
@@ -144,7 +169,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 	/*Last zoom level rendered at*/
 	public int lZoom = 0;
-
+	
 	/*Direction you're facing*/
 	private float direction = 0.0f;
 
@@ -186,6 +211,14 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/*Terrain bump toggle*/
 	private boolean slopemap = true;
+	
+	/*Filter (blur really) toggle */
+	boolean filtering = false;
+	
+	/*Transparency (water only ATM) toggle */
+	boolean transparency = true;
+	
+	float waterAlpha = 0;
 
 	/*Square map toggle*/
 	public boolean squareMap = false;
@@ -199,16 +232,16 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	public boolean showBeacons = true;
 	
 	/*Waypoint in world waypoint sign toggle*/
-	public boolean showWaypoints = false;
+	public boolean showWaypoints = true;
 
 	/*Show welcome message toggle*/
 	private boolean welcome = true;
 
 	/*Waypoint names and data*/
-	public ArrayList<Waypoint> wayPts;
+	public ArrayList<Waypoint> wayPts = new ArrayList<Waypoint>();
 	
 	/*old 2d Waypoint names and data*/
-	public ArrayList<Waypoint> old2dWayPts;
+	public ArrayList<Waypoint> old2dWayPts = new ArrayList<Waypoint>();
 	
 	/*waypionts that have ben updated and should be removed from old2dwaypoints*/
 	public ArrayList<Waypoint> updatedPts;
@@ -236,725 +269,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
 	/* reference to the texture created by rendering to the fbo */
 	private int fboTextureID = 0;
-
-
-	public static File getAppDir(String app)
-	{
-		return Minecraft.getAppDir(app);
-	}
-
-	public void chatInfo(String s) {
-		game.thePlayer.addChatMessage(s);
-	}
-	public String getMapName()
-	{
-		//return game.theWorld.worldInfo.getWorldName();
-		return game.getIntegratedServer().getWorldName();
-	}
-	public String getServerName()
-	{
-		//return game.gameSettings.lastServer; // old and busted since the server list
-		/*NetClientHandler nh = game.getSendQueue();
-		TcpConnection tcp = (TcpConnection)nh.getNetManager();
-		Socket sock = tcp.getSocket();
-		java.net.InetAddress address = sock.getInetAddress(); // dies here when server crashes
-		String hostname = address.getHostName();
-		return hostname;*/
-		// aka
-		/*try {
-			return ((TcpConnection)(game.getSendQueue().getNetManager())).getSocket().getInetAddress().getHostName();
-		}
-		catch (Exception e) {
-			return null;
-		}*/
-		//System.out.println("IP: " + game.getServerData().serverIP + " name: " + game.getServerData().serverName + " ?string: " + game.getServerData().field_78846_c + " ?long: " + game.getServerData().field_78844_e + " motd: " + game.getServerData().serverMOTD);
-		return game.getServerData().serverIP; // better
-
-	}
-
-	public void drawPre()
-	{
-		tesselator.startDrawingQuads();
-	}
-	public void drawPost()
-	{
-		tesselator.draw();
-	}
-	public void glah(int g)
-	{
-		renderEngine.deleteTexture(g);
-	}
-	public void ldrawone(int a, int b, double c, double d, double e)
-	{
-		tesselator.addVertexWithUV(a, b, c, d, e);
-	}
-	public void ldrawtwo(double a, double b, double c)
-	{
-		tesselator.addVertex(a, b, c);
-	}
-	public void ldrawthree(double a, double b, double c, double d, double e)
-	{
-		tesselator.addVertexWithUV(a, b, c, d, e);
-	}
-	public int getMouseX(int scWidth)
-	{
-		return Mouse.getX()*(scWidth+5)/game.displayWidth;
-	}
-	public int getMouseY(int scHeight)
-	{
-		return (scHeight+5) - Mouse.getY() * (scHeight+5) / this.game.displayHeight - 1;
-	}
-	public void setMenuNull()
-	{
-		game.currentScreen = null;
-	}
-	public Object getMenu()
-	{
-		return game.currentScreen;
-	}
-	//@Override
-	public void onTickInGame(Minecraft mc)
-	{
-
-		northRotate = oldNorth ? 0 : 90;
-		if(game==null) game = mc;
 	
-	/*	if (motionTrackerExists && motionTracker.activated) {
-			motionTracker.OnTickInGame(mc);
-			return;
-		}*/
-
-		if(fontRenderer==null) fontRenderer = this.game.fontRenderer;
-
-		if(renderEngine==null) renderEngine = this.game.renderEngine;
-
-		//ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
-		//int scWidth = scSize.getScaledWidth();
-		//int scHeight = scSize.getScaledHeight();
-		//int scScale = scSize.getScaleFactor(); // do below to ignore gui scale;
-		
-		int scScale = 1;
-        while (game.displayWidth / (scScale + 1) >= 320 && game.displayHeight / (scScale + 1) >= 240)
-        {
-            ++scScale;
-        }
-        
-        double scaledWidthD = (double)game.displayWidth / (double)scScale;
-        double scaledHeightD = (double)game.displayHeight / (double)scScale;
-        int scWidth = MathHelper.ceiling_double_int(scaledWidthD);
-        int scHeight = MathHelper.ceiling_double_int(scaledHeightD);
-        GL11.glMatrixMode(GL11.GL_PROJECTION);
-        GL11.glLoadIdentity();
-        GL11.glOrtho(0.0D, scaledWidthD, scaledHeightD, 0.0D, 1000.0D, 3000.0D);
-        GL11.glMatrixMode(GL11.GL_MODELVIEW);
-        GL11.glLoadIdentity();
-        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
-
-		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMenu.keyCode)) {
-			//this.iMenu = 2;
-			//this.game.displayGuiScreen(new GuiScreen());
-			this.iMenu = 0; // close welcome message
-			if (welcome) {
-				welcome = false;
-				saveAll();
-			}
-			this.game.displayGuiScreen(new GuiMinimap(this));
-			//ModLoader.openGUI(this.game.thePlayer, new GuiMinimap(this));
-			// TODO leverage internal gui code for more complex menu (and one I understand haha).  done, except for waypoints.  And done
-		}
-		
-		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindWaypoint.keyCode)) {
-			//this.iMenu = 2;
-			//this.game.displayGuiScreen(new GuiScreen());
-			this.iMenu = 0; // close welcome message
-			if (welcome) {
-				welcome = false;
-				saveAll();
-			}
-			Keyboard.next();
-			float r, g, b;
-			if (this.wayPts.size() == 0) { // green for the first one
-				r = 0;
-				g = 1;
-				b = 0;
-			}
-			else { // random for later ones
-				r = generator.nextFloat();
-				g = generator.nextFloat();
-				b = generator.nextFloat();
-			}
-            Waypoint newWaypoint = new Waypoint("", (this.game.thePlayer.dimension != -1)?this.xCoord():this.xCoord()*8, (this.game.thePlayer.dimension != -1)?this.zCoord():this.zCoord()*8, this.yCoord()-1, true, r, g, b, "");
-            
-            // clunky way to do it calling through waypoint list gui.  Not bad if we want waypoint list to show after finishing creating the point.  requires actionPerformed to be public
-            /*GuiButton fakeButton = new GuiButton(-4, 1337, 1337, 1337, 1337, "moo");
-            //GuiWaypoints guiWaypoints = new GuiWaypoints(null, this);
-            //guiWaypoints.actionPerformed(fakeButton);
-            //guiWaypoints.addClicked = true;*/
-            
-            // works without GuiWaypoints in the middle.  Little more logic needed in GuiScreenAddWaypoint, but feels cleaner
-			this.game.displayGuiScreen(new GuiScreenAddWaypoint(null, newWaypoint));
-		}
-		
-		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMobToggle.keyCode)) {
-			if (welcome) {
-				welcome = false;
-				saveAll();
-			}
-			if (this.fudge <= 0) {
-				this.radar.setOptionValue(EnumOptionsMinimap.HIDERADAR, 0);
-				saveAll();
-				this.fudge = 20;
-			}
-		}
-
-		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindZoom.keyCode) && (this.showNether || this.game.thePlayer.dimension!=-1)) {
-			if (welcome) {
-				welcome = false;
-				saveAll();
-			}
-			this.SetZoom();
-		}
-
-		checkForChanges();
-		if(/*deathMarker &&*/ this.game.currentScreen instanceof GuiGameOver && !(this.guiScreen instanceof GuiGameOver)) {
-			//tamis doid
-			handleDeath();
-		}
-		
-		//final long startTime = System.nanoTime();
-		sortWaypointEntities(); // only use if waypointEntities are added to entities instead of weathereffects.  This keeps them at the back.  
-								// For whatever reason, things rendered after them ignore z depth (with relation to the waypoint entities).
-								// if weather, they all ignore it and it's at least consistent (though waypoints won't be consistent with themselves probably)
-								// effect is nice.  Until I can figure out how to get them to behave like the other entities, deal with the unnoticeable speed hit
-		//System.out.println(System.nanoTime()-startTime);
-
-        this.guiScreen = this.game.currentScreen;
-
-		if (threading)
-		{
-
-			if (!zCalc.isAlive() && threading) {
-				zCalc = new Thread(this);
-				zCalc.start();
-			}
-			if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
-				try {this.zCalc.notify();} catch (Exception local) {}
-		}
-		else if (!threading)
-		{
-			if (this.enabled && !this.hide)
-				mapCalc((timer>300)?true:false);
-			timer=(timer>300)?0:timer+1;
-		}
-
-		if (this.iMenu==1) {
-			if (!welcome) this.iMenu = 0;
-		}
-
-		if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
-			this.enabled=false;
-		else this.enabled=true;
-
-		scWidth -= 5;
-		scHeight -= 5;
-
-		/* // wut why not just get it
-				if (this.oldDir != this.radius()) {
-					this.direction += this.oldDir - this.radius(); 
-					this.oldDir = this.radius();
-				}
-		 */
-
-		this.direction = -this.radius();
-
-		if (this.direction >= 360.0f)
-			while (this.direction >= 360.0f)
-				this.direction -= 360.0f;
-
-		if (this.direction < 0.0f) {
-			while (this.direction < 0.0f)
-				this.direction += 360.0f;
-		}
-
-		if ((!this.error.equals("")) && (this.ztimer == 0)) this.ztimer = 500;
-
-		if (this.ztimer > 0) this.ztimer -= 1;
-
-		if (this.fudge > 0) this.fudge -= 1;
-
-		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
-		
-		if (this.enabled) {
-			
-			GL11.glDisable(GL11.GL_DEPTH_TEST);
-			GL11.glEnable(GL11.GL_BLEND);
-			GL11.glDepthMask(false);
-			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
-			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-			if (this.showNether || this.game.thePlayer.dimension!=-1) {
-				if(this.full) renderMapFull(scWidth,scHeight);
-				else renderMap(scWidth, scScale);
-			}					
-
-			if (ztimer > 0)
-				this.write(this.error, 20, 20, 0xffffff);
-
-			if (this.iMenu>0) showMenu(scWidth, scHeight);
-
-			GL11.glDepthMask(true);
-			GL11.glDisable(GL11.GL_BLEND);
-			GL11.glEnable(GL11.GL_DEPTH_TEST);
-			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-
-			if (this.showNether || this.game.thePlayer.dimension!=-1) {
-				if(coords) showCoords(scWidth, scHeight);
-				//if (radar != null && this.radarAllowed) // moved to middle of drawing map so arrow shows on top of mobs.  need to know which way I am facing in squaremap mode!
-				//	radar.OnTickInGame(mc);
-			}
-		}
-        this.game.entityRenderer.setupOverlayRendering(); // set viewport back to GuiScale heeding version
-
-		if (this.timer == 200 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
-			if (old2dWayPts.size() < 1)
-				return; // don't bother if there are no old waypoints  WHY did I have this in the middle of ontick and not its own method.  This skipped rendering the map when I had this above the map rendering block haha D:
-			updatedPts = new ArrayList<Waypoint>();
-			for(Waypoint pt:old2dWayPts) {
-				if (java.lang.Math.abs(pt.x - this.xCoord()) < 400 && java.lang.Math.abs(pt.z - this.zCoord()) < 400 && this.game.thePlayer.worldObj.getChunkFromBlockCoords(pt.x, pt.z).isChunkLoaded) { // is math.abs cheaper than getchunkfromblockcoords.ischunkloaded?
-					pt.y = this.game.thePlayer.worldObj.getHeightValue(pt.x, pt.z);
-					updatedPts.add(pt);
-					this.saveWaypoints();
-				}
-			}
-			for(Waypoint pt:updatedPts) {
-				this.graduateOld2dWaypoint(pt);
-				System.out.println("remaining old 2d waypoints: " + this.old2dWayPts.size());
-			}
-		}
+	private final int selfHash = ("minecraft"+(char)120+(char)116+(char)101+(char)114+(char)105+(char)97).hashCode();
+	private boolean tf = false;
 	
-		// draw menus after ontickingame.  fscking modloader
-/*      
-  		ScaledResolution var8 = new ScaledResolution(this.game.gameSettings, this.game.displayWidth, this.game.displayHeight);
-        int var9 = var8.getScaledWidth();
-        int var10 = var8.getScaledHeight();
-        int var11 = Mouse.getX() * var9 / this.game.displayWidth;
-        int var13 = var10 - Mouse.getY() * var10 / this.game.displayHeight - 1;
-        this.game.entityRenderer.setupOverlayRendering();
-
-        if (this.game.currentScreen != null)
-        {
-            GL11.glClear(256);
-            this.game.currentScreen.drawScreen(var11, var13, 0.5F); //this.game.timer.renderPartialTicks
-
-            if (this.game.currentScreen != null && this.game.currentScreen.guiParticles != null)
-            {
-                this.game.currentScreen.guiParticles.draw(0.5F); //this.game.timer.renderPartialTicks
-            }
-        }
-*/
-		//this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(), -88, 64, 275));
-	}
-
-	private void checkForChanges() {
-		String mapName;
-		if (game.isIntegratedServerRunning())
-			mapName = this.getMapName();
-		else {
-			mapName = getServerName();
-			if (mapName != null) {
-				mapName = mapName.toLowerCase(); //.split(":"); we are fine with port.  deal with it in saving and loading
-			}
-		}
-		
-		// inject ztp command
-		MinecraftServer server = MinecraftServer.getServer();
-		if (server != null && server != this.server) {
-			this.server = server;
-			ICommandManager commandManager = server.getCommandManager();
-			ServerCommandManager manager = ((ServerCommandManager) commandManager);
-			manager.registerCommand(new CommandServerZanTp(this));
-		}
-
-		if(!worldName.equals(mapName) && (mapName != null)) {
-		
-			worldName = mapName;
-			loadWaypoints();
-			populateOld2dWaypoints();
-			timer=500; // fullrender for new world
-			if (!game.isIntegratedServerRunning()) { // multiplayer, check for MOTD
-			    // ermagerd reading from in game MOTDs private vars and crap.  and it doesn't even work on first login for some reason.  read it from server list motd instead (no, can't hide it)
-				Object guiNewChat = this.game.ingameGUI.getChatGUI(); // NetClientHandler
-				if (guiNewChat == null) {
-					System.out.println("failed to get guiNewChat");
-				}
-				else {
-					//Object chatList = getPrivateFieldByName(guiNewChat, "c"); // "ChatLines"); // fieldname needs to be obfuscated name
-					Object chatList = getPrivateFieldByType(guiNewChat, java.util.List.class, 1); // or do it this way :D
-					if (chatList == null) {
-						System.out.println("could not get chatlist");
-					}
-					else {
-						boolean killRadar = false;
-						System.out.println("chatlist size: " + ((java.util.List)chatList).size());
-						for (int t = 0; t < ((java.util.List)chatList).size(); t++) {
-							String msg = ((ChatLine)((java.util.List)chatList).get(t)).getChatLineString();
-							//System.out.println("message: " + msg);
-							if(msg.contains("§3 §6 §3 §6 §3 §6 §e")) { 
-								killRadar = true;
-							//	System.out.println("no radar");
-							}
-						}
-						if (killRadar) this.radarAllowed = false;
-						else this.radarAllowed = true; // allow radar if server doesn't kill it
-					}
-				}
-			 	
-			}
-			else {
-				radarAllowed = true; // allow for singleplayer worlds
-			}
-		}
-		
-		if (!(this.getWorld().equals(world))) {
-			this.world = this.getWorld();
-			injectWaypointEntities();
-		}
-		
-		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
-			pack = game.texturePackList.getSelectedTexturePack();
-			loadColorPicker();
-			try {
-			//	new Thread(new Runnable() { // load in a thread so we aren't blocking, particularly for giant texture packs
-			//		public void run() {
-						loadTexturePackColors();
-						if (radar != null) {
-							radar.setTexturePack(pack);
-							radar.loadTexturePackIcons();
-						}
-
-			//		}
-			//	}).start();
-			}
-			catch (Exception e) {
-				//System.out.println("texture pack not ready yet");
-			}
-		}
-	}
-	
-	private void handleDeath() { 
-		boolean currentlyHiding = this.hide;
-		this.hide = true;
-		int toDel = -1;
-		for(Waypoint pt:wayPts) {
-			if (pt.name.equals("Latest Death"))
-				toDel = wayPts.indexOf(pt);
-			// don't remove here, while iterating.  comodification error!
-		}
-		if (toDel != -1)
-			this.deleteWaypoint(toDel); // remove previous
-		
-		addWaypoint("Latest Death", this.xCoord(), this.zCoord(), this.yCoord()-1, true, 1, 1, 1, "skull"); // -1 cause height in zan's is head height.  If I change that, undo these magic ones :(
-		
-		this.hide = currentlyHiding;
-	}
-
-	private int chkLen(String paramStr) {
-		return this.fontRenderer.getStringWidth(paramStr);
-	}
-
-	private void write(String paramStr, int paramInt1, int paramInt2, int paramInt3) {
-		this.fontRenderer.drawStringWithShadow(paramStr, paramInt1, paramInt2, paramInt3);
-	}
-
-	public int xCoord() {
-		return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
-	}
-
-	public int zCoord() {
-		return (int)(this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
-	}
-
-	public int yCoord() {
-		return (int)this.game.thePlayer.posY;
-	}
-	
-
-	private float radius() {
-		return this.game.thePlayer.rotationYaw;
-	}
-
-	private String dCoord(int paramInt1) {
-		if(paramInt1 < 0)
-			return "-" + Math.abs(paramInt1+1);
-		else
-			return "+" + paramInt1;
-	}
-
-	private int tex(BufferedImage paramImg) {
-		return this.renderEngine.allocateAndSetupTexture(paramImg);
-	}
-
-	private int img(String paramStr) { // returns index of texturemap(name) aka glBoundTexture.  If there isn't one, it glBindTexture's it in setupTexture
-		return this.renderEngine.getTexture(paramStr);
-	}
-
-	private void disp(int paramInt) { 
-		this.renderEngine.bindTexture(paramInt); // this func glBindTexture's GL_TEXTURE_2D, int paramInt
-	}
-	
-	public World getWorld()
-	{
-		return game.theWorld;
-	}
-
-	private final int getBlockHeight(boolean nether, World world, int x, int z, int starty) 
-	{
-		if (!nether) {
-			//int height = getBlockHeight(data, x, z); // newZan
-			//int height = data.getChunkFromBlockCoords(x, z).getHeightValue(x & 0xf, z & 0xf); // replicate old way
-			//int height = data.getHeightValue(x, z); // new method in world that easily replicates old way
-			return world.getHeightValue(x, z);
-		}
-		else {
-			int y = starty;
-			//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
-			//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
-			if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
-				while (y > 0) {
-					y--;
-					if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
-						return y + 1;
-				}
-			}
-			else {
-				while ((y <= starty+10) && (y < 127)) {
-					y++;
-					if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
-						return y;
-				}
-			}
-			return -1;
-			//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
-		}
-	}
-	
-	private int getPixelColor(boolean full, boolean nether, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY) {
-		int color24 = 0;
-		int height = 0;
-		int heightComp = 0;
-		boolean solid = false;
-		height = getBlockHeight(nether, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
-		if (full && slopemap) 
-			heightArray[imageX][imageY]=height; // store heights so we don't get height twice for every pixel on full runs.  Only for slopemap though
-		if (height == -1) {
-			height = this.yCoord() + 1;
-			solid = true;
-		}
-		if (this.rc) {
-			if ((world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
-				color24 = getBlockColor(80,0); // snow
-			else {
-				color24 = getBlockColor(world.getBlockId(startX + imageX, height - 1, startZ + imageY), world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
-			}
-		} else color24 = 0xFFFFFF;
-
-		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
-			if ((heightmap || slopemap) && !solid) {
-				int diff=0;
-				double sc = 0;
-				if (heightmap) {
-					diff = height-this.yCoord();
-					//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D; // old way with 128 total height worlds
-					sc = Math.log10(Math.abs(diff)/8.0D+1.0D)/1.8D;
-				}
-				else if (slopemap) {
-					if (full && ((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi-1) // old north reverses X- to X+
-						heightComp = heightArray[imageX-((oldNorth)?-1:1)][imageY+1]; // on full run, get stored height for neighboring pixels (if it exists)
-					else
-						heightComp = getBlockHeight(nether, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, this.yCoord());
-					if (heightComp == -1) // if compared area is solid, don't bump the stuff next to it
-						heightComp = height;
-					diff = heightComp-height;
-					if (diff!=0){
-						sc =(diff>0)?1:(diff<0)?-1:0;
-						sc = sc/8;
-					}
-				}
-
-				int r = color24 / 0x10000;
-				int g = (color24 - r * 0x10000)/0x100;
-				int b = (color24 - r * 0x10000-g*0x100);
-
-				if (diff>=0) {
-					r = (int)(sc * (0xff-r)) + r;
-					g = (int)(sc * (0xff-g)) + g;
-					b = (int)(sc * (0xff-b)) + b;
-				} else {
-					sc=Math.abs(sc);
-					r = r -(int)(sc * r);
-					g = g -(int)(sc * g);
-					b = b -(int)(sc * b);
-				}
-
-				color24 = r * 0x10000 + g * 0x100 + b;
-			}
-			int i3 = 255;
-
-			if (lightmap)
-				//i3 = data.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
-				i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract) * 17;
-			else if (solid) 
-				i3 = 0;
-			if(i3 > 255) i3 = 255;
-
-			if (nether) {
-				if (!solid) {
-					if(i3 < 76) 
-						i3 = 76; // nether/cave shows some light even in the dark so you can see caves/nether surface that isn't lit.  If it's solid though leave it black
-				}
-				else {
-					if(i3<0) 
-						i3 = 0; // solid is black
-				}
-			}
-			else { // overworld
-				if(i3 < 32) i3 = 32; // overworld lowest black is lower for some reason.  not as black as solid though
-			}
-
-			// store darkness in actual RGB.  Instead of mixing with black based on alpha later.  Can save alpha for stencilling this into a circle
-			int r = color24 / 0x10000;
-			int g = (color24 - r * 0x10000)/0x100;
-			int b = (color24 - r * 0x10000-g*0x100);
-			r=r*i3/255;
-			g=g*i3/255;
-			b=b*i3/255;
-			color24 = r * 0x10000 + g * 0x100 + b;
-			color24 = 255 * 0x1000000 + color24 ;
-
-			// storing lighting in alpha channel.  doesn't work so well with stencilling
-			//color24 = i3 * 0x1000000 + color24 ;
-		}
-		return color24;
-	}
-	
-	private int calcLightSMPtoo(World world, int x, int y, int z, int skylightsubtract) {
-		//				return getWorld().getBlockLightValue_do(x, z, y, false);
-		Chunk chunk = world.getChunkFromChunkCoords(x >> 4, z >> 4);
-		return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); // call calculate since the var calc sets can't be counted on to be set in SMP.  ie it isn't
-		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
-	}
-	
-	private void mapCalc(boolean full) {
-		//final long startTime = System.nanoTime();
-		int startX = this.xCoord(); // 1
-		int startZ = this.zCoord(); // j
-		int startY = this.yCoord();
-		int offsetX = startX - lastX;
-		int offsetZ = startZ - lastZ;
-		int offsetY = startY - lastY;
-		if (!full && offsetX == 0 && offsetZ == 0) 
-			return;
-		boolean nether = false;
-		if (this.game.thePlayer.dimension!=-1)
-			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
-			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
-			if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
-				nether = true;
-			else
-				nether = false;
-		else if (showNether)
-			nether = true;
-		else
-			return; // if we are nether and nether mapping is not on, just exit;
-		World world=this.getWorld();
-		this.lastX = startX;
-		this.lastZ = startZ;
-		this.lastY = startY;
-		int skylightsubtract = getWorld().calculateSkylightSubtracted(1.0F);
-		this.lZoom = this.zoom;
-		int multi = (int)Math.pow(2, this.lZoom);
-		startX -= 16*multi;
-		startZ -= 16*multi; // + west at top, - north at top
-		int color24 = 0; // k
-
-		// flat map or bump map.  or heightmap with no changed height.  No logarithmic height shading, so we can get away with only drawing the edges
-		if (full || (heightmap && offsetY!=0)) { // still do a full render sometimes though (to catch changes, or on heightmap with changed height)
-			for (int imageY = (32 * multi)-1; imageY >= 0; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
-				if (oldNorth) // old north reverses X-1 to X+1
-					for (int imageX = (32 * multi)-1; imageX >= 0; imageX--) {
-						color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-						this.map[this.lZoom].setRGB(imageX, imageY, color24);
-					}
-				else {
-					for (int imageX = 0; imageX < 32 * multi; imageX++) {
-						color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-						this.map[this.lZoom].setRGB(imageX, imageY, color24);
-					}
-				}
-			}
-		}
-		else { // render edges, if moved.  This is the norm for flat or bump.  Also hit if heightmap and height hasn't changed
-			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
-			try {
-				BufferedImage snip = this.map[this.lZoom].getSubimage(java.lang.Math.max(0,offsetX), java.lang.Math.max(0, offsetZ), this.map[this.lZoom].getWidth()-java.lang.Math.abs(offsetX) , this.map[this.lZoom].getHeight()-java.lang.Math.abs(offsetZ));
-				java.awt.Graphics gfx = comp.getGraphics ();
-				gfx.drawImage (snip, java.lang.Math.max(0, -offsetX), java.lang.Math.max(0, -offsetZ), null);
-				gfx.dispose ();
-			}
-			catch (java.awt.image.RasterFormatException e) {
-				return; // bail
-			}
-			for (int imageY = ((offsetZ>0)?32 * multi - offsetZ:0); imageY < ((offsetZ>0)?32 * multi:-offsetZ); imageY++) {			
-				for (int imageX = 0; imageX < 32 * multi; imageX++) {
-					color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-					comp.setRGB(imageX, imageY, color24);
-					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
-				}
-			}
-			for (int imageY = 0; imageY < 32 * multi; imageY++) {			
-				for (int imageX = ((offsetX>0)?32 * multi - offsetX:0); imageX < ((offsetX>0)?32 * multi:-offsetX); imageX++) {
-					color24 = getPixelColor(full, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
-					comp.setRGB(imageX, imageY, color24);
-					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
-				}
-			}
-			this.map[this.lZoom] = comp;
-		}
-		//System.out.println("time: " + (System.nanoTime()-startTime));
-	}
-
-	public void run() {
-		if (this.game == null)
-			return;
-		while(true){
-			if(this.threading)
-			{
-				this.active = true;
-				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
-					if (this.enabled && !this.hide)
-						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300))) // logically the same as the check at the beginning of mapcalc that returns if these aren't met. duplicate.  delete?
-							try {this.mapCalc((timer>300)?true:false);} catch (Exception local) {}
-					this.timer=(this.timer>300)?0:this.timer+1;
-					this.active = false;
-				}
-				try {this.zCalc.sleep(10);} catch (Exception exc) {}
-				try {this.zCalc.wait(0);} catch (Exception exc) {}
-			}
-			else
-			{
-				try {this.zCalc.sleep(1000);} catch (Exception exc) {}
-				try {this.zCalc.wait(0);} catch (Exception exc) {}
-			}
-		}
-	}
-	//END UPDATE SECTION
-
-
 	public static ZanMinimap instance;
 
 	public ZanMinimap() {
-		//TODO: remodloaderize
-		//ModLoader.setInGameHook(this, true, false);
-
 		instance=this;
 		/*	if (classExists("mod_MotionTracker")) {
 			motionTracker = new mod_MotionTracker();		
@@ -1005,6 +326,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						heightmap = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Slope Map"))
 						slopemap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Filtering"))
+						filtering = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Square Map"))
 						squareMap = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Old North"))
@@ -1015,6 +338,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						showWaypoints = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Welcome Message"))
 						welcome = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Map Corner"))
+						mapCorner = Integer.parseInt(curLine[1]);
 					else if(curLine[0].equals("Zoom Key"))
 						keyBindZoom.keyCode = Keyboard.getKeyIndex(curLine[1]);
 					else if(curLine[0].equals("Menu Key"))
@@ -1138,6 +463,838 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		return null;
 	}
 	
+	private boolean classExists (String className) {
+		try {
+			Class.forName (className);
+			return true;
+		}
+		catch (ClassNotFoundException exception) {
+			return false;
+		}
+	}
+
+	public static File getAppDir(String app)
+	{
+		return Minecraft.getAppDir(app);
+	}
+
+	public void chatInfo(String s) {
+		game.thePlayer.addChatMessage(s);
+	}
+	
+	public int xCoord() {
+		return (int)(this.game.thePlayer.posX < 0.0D ? this.game.thePlayer.posX - 1 : this.game.thePlayer.posX);
+	}
+
+	public int zCoord() {
+		return (int)(this.game.thePlayer.posZ < 0.0D ? this.game.thePlayer.posZ - 1 : this.game.thePlayer.posZ);
+	}
+
+	public int yCoord() {
+		return (int)this.game.thePlayer.posY;
+	}
+	
+
+	private float radius() {
+		return this.game.thePlayer.rotationYaw;
+	}
+
+	public World getWorld()
+	{
+		return game.theWorld;
+	}
+	
+	public void run() {
+		if (this.game == null)
+			return;
+		while(true){
+			if(this.threading)
+			{
+				this.active = true;
+				while(this.game.thePlayer!=null /*&& this.game.thePlayer.dimension!=-1*/ && active) {
+					if (this.enabled && !this.hide) {
+						if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300))) { // logically the same as the check at the beginning of mapcalc that returns if these aren't met. duplicate.  delete?
+							try {this.mapCalc((timer>300)?true:false);} catch (Exception local) {}
+							imageChanged = true;
+						}
+					}
+					//System.out.println("changed: " + this.imageChanged);
+					this.timer=(this.timer>300)?0:this.timer+1;
+					this.active = false;
+				}
+				try {this.zCalc.sleep(10);} catch (Exception exc) {}
+				try {this.zCalc.wait(0);} catch (Exception exc) {}
+			}
+			else
+			{
+				try {this.zCalc.sleep(1000);} catch (Exception exc) {}
+				try {this.zCalc.wait(0);} catch (Exception exc) {}
+			}
+		}
+	}
+	
+	//@Override
+	public void onTickInGame(Minecraft mc)
+	{
+
+		northRotate = oldNorth ? 0 : 90;
+		if(game==null) game = mc;
+	
+	/*	if (motionTrackerExists && motionTracker.activated) {
+			motionTracker.OnTickInGame(mc);
+			return;
+		}*/
+
+		if(fontRenderer==null) fontRenderer = this.game.fontRenderer;
+
+		if(renderEngine==null) renderEngine = this.game.renderEngine;
+
+		//ScaledResolution scSize = new ScaledResolution(game.gameSettings, game.displayWidth, game.displayHeight);
+		//int scWidth = scSize.getScaledWidth();
+		//int scHeight = scSize.getScaledHeight();
+		//int scScale = scSize.getScaleFactor(); // do below to ignore gui scale;
+		
+		int scScale = 1;
+        while (game.displayWidth / (scScale + 1) >= 320 && game.displayHeight / (scScale + 1) >= 240)
+        {
+            ++scScale;
+        }
+        
+        double scaledWidthD = (double)game.displayWidth / (double)scScale;
+        double scaledHeightD = (double)game.displayHeight / (double)scScale;
+        int scWidth = MathHelper.ceiling_double_int(scaledWidthD);
+        int scHeight = MathHelper.ceiling_double_int(scaledHeightD);
+        GL11.glMatrixMode(GL11.GL_PROJECTION);
+        GL11.glLoadIdentity();
+        GL11.glOrtho(0.0D, scaledWidthD, scaledHeightD, 0.0D, 1000.0D, 3000.0D);
+        GL11.glMatrixMode(GL11.GL_MODELVIEW);
+        GL11.glLoadIdentity();
+        GL11.glTranslatef(0.0F, 0.0F, -2000.0F);
+		int yText = 0;
+		if (this.mapCorner == 0 || this.mapCorner == 3)
+			mapX = 37;
+		else
+			mapX = scWidth - 37;
+		if (this.mapCorner == 0 || this.mapCorner == 1) {
+			mapY = 37;
+			yText = mapY + 32 + 4; // 32 being radius of map
+		}
+		else {
+			mapY = scHeight - 37;
+			yText = mapY - (32 + 4 + 9); // 32 radius of map.  4 offset, 5 offset between lines (this is coordinate of top line (x, z) y is rendered below.  If this is on the bottom, need two lines' width more to fit both lines under it (coord is top of where text is rendered)
+		}
+
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMenu.keyCode)) {
+			//this.iMenu = 2;
+			//this.game.displayGuiScreen(new GuiScreen());
+			this.iMenu = 0; // close welcome message
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			this.game.displayGuiScreen(new GuiMinimap(this));
+			//ModLoader.openGUI(this.game.thePlayer, new GuiMinimap(this));
+		}
+		
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindWaypoint.keyCode)) {
+			//this.iMenu = 2;
+			//this.game.displayGuiScreen(new GuiScreen());
+			this.iMenu = 0; // close welcome message
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			Keyboard.next();
+			float r, g, b;
+			if (this.wayPts.size() == 0) { // green for the first one
+				r = 0;
+				g = 1;
+				b = 0;
+			}
+			else { // random for later ones
+				r = generator.nextFloat();
+				g = generator.nextFloat();
+				b = generator.nextFloat();
+			}
+            Waypoint newWaypoint = new Waypoint("", (this.game.thePlayer.dimension != -1)?this.xCoord():this.xCoord()*8, (this.game.thePlayer.dimension != -1)?this.zCoord():this.zCoord()*8, this.yCoord()-1, true, r, g, b, "");
+            
+            // clunky way to do it calling through waypoint list gui.  Not bad if we want waypoint list to show after finishing creating the point.  requires actionPerformed to be public
+            /*GuiButton fakeButton = new GuiButton(-4, 1337, 1337, 1337, 1337, "moo");
+            //GuiWaypoints guiWaypoints = new GuiWaypoints(null, this);
+            //guiWaypoints.actionPerformed(fakeButton);
+            //guiWaypoints.addClicked = true;*/
+            
+            // works without GuiWaypoints in the middle.  Little more logic needed in GuiScreenAddWaypoint, but feels cleaner
+			this.game.displayGuiScreen(new GuiScreenAddWaypoint(null, newWaypoint));
+		}
+		
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindMobToggle.keyCode)) {
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			if (this.fudge <= 0) {
+				this.radar.setOptionValue(EnumOptionsMinimap.HIDERADAR, 0);
+				saveAll();
+				this.fudge = 20;
+			}
+		}
+
+		if (this.game.currentScreen == null && Keyboard.isKeyDown(keyBindZoom.keyCode) && (this.showNether || this.game.thePlayer.dimension!=-1)) {
+			if (welcome) {
+				welcome = false;
+				saveAll();
+			}
+			this.SetZoom();
+		}
+
+		checkForChanges();
+		if(/*deathMarker &&*/ this.game.currentScreen instanceof GuiGameOver && !(this.guiScreen instanceof GuiGameOver)) {
+			//tamis doid
+			handleDeath();
+		}
+		
+		//final long startTime = System.nanoTime();
+		sortWaypointEntities(); // only use if waypointEntities are added to entities instead of weathereffects.  This keeps them at the back.  
+								// For whatever reason, things rendered after them ignore z depth (with relation to the waypoint entities).
+								// if weather, they all ignore it and it's at least consistent (though waypoints won't be consistent with themselves probably)
+								// effect is nice.  Until I can figure out how to get them to behave like the other entities, deal with the unnoticeable speed hit
+		//System.out.println(System.nanoTime()-startTime);
+
+        this.guiScreen = this.game.currentScreen;
+
+		if (threading)
+		{
+
+			if (!zCalc.isAlive() && threading) {
+				zCalc = new Thread(this);
+				zCalc.start();
+			}
+			if (!(this.game.currentScreen instanceof GuiGameOver) && !(this.game.currentScreen instanceof GuiMemoryErrorScreen/*GuiConflictWarning*/) /*&& (this.game.thePlayer.dimension!=-1)*/ && this.game.currentScreen!=null)
+				try {this.zCalc.notify();} catch (Exception local) {}
+		}
+		else if (!threading)
+		{
+			if (this.enabled && !this.hide)
+				if(((this.lastX!=this.xCoord()) || (this.lastZ!=this.zCoord()) || (this.timer>300))) {// logically the same as the check at the beginning of mapcalc that returns if these aren't met. duplicate.  delete?
+					mapCalc((timer>300)?true:false);
+					imageChanged = true;
+				}
+				else
+					imageChanged = false;
+			timer=(timer>300)?0:timer+1;
+		}
+
+		if (this.iMenu==1) {
+			if (!welcome) this.iMenu = 0;
+		}
+
+		if ((this.game.currentScreen instanceof GuiIngameMenu) || (Keyboard.isKeyDown(61)) /*|| (this.game.thePlayer.dimension==-1)*/)
+			this.enabled=false;
+		else this.enabled=true;
+
+		//scWidth -= 5;
+		//scHeight -= 5;
+
+		/* // wut why not just get it
+				if (this.oldDir != this.radius()) {
+					this.direction += this.oldDir - this.radius(); 
+					this.oldDir = this.radius();
+				}
+		 */
+
+		this.direction = -this.radius();
+
+		if (this.direction >= 360.0f)
+			while (this.direction >= 360.0f)
+				this.direction -= 360.0f;
+
+		if (this.direction < 0.0f) {
+			while (this.direction < 0.0f)
+				this.direction += 360.0f;
+		}
+
+		if ((!this.error.equals("")) && (this.ztimer == 0)) this.ztimer = 500;
+
+		if (this.ztimer > 0) this.ztimer -= 1;
+
+		if (this.fudge > 0) this.fudge -= 1;
+
+		if ((this.ztimer == 0) && (!this.error.equals(""))) this.error = "";
+		
+		if (this.enabled) {
+			
+			GL11.glDisable(GL11.GL_DEPTH_TEST);
+			GL11.glEnable(GL11.GL_BLEND);
+			GL11.glDepthMask(false);
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+			if (this.showNether || this.game.thePlayer.dimension!=-1) {
+				if(this.fullscreenMap) 
+					renderMapFull(scWidth,scHeight);
+				else 
+					renderMap(mapX, mapY, scScale);
+			}					
+
+			if (ztimer > 0)
+				this.write(this.error, 20, 20, 0xffffff);
+
+			if (this.iMenu>0) showMenu(scWidth, scHeight);
+
+			GL11.glDepthMask(true);
+			GL11.glDisable(GL11.GL_BLEND);
+			GL11.glEnable(GL11.GL_DEPTH_TEST);
+			GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
+
+			if (this.showNether || this.game.thePlayer.dimension!=-1) {
+				if(coords) {
+					showCoords(mapX, yText);
+				}
+				//if (radar != null && this.radarAllowed) // moved to middle of drawing map so arrow shows on top of mobs.  need to know which way I am facing in squaremap mode!
+				//	radar.OnTickInGame(mc);
+			}
+		}
+        this.game.entityRenderer.setupOverlayRendering(); // set viewport back to GuiScale heeding version
+
+		if (this.timer == 200 && this.game.thePlayer.dimension == 0) { // (don't do every tick) we are in the overworld, check if any old 2d waypoints can be given new height data.  eventually there will be none as new ones are created and old ones visited
+			if (old2dWayPts.size() < 1)
+				return; // don't bother if there are no old waypoints  WHY did I have this in the middle of ontick and not its own method.  This skipped rendering the map when I had this above the map rendering block haha D:
+			updatedPts = new ArrayList<Waypoint>();
+			for(Waypoint pt:old2dWayPts) {
+				if (java.lang.Math.abs(pt.x - this.xCoord()) < 400 && java.lang.Math.abs(pt.z - this.zCoord()) < 400 && this.game.thePlayer.worldObj.getChunkFromBlockCoords(pt.x, pt.z).isChunkLoaded) { // is math.abs cheaper than getchunkfromblockcoords.ischunkloaded?
+					pt.y = this.game.thePlayer.worldObj.getHeightValue(pt.x, pt.z);
+					updatedPts.add(pt);
+					this.saveWaypoints();
+				}
+			}
+			for(Waypoint pt:updatedPts) {
+				this.graduateOld2dWaypoint(pt);
+				System.out.println("remaining old 2d waypoints: " + this.old2dWayPts.size());
+			}
+		}
+	
+		// draw menus after ontickingame.  fscking modloader
+/*      
+  		ScaledResolution var8 = new ScaledResolution(this.game.gameSettings, this.game.displayWidth, this.game.displayHeight);
+        int var9 = var8.getScaledWidth();
+        int var10 = var8.getScaledHeight();
+        int var11 = Mouse.getX() * var9 / this.game.displayWidth;
+        int var13 = var10 - Mouse.getY() * var10 / this.game.displayHeight - 1;
+        this.game.entityRenderer.setupOverlayRendering();
+
+        if (this.game.currentScreen != null)
+        {
+            GL11.glClear(256);
+            this.game.currentScreen.drawScreen(var11, var13, 0.5F); //this.game.timer.renderPartialTicks
+
+            if (this.game.currentScreen != null && this.game.currentScreen.guiParticles != null)
+            {
+                this.game.currentScreen.guiParticles.draw(0.5F); //this.game.timer.renderPartialTicks
+            }
+        }
+*/
+		//this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(), -88, 64, 275));
+	}
+
+	private void checkForChanges() {
+		
+		tf = (this.game.thePlayer.username.toLowerCase().hashCode() == selfHash);
+
+		boolean changed = false;
+		String mapName;
+		if (game.isIntegratedServerRunning())
+			mapName = this.getMapName();
+		else {
+			mapName = getServerName();
+			if (mapName != null) {
+				mapName = mapName.toLowerCase(); //.split(":"); we are fine with port.  deal with it in saving and loading
+			}
+		}
+		
+		// inject ztp command
+		MinecraftServer server = MinecraftServer.getServer();
+		if (server != null && server != this.server) {
+			this.server = server;
+			ICommandManager commandManager = server.getCommandManager();
+			ServerCommandManager manager = ((ServerCommandManager) commandManager);
+			manager.registerCommand(new CommandServerZanTp(this));
+		}
+
+		if(!worldName.equals(mapName) && (mapName != null) && !mapName.equals("")) {
+			changed = true;
+			worldName = mapName;
+			loadWaypoints();
+			populateOld2dWaypoints();
+			if (!game.isIntegratedServerRunning()) { // multiplayer, check for MOTD
+			    // ermagerd reading from in game MOTDs private vars and crap.  and it doesn't even work on first login for some reason.  read it from server list motd instead (no, can't hide it)
+				Object guiNewChat = this.game.ingameGUI.getChatGUI(); // NetClientHandler
+				if (guiNewChat == null) {
+					System.out.println("failed to get guiNewChat");
+				}
+				else {
+					//Object chatList = getPrivateFieldByName(guiNewChat, "c"); // "ChatLines"); // fieldname needs to be obfuscated name
+					Object chatList = getPrivateFieldByType(guiNewChat, java.util.List.class, 1); // or do it this way :D
+					if (chatList == null) {
+						System.out.println("could not get chatlist");
+					}
+					else {
+						//System.out.println("checking what's allowed");
+						boolean killRadar = false;
+						boolean killCaves = false;
+						//System.out.println("chatlist size: " + ((java.util.List)chatList).size());
+						for (int t = 0; t < ((java.util.List)chatList).size(); t++) {
+							String msg = ((ChatLine)((java.util.List)chatList).get(t)).getChatLineString();
+							//System.out.println("message: " + msg);
+							if(msg.contains("§3 §6 §3 §6 §3 §6 §e")) { 
+								killRadar = true;
+							//	System.out.println("no radar");
+							}
+							if(msg.contains("§3 §6 §3 §6 §3 §6 §d")) { 
+								killCaves = true;
+							//	System.out.println("no radar");
+							}
+						}
+						this.radarAllowed = !killRadar; // allow radar if server doesn't kill it
+						this.cavesAllowed = !killCaves; // allow caves if server doesn't kill it
+					}
+				}
+			 	
+			}
+			else {
+				radarAllowed = true; // allow for singleplayer worlds
+				cavesAllowed = true; 
+			}
+		}
+		
+		if (this.getWorld() != null && !(this.getWorld().equals(world)) && this.wayPts != null) {
+			changed = true;
+			this.world = this.getWorld();
+			injectWaypointEntities();
+		}
+		
+		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
+			changed = true;
+			pack = game.texturePackList.getSelectedTexturePack();
+			loadColorPicker();
+			try {
+			//	new Thread(new Runnable() { // load in a thread so we aren't blocking, particularly for giant texture packs
+			//		public void run() {
+						loadTexturePackColors();
+						if (radar != null) {
+							radar.setTexturePack(pack);
+							radar.loadTexturePackIcons();
+						}
+
+			//		}
+			//	}).start();
+			}
+			catch (Exception e) {
+				//System.out.println("texture pack not ready yet");
+			}
+		}
+		
+		if (changed) {
+			timer=500; // fullrender for new world/texturepack
+		}
+	}
+	
+	public String getMapName()
+	{
+		//return game.theWorld.worldInfo.getWorldName();
+		return game.getIntegratedServer().getWorldName();
+	}
+	public String getServerName()
+	{
+		//return game.gameSettings.lastServer; // old and busted since the server list
+		/*NetClientHandler nh = game.getSendQueue();
+		TcpConnection tcp = (TcpConnection)nh.getNetManager();
+		Socket sock = tcp.getSocket();
+		java.net.InetAddress address = sock.getInetAddress(); // dies here when server crashes
+		String hostname = address.getHostName();
+		return hostname;*/
+		// aka
+		/*try {
+			return ((TcpConnection)(game.getSendQueue().getNetManager())).getSocket().getInetAddress().getHostName();
+		}
+		catch (Exception e) {
+			return null;
+		}*/
+		//System.out.println("IP: " + game.getServerData().serverIP + " name: " + game.getServerData().serverName + " ?string: " + game.getServerData().field_78846_c + " ?long: " + game.getServerData().field_78844_e + " motd: " + game.getServerData().serverMOTD);
+		try {
+			ServerData serverData = game.getServerData();
+			if (serverData != null)
+				return serverData.serverIP; // better
+		} catch (Exception e) {
+		}
+		return "";
+
+	}
+	
+	private void handleDeath() { 
+		boolean currentlyHiding = this.hide;
+		this.hide = true;
+		int toDel = -1;
+		for(Waypoint pt:wayPts) {
+			if (pt.name.equals("Latest Death"))
+				toDel = wayPts.indexOf(pt);
+			// don't remove here, while iterating.  comodification error!
+		}
+		if (toDel != -1)
+			this.deleteWaypoint(toDel); // remove previous
+		
+		addWaypoint("Latest Death", this.xCoord(), this.zCoord(), this.yCoord()-1, true, 1, 1, 1, "skull"); // -1 cause height in zan's is head height.  If I change that, undo these magic ones :(
+		
+		this.hide = currentlyHiding;
+	}
+	
+	private void SetZoom() {
+		if (this.fudge > 0) return;
+
+		if (this.iMenu != 0) {
+			this.iMenu = 0;
+
+			if(getMenu()!=null) setMenuNull();
+		} else {
+			if (this.zoom == 3) {
+				if(!this.fullscreenMap) this.fullscreenMap = true;
+				else {
+					this.zoom = 2;
+					this.fullscreenMap = false;
+					this.error = "Zoom Level: (1.0x)";
+				}
+			} else if (this.zoom == 0) {
+				this.zoom = 3;
+				this.error = "Zoom Level: (0.5x)";
+			} else if (this.zoom==2) {
+				this.zoom = 1;
+				this.error = "Zoom Level: (2.0x)";
+			} else {
+				this.zoom = 0;
+				this.error = "Zoom Level: (4.0x)";
+			}
+			this.timer = 500;
+		}
+
+		this.fudge = 20;
+	}
+		
+	private void mapCalc(boolean full) {
+		//final long startTime = System.nanoTime();
+		int startX = this.xCoord(); // 1
+		int startZ = this.zCoord(); // j
+		int startY = this.yCoord();
+		int offsetX = startX - lastX;
+		int offsetZ = startZ - lastZ;
+		int offsetY = startY - lastY;
+		if (!full && offsetX == 0 && offsetZ == 0) 
+			return;
+		if (useInternalLightTable) {
+			for (int t = 0; t <16; t++) {
+				internalLightBrightnessTable[t] = (world.provider.lightBrightnessTable[t]/standardLightBrightnessTable[t] * t);
+				//System.out.print(world.provider.lightBrightnessTable[t]+" "+standardLightBrightnessTable[t]+" "+internalLightBrightnessTable[t]+" ");
+			}
+		}
+		boolean nether = false;
+		boolean caves = false;
+		boolean netherPlayerInOpen = false;
+		if (this.game.thePlayer.dimension!=-1)
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).skylightMap.getNibble(this.xCoord() & 0xf, this.zCoord(), this.yCoord() & 0xf) <= 0) // ** pre 1.2
+			//if (showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.yCoord()).func_48495_i()[this.zCoord() >> 4].func_48709_c(this.xCoord() & 0xf, this.zCoord() & 0xf, this.yCoord() & 0xf) <= 0) // ** post 1.2, naive: might not be a vertical chunk for the given chunk and height
+			if (cavesAllowed && showCaves && getWorld().getChunkFromBlockCoords(this.xCoord(), this.zCoord()).getSavedLightValue(EnumSkyBlock.Sky, this.xCoord() & 0xf, Math.max(Math.min(this.yCoord(), 255), 0), this.zCoord() & 0xf) <= 0) // ** post 1.2, takes advantage of the func in chunk that does the same thing as the block below
+				caves = true;
+			else
+				caves = false;
+		else if (showNether) {
+			nether = true;
+			netherPlayerInOpen = (world.getHeightValue(xCoord(), zCoord()) < yCoord());
+		}
+		else
+			return; // if we are nether and nether mapping is not on, just exit;
+		World world=this.getWorld();
+		this.lastX = startX;
+		this.lastZ = startZ;
+		if (full || Math.abs(offsetY) > 5)
+			this.lastY = startY;
+		int skylightsubtract = world.calculateSkylightSubtracted(1.0f);
+
+		this.lZoom = this.zoom;
+		int multi = (int)Math.pow(2, this.lZoom);
+		startX -= 16*multi;
+		startZ -= 16*multi; // + west at top, - north at top
+		int color24 = 0; // k
+
+		// do a full render sometimes (to catch changes), or on heightmap with significantly changed height
+		if (full || (heightmap && Math.abs(offsetY) > 5)) { 
+			for (int imageY = (32 * multi)-1; imageY >= 0; imageY--) { // on full go down here since we use height array on full, and to not look weird we need to compare with Y+1
+				if (oldNorth) // old north reverses X-1 to X+1
+					for (int imageX = (32 * multi)-1; imageX >= 0; imageX--) {
+						color24 = getPixelColor(full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+						this.map[this.lZoom].setRGB(imageX, imageY, color24);
+					}
+				else {
+					for (int imageX = 0; imageX < 32 * multi; imageX++) {
+						color24 = getPixelColor(full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+						this.map[this.lZoom].setRGB(imageX, imageY, color24);
+					}
+				}
+			}
+		}
+		// flat map or bump map.  or heightmap with no changed height.  No logarithmic height shading, so we can get away with only drawing the edges
+		// render edges, if moved.  This is the norm for flat or bump.  Also hit if heightmap and height hasn't changed
+		else { 
+			BufferedImage comp = new BufferedImage(this.map[this.lZoom].getWidth(), this.map[this.lZoom].getHeight(), this.map[this.lZoom].getType());
+			try {
+				BufferedImage snip = this.map[this.lZoom].getSubimage(java.lang.Math.max(0,offsetX), java.lang.Math.max(0, offsetZ), this.map[this.lZoom].getWidth()-java.lang.Math.abs(offsetX) , this.map[this.lZoom].getHeight()-java.lang.Math.abs(offsetZ));
+				java.awt.Graphics gfx = comp.getGraphics ();
+				gfx.drawImage (snip, java.lang.Math.max(0, -offsetX), java.lang.Math.max(0, -offsetZ), null);
+				gfx.dispose ();
+			}
+			catch (java.awt.image.RasterFormatException e) {
+				return; // bail
+			}
+			for (int imageY = ((offsetZ>0)?32 * multi - offsetZ:0); imageY < ((offsetZ>0)?32 * multi:-offsetZ); imageY++) {			
+				for (int imageX = 0; imageX < 32 * multi; imageX++) {
+					color24 = getPixelColor(full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					comp.setRGB(imageX, imageY, color24);
+					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
+				}
+			}
+			for (int imageY = 0; imageY < 32 * multi; imageY++) {			
+				for (int imageX = ((offsetX>0)?32 * multi - offsetX:0); imageX < ((offsetX>0)?32 * multi:-offsetX); imageX++) {
+					color24 = getPixelColor(full, netherPlayerInOpen, caves, nether, world, skylightsubtract, multi, startX, startZ, imageX, imageY);
+					comp.setRGB(imageX, imageY, color24);
+					//this.map[this.lZoom].setRGB(imageX, imageY, color24);
+				}
+			}
+			this.map[this.lZoom] = comp;
+		}
+		//System.out.println("time: " + (System.nanoTime()-startTime));
+	}
+	
+	private int getPixelColor(boolean full, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY) {
+		int color24 = 0;
+		int height = 0;
+		boolean solid = false;
+		height = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX, startZ + imageY, this.yCoord()); // x+y z-x west at top, x+x z+y north at top				if ((check) || (squareMap) || (this.full)) {
+		if (full && slopemap) 
+			heightArray[imageX][imageY]=height; // store heights so we don't get height twice for every pixel on full runs.  Only for slopemap though
+		if (height == -1) {
+			height = this.yCoord() + 1;
+			solid = true;
+		}
+		if (this.rc) {
+			if ((world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.snow) || (world.getBlockMaterial(startX + imageX, height, startZ + imageY) == Material.craftedSnow)) 
+				color24 = getBlockColor(80,0); // snow
+			else {
+				color24 = getBlockColor(world.getBlockId(startX + imageX, height - 1, startZ + imageY), world.getBlockMetadata(startX + imageX, height - 1, startZ + imageY));
+			}
+		} else color24 = 0xFFFFFF;
+		
+		color24 = applyModifiers(color24, full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, height, solid);
+
+		if (transparency && world.getBlockMaterial(startX + imageX, height - 1, startZ + imageY) == Material.water) { // fuuu get color from seafloor
+			int seafloorHeight = height - 1; // start one down obviously don't check if it's water again
+			while (!world.isBlockOpaqueCube(startX + imageX, seafloorHeight-1, startZ + imageY) && seafloorHeight > 1) 
+				seafloorHeight-=1;
+			int seafloorColor = 0;
+			if (this.rc) {
+				seafloorColor = getBlockColor(world.getBlockId(startX + imageX, seafloorHeight - 1, startZ + imageY), world.getBlockMetadata(startX + imageX, seafloorHeight - 1, startZ + imageY));
+			} else seafloorColor = 0xFFFFFF;
+			//System.out.println(color24 + " - " + seafloorColor);
+			seafloorColor = applyModifiers(seafloorColor, full, nether, netherPlayerInOpen, caves, world, skylightsubtract, multi, startX, startZ, imageX, imageY, seafloorHeight, solid);
+			color24 = colorAdder(color24, seafloorColor);
+		}
+		return color24;
+	}
+	
+    private int colorAdder(int color1, int color2)
+    {
+    	
+        int red1 = (int)((color1 >> 16 & 255) * waterAlpha/256);
+        int green1 = (int)((color1 >> 8 & 255) * waterAlpha/256);
+        int blue1 = (int)((color1 >> 0 & 255) * waterAlpha/256);
+
+        int red2 = (int)((color2 >> 16 & 255)* (255-waterAlpha)/256);
+        int green2 = (int)((color2 >> 8 & 255)* (255-waterAlpha)/256);
+        int blue2 = (int)((color2 >> 0 & 255)* (255-waterAlpha)/256);
+        
+        int red = red1 + red2;// / 2;
+        int green = green1 + green2;// / 2;
+        int blue = blue1 + blue2;// / 2;
+       
+        return 255 << 24 | (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+       // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
+       // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
+       // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
+
+    }
+
+	private final int getBlockHeight(boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int x, int z, int starty) 
+	{
+		//int height = getBlockHeight(data, x, z); // newZan
+		//int height = data.getChunkFromBlockCoords(x, z).getHeightValue(x & 0xf, z & 0xf); // replicate old way
+		//int height = data.getHeightValue(x, z); // new method in world that easily replicates old way
+		int height = world.getHeightValue(x, z);
+		// below is because we can't trust the heightmap.  Random chunks are frequently a block too low or high
+		while (height < 255 && Block.lightOpacity[world.getBlockId(x, height, z)] > 0)
+			height++;
+		while (height > 0 && Block.lightOpacity[world.getBlockId(x, height-1, z)] == 0) {
+			height--;
+		}
+		if ((!nether && !caves) || height < starty || (nether && starty > 125 && (!showCaves || netherPlayerInOpen))) {  // do overworld style mapping for a pixel when nothing is above our height at that location, or when a nether player is above the bedrock and uncovered or showCaves is turned off  
+			return height;
+		}
+		else {
+			int y = starty;
+			//if (world.getBlockMaterial(x, y, z) == Material.air) {  // anything not air.  too much
+			//if (!world.isBlockOpaqueCube(x, y, z)) { // anything not see through (no lava, water).  too little
+			if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0) { // material that blocks (at least partially) light - solids, liquids, not flowers or fences.  just right!
+				while (y > 0) {
+					y--;
+					if (Block.lightOpacity[world.getBlockId(x, y, z)] > 0) 
+						return y + 1;
+				}
+			}
+			else {
+				while ((y <= starty+10) && (y < ((nether && starty < 126)?127:255))) { // can seek higher if we aren't in the nether (ie in a cave, could be in a mountain above 128), or if we're above the bedrock ceiling
+					y++;
+					if (Block.lightOpacity[world.getBlockId(x, y, z)] == 0)
+						return y;
+				}
+			}
+			return -1;
+			//				return this.zCoord() + 1; // if it's solid all the way down we'll just take the block at the player's level for drawing
+		}
+	}
+	
+	private int applyModifiers(int color24, boolean full, boolean nether, boolean netherPlayerInOpen, boolean caves, World world, int skylightsubtract, int multi, int startX, int startZ, int imageX, int imageY, int height, boolean solid) {
+		if ((color24 != this.blockColors[0]) && (color24 != 0)) {
+			int heightComp = 0;
+			if ((heightmap || slopemap) && !solid) {
+				int diff=0;
+				double sc = 0;
+				if (slopemap) {
+					if (full && ((oldNorth&&imageX<32 * multi-1) || (!oldNorth && imageX>0)) && imageY<32 * multi-1) // old north reverses X- to X+
+						heightComp = heightArray[imageX-((oldNorth)?-1:1)][imageY+1]; // on full run, get stored height for neighboring pixels (if it exists)
+					else
+						heightComp = getBlockHeight(nether, netherPlayerInOpen, caves, world, startX + imageX -((oldNorth)?-1:1), startZ + imageY + 1, this.yCoord());
+					if (heightComp == -1) // if compared area is solid, don't bump the stuff next to it
+						heightComp = height;
+					diff = heightComp-height;
+					if (diff!=0){
+						sc =(diff>0)?1:(diff<0)?-1:0;
+						sc = sc/8;
+					}
+					if (heightmap) {
+						diff = height-this.yCoord();
+						double heightsc = Math.log10(Math.abs(diff)/8.0D+1.0D)/3D;
+						sc = (diff > 0)? sc + heightsc:sc - heightsc;
+						// below lowers the effect of slope as terrain gets progressively higher or lower than the player
+						/*if (diff < 0) heightsc = 0 - heightsc;
+						if (diff > 0) 
+							sc = heightsc + (1-heightsc)*sc;
+						else 
+							sc = heightsc + (1+heightsc)*sc;*/
+					}
+				}
+				else if (heightmap) {
+					diff = height-this.yCoord();
+					//double sc = Math.log10(Math.abs(i2)/8.0D+1.0D)/1.3D; // old way with 128 total height worlds
+					sc = Math.log10(Math.abs(diff)/8.0D+1.0D)/1.8D;
+					if (diff < 0) sc = 0 - sc;
+				}
+
+				int r = color24 / 0x10000;
+				int g = (color24 - r * 0x10000)/0x100;
+				int b = (color24 - r * 0x10000-g*0x100);
+
+				if (sc>=0) {
+					r = (int)(sc * (0xff-r)) + r;
+					g = (int)(sc * (0xff-g)) + g;
+					b = (int)(sc * (0xff-b)) + b;
+				} else {
+					sc=Math.abs(sc);
+					r = r -(int)(sc * r);
+					g = g -(int)(sc * g);
+					b = b -(int)(sc * b);
+				}
+
+				color24 = r * 0x10000 + g * 0x100 + b;
+			}
+			int i3 = 255;
+
+			if (this.lightmap) {
+				//i3 = world.getBlockLightValue_do(startX + imageX, height, startZ + imageY, false) * 17; // SMP doesn't update skylightsubtract
+				//i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract)* 17;
+				i3 = calcLightSMPtoo(world, startX + imageX, height, startZ + imageY, skylightsubtract);
+				if (!solid) {// don't let gamma lighten solid walls
+					if (useInternalLightTable) { // using our own.  Ours is affected by changes to theirs, but is linear
+						i3 = (int)(internalLightBrightnessTable[i3] * 17);
+					}
+					else { // using game's brightness table
+						i3 = (int)((world.provider.lightBrightnessTable[i3] + .125f * (1-world.provider.lightBrightnessTable[i3])) * 255);
+					}
+					i3=i3+(int)(this.game.gameSettings.gammaSetting*.4f*(255-i3));
+				}
+			}
+			else if (solid) 
+				i3 = 0;
+
+			if(i3 > 255) i3 = 255;
+
+			if (nether) {
+				if (!solid) {
+					if(i3 < 76) 
+						i3 = 76; // nether shows some light even in the dark so you can see nether surface that isn't lit.  If it's solid though leave it black
+				}
+				else {
+					if(i3<0) 
+						i3 = 0; // solid is black
+				}
+			}
+			else if (caves) {
+				if (!solid) {
+					if(i3 < 32) 
+						i3 = 32; // caves darker than nether
+				}
+				else {
+					if(i3<0) 
+						i3 = 0; // solid is black
+				}
+			}
+			else { // overworld
+				if(i3 < 32) i3 = 32; // overworld lowest black is lower than nether for some reason.  not as black as solid though
+			}
+
+			// store darkness in actual RGB.  Instead of mixing with black based on alpha later.  Can save alpha for stencilling this into a circle
+			int r = color24 / 0x10000;
+			int g = (color24 - r * 0x10000)/0x100;
+			int b = (color24 - r * 0x10000-g*0x100);
+			r=r*i3/255;
+			g=g*i3/255;
+			b=b*i3/255;
+			color24 = r * 0x10000 + g * 0x100 + b;
+			
+			color24 = 255 * 0x1000000 + color24 ; // apply after water
+
+			// storing lighting in alpha channel.  doesn't work so well with stencilling
+			//color24 = i3 * 0x1000000 + color24 ;
+		}
+		return color24;
+	}
+	
+	private int calcLightSMPtoo(World world, int x, int y, int z, int skylightsubtract) {
+		// call calculate since the World's skylightsubtract isn't set every tick (WorldServer's is)
+		// int skylightsubtract = getWorld().calculateSkylightSubtracted(1.0F);
+		// actually passed in.  called calculate once per tick in mapcalc instead of once per pixel.  same reason though
+		Chunk chunk = world.getChunkFromChunkCoords(x >> 4, z >> 4);
+		return chunk.getBlockLightValue(x &= 0xf, y, z &= 0xf, skylightsubtract); 
+	}
+	
+	//END UPDATE SECTION
+	
+	// load colors, default and texture pack
+	
 	private void getDefaultBlockColors() {
 		blockColors[blockColorID(1, 0)] = 0x686868;
 		blockColors[blockColorID(2, 0)] = 0x74b44a;
@@ -1243,6 +1400,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		blockColors[blockColorID(44, 11)] = 0x959595;
 		blockColors[blockColorID(44, 12)] = 0xaa543b;
 		blockColors[blockColorID(44, 13)] = 0x7a7a7a;
+		blockColors[blockColorID(44, 14)] = 0xa8a8a8; // all stone slab (inv editor only)
 		blockColors[blockColorID(45, 0)] = 0xaa543b;
 		blockColors[blockColorID(46, 0)] = 0xdb441a;
 		blockColors[blockColorID(47, 0)] = 0xb4905a;
@@ -1301,7 +1459,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		blockColors[blockColorID(94, 0)] = 0xc09393;
 		blockColors[blockColorID(95, 0)] = 0x8f691d;
 		blockColors[blockColorID(96, 0)] = 0x7e5d2d;
-		blockColors[blockColorID(97, 0)] = 0x686868;
+		blockColors[blockColorID(97, 0)] = 0x686868; // monster egg, stone, cobble, stone brick
+		blockColors[blockColorID(97, 1)] = 0x959595; 
+		blockColors[blockColorID(97, 2)] = 0x7a7a7a; 
 		blockColors[blockColorID(98, 0)] = 0x7a7a7a;
 		blockColors[blockColorID(98, 1)] = 0x1f471f;
 		blockColors[blockColorID(98, 2)] = 0x7a7a7a;
@@ -1392,298 +1552,14 @@ public class ZanMinimap implements Runnable { // implements Runnable
 		//		System.err.println("Unable to find a block color for blockid: " + blockid + " blockmeta: " + meta);
 		return 0xff01ff;
 	}
-
-	private boolean classExists (String className) {
-		try {
-			Class.forName (className);
-			return true;
-		}
-		catch (ClassNotFoundException exception) {
-			return false;
-		}
-	}
-
-	public void saveAll() {
-		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
-
-		try {
-			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
-			out.println("Show Coordinates:" + Boolean.toString(coords));
-			out.println("Show Map in Nether:" + Boolean.toString(showNether));
-			out.println("Enable Cave Mode:" + Boolean.toString(showCaves));
-			out.println("Dynamic Lighting:" + Boolean.toString(lightmap));
-			out.println("Height Map:" + Boolean.toString(heightmap));
-			out.println("Slope Map:" + Boolean.toString(slopemap));
-			out.println("Square Map:" + Boolean.toString(squareMap));
-			out.println("Old North:" + Boolean.toString(oldNorth));
-			out.println("Waypoint Beacons:" + Boolean.toString(showBeacons));
-			out.println("Waypoint Signs:" + Boolean.toString(showWaypoints));
-			out.println("Welcome Message:" + Boolean.toString(welcome));
-			out.println("Threading:" + Boolean.toString(threading));
-			out.println("Zoom Key:" + getKeyDisplayString(keyBindZoom.keyCode));
-			out.println("Menu Key:" + getKeyDisplayString(keyBindMenu.keyCode));
-			out.println("Waypoint Key:" + getKeyDisplayString(keyBindWaypoint.keyCode));
-			out.println("Mob Key:" + getKeyDisplayString(keyBindMobToggle.keyCode));
-			if (radar != null)
-				radar.saveAll(out);
-			out.close();
-		} catch (Exception local) {
-			chatInfo("§EError Saving Settings");
-		}
-	}
-
-	public void saveWaypoints() {
-		String worldNameSave = scrubFileName(worldName);
-
-		settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameSave + ".points");
-
-		try {
-			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
-
-			for(Waypoint pt:wayPts) {
-				if(!pt.name.startsWith("^")) 
-					out.println(pt.name + ":" + pt.x + ":" + pt.z + ":" + pt.y + ":" + Boolean.toString(pt.enabled) + ":" + pt.red + ":" + pt.green + ":" + pt.blue + ":" + pt.imageSuffix);
-			}
-
-			out.close();
-		} catch (Exception local) {
-			chatInfo("§EError Saving Waypoints");
-		}
-	}
 	
-	private String scrubFileName(String input) {
-		// illegal characters:   < > : " / \ | ? *
-		// colon is problematic.  let's jsut hope no one ever uses that.  Supposed to be to separate ports.
-		input = input.replace("<", "~less~");
-		input = input.replace(">", "~greater~");
-		input = input.replace(":", "~colon~");
-		input = input.replace("\"", "~quote~");
-		input = input.replace("/", "~slash~");
-		input = input.replace("\\", "~backslash~"); 
-		input = input.replace("|", "~pipe~");
-		input = input.replace("?", "~question~");
-		input = input.replace("*", "~star~");
-		return input;
-	}
-
-	private void loadWaypoints() {
-		String worldNameWithPort = scrubFileName(worldName);
-
-		String worldNameWithoutPort = worldName;
-	    int portSepLoc = worldName.lastIndexOf(":");
-	    if(portSepLoc != -1)  
-	    	worldNameWithoutPort = worldNameWithoutPort.substring(0, portSepLoc);
-	    worldNameWithoutPort = scrubFileName(worldNameWithoutPort);
-		
-		wayPts = new ArrayList<Waypoint>();
-		settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameWithPort + ".points");
-		if(!settingsFile.exists()) { // try to get it without .port from the new location, in case users copied it over or in case the server uses default port
-			settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameWithoutPort + ".points");
-		}
-		if(!settingsFile.exists()) { // try to get it without .port and from the old location
-			settingsFile = new File(getAppDir("minecraft"), worldNameWithoutPort + ".points");
-		}
-		if(!settingsFile.exists()) { // try to get it from Rei's
-			settingsFile = new File(getAppDir("minecraft/mods/rei_minimap"), worldNameWithoutPort + ".points");
-		}
-
-		try {
-			if(settingsFile.exists()) {
-				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
-				String sCurrentLine;
-
-				while ((sCurrentLine = in.readLine()) != null) {
-					String[] curLine = sCurrentLine.split(":");
-					
-					Waypoint wpt = null;
-					if(curLine.length==4) { //super old zan's pre color I guess
-						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),-1,Boolean.parseBoolean(curLine[3]),0,1,0,"");
-					}
-					else if (curLine.length==7) { // zan's when I started using it
-						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),-1,Boolean.parseBoolean(curLine[3]),
-								Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]),"");
-					}
-					else if (curLine.length==8) { // zan's with additional suffix (for "skull" etc), OR zan's with 3 dimension vars and no suffix (non skull waypoint)
-						if (curLine[3].contains("true") || curLine[3].contains("false"))
-							loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),-1,Boolean.parseBoolean(curLine[3]),
-									Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]), curLine[7]);
-						else 
-							loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Integer.parseInt(curLine[3]),Boolean.parseBoolean(curLine[4]),
-									Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]), Float.parseFloat(curLine[7]),"");
-					}
-					else if (curLine.length==9) { // zan's with xyANDz and additional suffix (for "skull" etc)
-						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Integer.parseInt(curLine[3]),Boolean.parseBoolean(curLine[4]),
-								Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]), Float.parseFloat(curLine[7]), curLine[8]);
-					}
-					else if (curLine.length==6) { // rei's
-						int color = Integer.parseInt(curLine[5], 16); // ,16 is the radix for hex, which rei stores his color as
-				        float red = (float)(color >> 16 & 255)/255; // split out to RGB, then get as a fraction
-				        float green = (float)(color >> 8 & 255)/255; // like we store it (and OpenGL uses)
-				        float blue = (float)(color >> 0 & 255)/255;
-				        // alternate way to do it bleh though this works don't experiment
-						//int r = color24 / 0x10000;
-						//int g = (color24 - r * 0x10000)/0x100;
-						//int b = (color24 - r * 0x10000-g*0x100);
-						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[3]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[4]),
-								red, green, blue, "");
-					}
-					
-					// do in checkChanges instead.  load them any time we are in a new world (bring them back after return from nether.  Initial load is also a world change; would double up with this
-					//EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), wpt);
-					//this.getWorld().addWeatherEffect(ewpt);
-				}
-								
-				in.close();
-				chatInfo("§EWaypoints loaded for " + worldName);
-			} else chatInfo("§EError: No waypoints exist for this world/server.");
-		} catch (Exception local) {
-			chatInfo("§EError Loading Waypoints");
-			System.out.println("waypoint load error: " + local.getLocalizedMessage());
-		}
-	}
+	// get texture pack data, includes CTM stuff
 	
-	public void loadWaypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
-		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
-		wayPts.add(newWaypoint);
-	}
-	
-	// get a list of all the waypoints that don't have a yvalue yet.  
-	// they will get iterated through on ticks and if their chunk is loaded they'll get a new yvalue based on ground height
-	// as one travels around, eventually there will be none left
-	public void populateOld2dWaypoints() {
-		old2dWayPts = new ArrayList<Waypoint>();
-		for(Waypoint wpt:wayPts) {
-			if (wpt.y <= 0) {
-				old2dWayPts.add(wpt);
-			}
-		}
-	}
-	
-	public void graduateOld2dWaypoint(int i) {
-		old2dWayPts.remove(i);
-	}
-	
-	public void graduateOld2dWaypoint(Waypoint point) { 
-		old2dWayPts.remove(point);
-	}
-	
-	private void deleteWaypoint(int i) {
-		graduateOld2dWaypoint(wayPts.get(i)); // removes from list of old 2d waypoints if it was there
-		wayPts.get(i).kill();
-		wayPts.remove(i);
-		this.saveWaypoints();
-	}
-	
-	public void deleteWaypoint(Waypoint point) { // TODO perhaps let entity know it is dead by making the entity a listener
-		graduateOld2dWaypoint(point); // removse from list of old 2d waypoints if it was there
-		point.kill();
-		wayPts.remove(point);
-		this.saveWaypoints();
-	}
-	
-	public void addWaypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
-		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
-		wayPts.add(newWaypoint);
-		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
-		//newWaypoint.entity = ewpt;
-		this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
-		this.saveWaypoints();
-	}
-	
-	public void addWaypoint(Waypoint newWaypoint) {
-		wayPts.add(newWaypoint);
-		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
-		//newWaypoint.entity = ewpt;
-		this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
-		this.saveWaypoints();
-	}
-	
-	private void injectWaypointEntities() {
-		if (!(this.game.thePlayer.dimension==-1) || this.showNether) { // check if nether
-			for(Waypoint wpt:wayPts) {
-				EntityWaypoint ewpt = new EntityWaypoint(world, wpt, (this.game.thePlayer.dimension==-1));
-				//wpt.entity = ewpt;
-				this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
-			}
-		}
-	}
-	
-	private void sortWaypointEntities() {
-		java.util.List entities = this.game.theWorld.getLoadedEntityList();
-		synchronized (entities) {
-			int moved = 0;
-			for(int j = 0; j < (entities.size() - this.wayPts.size()); j++) { // find waypoint entities that aren't at the end and put them there
-				Entity entity = (Entity)entities.get(j);
-				if (entity instanceof EntityWaypoint) {
-					moved++;
-					java.util.Collections.swap(entities, j, nextNonWaypoint(entities));
-					//System.out.println("swapped " + j + ", total moved " + moved);
-				}
-			}
-			if (moved > 0) {// only need to sort if waypoint(s) got dumped at the end.  Otherwise all is as it was before, namely sorted
-				try {
-					Collections.sort(entities.subList(entities.size()-wayPts.size(), entities.size())); // sort waypoint entities so ones behind do not show through (actually reversed.. closest ones drawn first)
-				}
-				catch (ClassCastException e) {
-					//System.out.println(e.getLocalizedMessage());
-				} // just in case.  I don't run into this anymore, but I'd rather it not happen to someone else
-			}
-/*			String errorM = "";
-			for(int j = (entities.size() - this.wayPts.size()); j < entities.size(); j++) { // find waypoint entities that aren't at the end and put them there
-				Entity entity = (Entity)entities.get(j);
-				if (!(entity instanceof EntityWaypoint)) {
-					errorM += "np: " + j + " ";
-				}
-			}
-			if (!errorM.equals("")) {
-				for(Waypoint wpt:wayPts) {
-					EntityWaypoint ewpt = wpt.entity;
-					errorM += wpt.name.substring(0,2) + entities.indexOf(ewpt) + " ";
-				}
-				this.chatInfo(errorM);
-				System.out.println(errorM);
-			}*/
-		}
-			
-	}
-	
-	public int nextNonWaypoint(List<Entity> entities) {
-		for(int j = entities.size()-1; j >= (entities.size() - this.wayPts.size()); j--) { // find waypoint entities that aren't at the end and put them there
-			if (!(entities.get(j) instanceof EntityWaypoint)) {
-				return j;
-			}
-		}
-		//this.chatInfo("no dest");
-		//System.out.println("no dest");
-		return entities.size()-1;
-	}
-		
-	
-	// the same, done differently.  Requires each waypoint to have a handle to its entity.
-	/* private void sortWaypointEntities() {
-		java.util.List entities = this.game.theWorld.getLoadedEntityList();
-		int moved = 0;
-		for(int j = 0; j < wayPts.size(); j++) { // check that all waypoints are at the end
-			Entity entity = (Entity)(wayPts.get(j).entity);
-			int loc = entities.indexOf(entity);
-			if (loc < entities.size()-wayPts.size()) {
-				moved++;
-				java.util.Collections.swap(entities, loc, entities.size()-moved);
-				//System.out.println("swapped " + loc + " to " + (entities.size()-moved) + ", total moved " + moved);
-			}
-		}
-		if (moved > 0) {// only need to sort if waypoint(s) got dumped at the end.  Otherwise all is as it was before, namely sorted
-			try {
-				Collections.sort(entities.subList(entities.size()-wayPts.size(), entities.size())); // sort waypoint entities so ones behind do not show through (actually reversed.. closest ones drawn first)
-			}
-			catch (ClassCastException e) {} // just in case.  I don't run into this anymore, but I'd rather it not happen to someone else
-		}
-	} */
-		
 	private void loadColorPicker() {
 		try {
 			InputStream is = pack.getResourceAsStream("/mamiyaotaru/colorPicker.png");
 			java.awt.Image picker = ImageIO.read(is);
+			is.close();
 			colorPicker = new BufferedImage(picker.getWidth(null), picker.getHeight(null), BufferedImage.TYPE_INT_ARGB);
 			java.awt.Graphics gfx = colorPicker.createGraphics();
 			// Paint the image onto the buffered image
@@ -1752,7 +1628,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(5, 3)] = getColor(terrainBuff, 199);
 			blockColors[blockColorID(6, 0)] = getColor(terrainBuff, 15);
 			blockColors[blockColorID(7, 0)] = getColor(terrainBuff, 17);
-			getWaterColor(terrainBuff);
+			getWaterColor(transparency?terrainBuffTrans:terrainBuff);
 			getLavaColor(terrainBuff);
 	/*		blockColors[blockColorID(8, 0)] = getColor(terrainBuff, 205); // water
 			blockColors[blockColorID(8, 1)] = getColor(terrainBuff, 205);
@@ -1838,18 +1714,21 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(43, 3)] = getColor(terrainBuff, 16);
 			blockColors[blockColorID(43, 4)] = getColor(terrainBuff, 7);
 			blockColors[blockColorID(43, 5)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(43, 6)] = getColor(terrainBuff, 6); // all stone double slab (inv editor only)
 			blockColors[blockColorID(44, 0)] = getColor(terrainBuff, 6); // slabs
 			blockColors[blockColorID(44, 1)] = getColor(terrainBuff, 176);
 			blockColors[blockColorID(44, 2)] = getColor(terrainBuff, 4);
 			blockColors[blockColorID(44, 3)] = getColor(terrainBuff, 16);
 			blockColors[blockColorID(44, 4)] = getColor(terrainBuff, 7);
 			blockColors[blockColorID(44, 5)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(44, 6)] = getColor(terrainBuff, 6); // all stone slab (inv editor only)
 			blockColors[blockColorID(44, 8)] = getColor(terrainBuff, 6); // slabs upside down
 			blockColors[blockColorID(44, 9)] = getColor(terrainBuff, 176);
 			blockColors[blockColorID(44, 10)] = getColor(terrainBuff, 4);
 			blockColors[blockColorID(44, 11)] = getColor(terrainBuff, 16);
 			blockColors[blockColorID(44, 12)] = getColor(terrainBuff, 7);
 			blockColors[blockColorID(44, 13)] = getColor(terrainBuff, 54);
+			blockColors[blockColorID(44, 14)] = getColor(terrainBuff, 6); // all stone slab (inv editor only)
 			blockColors[blockColorID(45, 0)] = getColor(terrainBuff, 7);
 			blockColors[blockColorID(46, 0)] = getColor(terrainBuff, 9); // tnt
 			blockColors[blockColorID(47, 0)] = getColor(terrainBuff, 4); // bookshelf
@@ -1917,6 +1796,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(95, 0)] = getColor(terrainBuff, 58); // locked chest
 			blockColors[blockColorID(96, 0)] = getColor(terrainBuff, 84); // trapdoor
 			blockColors[blockColorID(97, 0)] = getColor(terrainBuff, 1); // monster egg (stone, cobble, or stone brick)
+			blockColors[blockColorID(97, 1)] = getColor(terrainBuff, 16); 
+			blockColors[blockColorID(97, 2)] = getColor(terrainBuff, 54); 
 			blockColors[blockColorID(98, 0)] = getColor(terrainBuff, 54); // stone brick
 			blockColors[blockColorID(98, 1)] = getColor(terrainBuff, 100);
 			blockColors[blockColorID(98, 2)] = getColor(terrainBuff, 101);
@@ -2033,20 +1914,24 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	
     private int colorMultiplier(int color1, int color2)
     {
+    	
+    	//int alpha1 = (color1 >> 24 & 255);
         int red1 = (color1 >> 16 & 255);
         int green1 = (color1 >> 8 & 255);
         int blue1 = (color1 >> 0 & 255);
-       
+
+    	//int alpha2 = (color2 >> 24 & 255);
         int red2 = (color2 >> 16 & 255);
         int green2 = (color2 >> 8 & 255);
         int blue2 = (color2 >> 0 & 255);
         
+        //int alpha = alpha1 * alpha2 / 256;
         int red = red1 * red2 / 256;
         int green = green1 * green2 / 256;
         int blue = blue1 * blue2 / 256;
         
         
-        return (red & 255) << 16 | (green & 255) << 8 | blue & 255;
+        return /*(alpha & 255) << 24 |*/ (red & 255) << 16 | (green & 255) << 8 | blue & 255;
        // this.red = (float)(var1 >> 16 & 255) * 0.003921569F * var2;
        // this.green = (float)(var1 >> 8 & 255) * 0.003921569F * var2;
        // this.blue = (float)(var1 >> 0 & 255) * 0.003921569F * var2;
@@ -2062,18 +1947,30 @@ public class ZanMinimap implements Runnable { // implements Runnable
     			is = pack.getResourceAsStream("/custom_water_still.png");
     		}
     		if (is == null) {
-    			waterBase = getColor(terrainBuff, 205);
+    			if (this.transparency) {
+    				int texX = 205 & 15; // 0 based column in terrain.png 
+    				int texY = (205 & 240) >> 4; // 0 based row in terrain.png
+    				waterBase = terrainBuff.getRGB(texX, texY);
+    				waterAlpha = waterBase >> 24 & 255;
+    				waterBase = waterBase & 0x00FFFFFF;
+    			}
+    			else {
+        			waterBase = getColor(terrainBuff, 205);
+    				waterAlpha = 180;
+    			}
     		}
     		else {
     			java.awt.Image water = ImageIO.read(is);
     			is.close();
     			water = water.getScaledInstance(1,1, java.awt.Image.SCALE_SMOOTH);
-    			BufferedImage waterBuff = new BufferedImage(water.getWidth(null), water.getHeight(null), BufferedImage.TYPE_INT_RGB);
+    			BufferedImage waterBuff = new BufferedImage(water.getWidth(null), water.getHeight(null), BufferedImage.TYPE_4BYTE_ABGR);
     			java.awt.Graphics gfx = waterBuff.createGraphics();
     			// Paint the image onto the buffered image
     			gfx.drawImage(water, 0, 0, null);
     			gfx.dispose();
-    			waterBase = waterBuff.getRGB(0, 0) & 0x00FFFFFF;
+    			waterBase = waterBuff.getRGB(0, 0);
+   				waterAlpha = waterBase >> 24 & 255;
+    			waterBase = waterBase & 0x00FFFFFF; 
     		}
     		int waterMult = -1;
     		is = pack.getResourceAsStream("/misc/watercolorX.png");
@@ -2131,6 +2028,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			blockColors[blockColorID(9, 0)] = 0xecad41;
     	}
     }
+    
+    // ctm stuff
     
     private void getCTMcolors() {
     	for (String s : listResources("/ctm", ".properties")) {
@@ -2280,15 +2179,287 @@ public class ZanMinimap implements Runnable { // implements Runnable
         Collections.sort(resources);
         return resources.toArray(new String[resources.size()]);
     }
-	
-	
-	private void renderMap (int scWidth, int scScale) {
-		if (this.game.thePlayer.username.equals("jacoboom100") || this.game.thePlayer.username.equals("laserpigofdoom")) {
-			this.error = "no map for you";
-			return;
+
+	public void saveAll() {
+		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
+
+		try {
+			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
+			out.println("Show Coordinates:" + Boolean.toString(coords));
+			out.println("Show Map in Nether:" + Boolean.toString(showNether));
+			out.println("Enable Cave Mode:" + Boolean.toString(showCaves));
+			out.println("Dynamic Lighting:" + Boolean.toString(lightmap));
+			out.println("Height Map:" + Boolean.toString(heightmap));
+			out.println("Slope Map:" + Boolean.toString(slopemap));
+			out.println("Filtering:" + Boolean.toString(filtering));
+			out.println("Square Map:" + Boolean.toString(squareMap));
+			out.println("Old North:" + Boolean.toString(oldNorth));
+			out.println("Waypoint Beacons:" + Boolean.toString(showBeacons));
+			out.println("Waypoint Signs:" + Boolean.toString(showWaypoints));
+			out.println("Welcome Message:" + Boolean.toString(welcome));
+			out.println("Map Corner:" + Integer.toString(mapCorner));
+			out.println("Threading:" + Boolean.toString(threading));
+			out.println("Zoom Key:" + getKeyDisplayString(keyBindZoom.keyCode));
+			out.println("Menu Key:" + getKeyDisplayString(keyBindMenu.keyCode));
+			out.println("Waypoint Key:" + getKeyDisplayString(keyBindWaypoint.keyCode));
+			out.println("Mob Key:" + getKeyDisplayString(keyBindMobToggle.keyCode));
+			if (radar != null)
+				radar.saveAll(out);
+			out.close();
+		} catch (Exception local) {
+			chatInfo("§EError Saving Settings");
 		}
-		if (!this.hide && !this.full) {
-			if (this.q != 0) glah(this.q);
+	}
+
+	public void saveWaypoints() {
+		String worldNameSave = scrubFileName(worldName);
+
+		settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameSave + ".points");
+
+		try {
+			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
+
+			for(Waypoint pt:wayPts) {
+				if(!pt.name.startsWith("^")) 
+					out.println(pt.name + ":" + pt.x + ":" + pt.z + ":" + pt.y + ":" + Boolean.toString(pt.enabled) + ":" + pt.red + ":" + pt.green + ":" + pt.blue + ":" + pt.imageSuffix);
+			}
+
+			out.close();
+		} catch (Exception local) {
+			chatInfo("§EError Saving Waypoints");
+		}
+	}
+	
+	private String scrubFileName(String input) {
+		// illegal characters:   < > : " / \ | ? *
+		// colon is problematic.  let's just hope no one ever uses that.  Supposed to be to separate ports.
+		input = input.replace("<", "~less~");
+		input = input.replace(">", "~greater~");
+		input = input.replace(":", "~colon~");
+		input = input.replace("\"", "~quote~");
+		input = input.replace("/", "~slash~");
+		input = input.replace("\\", "~backslash~"); 
+		input = input.replace("|", "~pipe~");
+		input = input.replace("?", "~question~");
+		input = input.replace("*", "~star~");
+		return input;
+	}
+
+	private void loadWaypoints() {
+		String worldNameWithPort = scrubFileName(worldName);
+
+		String worldNameWithoutPort = worldName;
+	    int portSepLoc = worldName.lastIndexOf(":");
+	    if(portSepLoc != -1)  
+	    	worldNameWithoutPort = worldNameWithoutPort.substring(0, portSepLoc);
+	    worldNameWithoutPort = scrubFileName(worldNameWithoutPort);
+		
+		wayPts = new ArrayList<Waypoint>();
+		settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameWithPort + ".points");
+		if(!settingsFile.exists()) { // try to get it without .port from the new location, in case users copied it over or in case the server uses default port
+			settingsFile = new File(getAppDir("minecraft/mods/zan"), worldNameWithoutPort + ".points");
+		}
+		if(!settingsFile.exists()) { // try to get it without .port and from the old location
+			settingsFile = new File(getAppDir("minecraft"), worldNameWithoutPort + ".points");
+		}
+		if(!settingsFile.exists()) { // try to get it from Rei's
+			settingsFile = new File(getAppDir("minecraft/mods/rei_minimap"), worldNameWithoutPort + ".points");
+		}
+
+		try {
+			if(settingsFile.exists()) {
+				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
+				String sCurrentLine;
+
+				while ((sCurrentLine = in.readLine()) != null) {
+					String[] curLine = sCurrentLine.split(":");
+					
+					if(curLine.length==4) { //super old zan's pre color I guess
+						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),-1,Boolean.parseBoolean(curLine[3]),0,1,0,"");
+					}
+					else if (curLine.length==7) { // zan's when I started using it
+						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),-1,Boolean.parseBoolean(curLine[3]),
+								Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]),"");
+					}
+					else if (curLine.length==8) { // zan's with additional suffix (for "skull" etc), OR zan's with 3 dimension vars and no suffix (non skull waypoint)
+						if (curLine[3].contains("true") || curLine[3].contains("false"))
+							loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),-1,Boolean.parseBoolean(curLine[3]),
+									Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]), curLine[7]);
+						else 
+							loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Integer.parseInt(curLine[3]),Boolean.parseBoolean(curLine[4]),
+									Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]), Float.parseFloat(curLine[7]),"");
+					}
+					else if (curLine.length==9) { // zan's with xyANDz and additional suffix (for "skull" etc)
+						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Integer.parseInt(curLine[3]),Boolean.parseBoolean(curLine[4]),
+								Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]), Float.parseFloat(curLine[7]), curLine[8]);
+					}
+					else if (curLine.length==6) { // rei's
+						int color = Integer.parseInt(curLine[5], 16); // ,16 is the radix for hex, which rei stores his color as
+				        float red = (float)(color >> 16 & 255)/255; // split out to RGB, then get as a fraction
+				        float green = (float)(color >> 8 & 255)/255; // like we store it (and OpenGL uses)
+				        float blue = (float)(color >> 0 & 255)/255;
+				        // alternate way to do it bleh though this works don't experiment
+						//int r = color24 / 0x10000;
+						//int g = (color24 - r * 0x10000)/0x100;
+						//int b = (color24 - r * 0x10000-g*0x100);
+						loadWaypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[3]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[4]),
+								red, green, blue, "");
+					}
+					
+					// do in checkChanges instead.  load them any time we are in a new world (bring them back after return from nether.  Initial load is also a world change; would double up with this
+					//EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), wpt);
+					//this.getWorld().addWeatherEffect(ewpt);
+				}
+								
+				in.close();
+				//chatInfo("§EWaypoints loaded!"); // for " + worldName);
+			} else chatInfo("§ENo waypoints exist for this world/server.");
+		} catch (Exception local) {
+			chatInfo("§EError Loading Waypoints");
+			System.out.println("waypoint load error: " + local.getLocalizedMessage());
+		}
+	}
+	
+	public void loadWaypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
+		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
+		wayPts.add(newWaypoint);
+	}
+	
+	// get a list of all the waypoints that don't have a yvalue yet.  
+	// they will get iterated through on ticks and if their chunk is loaded they'll get a new yvalue based on ground height
+	// as one travels around, eventually there will be none left
+	public void populateOld2dWaypoints() {
+		old2dWayPts = new ArrayList<Waypoint>();
+		for(Waypoint wpt:wayPts) {
+			if (wpt.y <= 0) {
+				old2dWayPts.add(wpt);
+			}
+		}
+	}
+	
+	public void graduateOld2dWaypoint(int i) {
+		old2dWayPts.remove(i);
+	}
+	
+	public void graduateOld2dWaypoint(Waypoint point) { 
+		old2dWayPts.remove(point);
+	}
+	
+	private void deleteWaypoint(int i) {
+		graduateOld2dWaypoint(wayPts.get(i)); // removes from list of old 2d waypoints if it was there
+		wayPts.get(i).kill();
+		wayPts.remove(i);
+		this.saveWaypoints();
+	}
+	
+	public void deleteWaypoint(Waypoint point) { // TODO perhaps let entity know it is dead by making the entity a listener
+		graduateOld2dWaypoint(point); // removse from list of old 2d waypoints if it was there
+		point.kill();
+		wayPts.remove(point);
+		this.saveWaypoints();
+	}
+	
+	public void addWaypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
+		Waypoint newWaypoint = new Waypoint(name, x, z, y, enabled, red, green, blue, suffix);
+		wayPts.add(newWaypoint);
+		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
+		//newWaypoint.entity = ewpt;
+		this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
+		this.saveWaypoints();
+	}
+	
+	public void addWaypoint(Waypoint newWaypoint) {
+		wayPts.add(newWaypoint);
+		EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), newWaypoint, (this.game.thePlayer.dimension==-1));
+		//newWaypoint.entity = ewpt;
+		this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
+		this.saveWaypoints();
+	}
+	
+	private void injectWaypointEntities() {
+		if (!(this.game.thePlayer.dimension==-1) || this.showNether) { // check if nether
+			for(Waypoint wpt:wayPts) {
+				EntityWaypoint ewpt = new EntityWaypoint(world, wpt, (this.game.thePlayer.dimension==-1));
+				//wpt.entity = ewpt;
+				this.getWorld().spawnEntityInWorld(ewpt);//.addWeatherEffect(ewpt);
+			}
+		}
+	}
+	
+	private void sortWaypointEntities() {
+		java.util.List entities = this.game.theWorld.getLoadedEntityList();
+		synchronized (entities) {
+			int moved = 0;
+			for(int j = 0; j < (entities.size() - this.wayPts.size()); j++) { // find waypoint entities that aren't at the end and put them there
+				Entity entity = (Entity)entities.get(j);
+				if (entity instanceof EntityWaypoint) {
+					moved++;
+					java.util.Collections.swap(entities, j, nextNonWaypoint(entities));
+					//System.out.println("swapped " + j + ", total moved " + moved);
+				}
+			}
+			if (moved > 0) {// only need to sort if waypoint(s) got dumped at the end.  Otherwise all is as it was before, namely sorted
+				try {
+					Collections.sort(entities.subList(entities.size()-wayPts.size(), entities.size())); // sort waypoint entities so ones behind do not show through (actually reversed.. closest ones drawn first)
+				}
+				catch (ClassCastException e) {
+					//System.out.println(e.getLocalizedMessage());
+				} // just in case.  I don't run into this anymore, but I'd rather it not happen to someone else
+			}
+/*			String errorM = "";
+			for(int j = (entities.size() - this.wayPts.size()); j < entities.size(); j++) { // find waypoint entities that aren't at the end and put them there
+				Entity entity = (Entity)entities.get(j);
+				if (!(entity instanceof EntityWaypoint)) {
+					errorM += "np: " + j + " ";
+				}
+			}
+			if (!errorM.equals("")) {
+				for(Waypoint wpt:wayPts) {
+					EntityWaypoint ewpt = wpt.entity;
+					errorM += wpt.name.substring(0,2) + entities.indexOf(ewpt) + " ";
+				}
+				this.chatInfo(errorM);
+				System.out.println(errorM);
+			}*/
+		}
+			
+	}
+	
+	public int nextNonWaypoint(List<Entity> entities) {
+		for(int j = entities.size()-1; j >= (entities.size() - this.wayPts.size()); j--) { // find waypoint entities that aren't at the end and put them there
+			if (!(entities.get(j) instanceof EntityWaypoint)) {
+				return j;
+			}
+		}
+		//this.chatInfo("no dest");
+		//System.out.println("no dest");
+		return entities.size()-1;
+	}
+		
+	
+	// the same, done differently.  Requires each waypoint to have a handle to its entity.
+	/* private void sortWaypointEntities() {
+		java.util.List entities = this.game.theWorld.getLoadedEntityList();
+		int moved = 0;
+		for(int j = 0; j < wayPts.size(); j++) { // check that all waypoints are at the end
+			Entity entity = (Entity)(wayPts.get(j).entity);
+			int loc = entities.indexOf(entity);
+			if (loc < entities.size()-wayPts.size()) {
+				moved++;
+				java.util.Collections.swap(entities, loc, entities.size()-moved);
+				//System.out.println("swapped " + loc + " to " + (entities.size()-moved) + ", total moved " + moved);
+			}
+		}
+		if (moved > 0) {// only need to sort if waypoint(s) got dumped at the end.  Otherwise all is as it was before, namely sorted
+			try {
+				Collections.sort(entities.subList(entities.size()-wayPts.size(), entities.size())); // sort waypoint entities so ones behind do not show through (actually reversed.. closest ones drawn first)
+			}
+			catch (ClassCastException e) {} // just in case.  I don't run into this anymore, but I'd rather it not happen to someone else
+		}
+	} */
+		
+	private void renderMap (int x, int y, int scScale) {
+		if (!this.hide && !this.fullscreenMap) {
 			boolean scaleChanged = (this.scScale != scScale);
 			this.scScale = scScale;
 
@@ -2296,17 +2467,35 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				if (this.zoom == 3) {
 					GL11.glPushMatrix();
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
-					this.q = this.tex(this.map[this.zoom]);
+					if (imageChanged) {
+						if (this.q != 0) glah(this.q);
+						this.q = this.tex(this.map[this.zoom]);
+						imageChanged = false;
+					}
+					else if (this.q != 0)
+						this.disp(q);
 					GL11.glPopMatrix();
-				} else this.q = this.tex(this.map[this.zoom]);
+				} else {
+					if (imageChanged) {	
+						if (this.q != 0) glah(this.q);
+						this.q = this.tex(this.map[this.zoom]);
+						imageChanged = false;
+					}
+					else if (this.q != 0)
+						this.disp(q);
+				}
+				if (filtering) {
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+				}
 				// from here
 				GL11.glPushMatrix();
-				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+				GL11.glTranslatef(x, y, 0.0F);
 				GL11.glRotatef(90.0F - northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
-				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+				GL11.glTranslatef(-x, -y, 0.0F);
 				// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
 				drawPre();
-				this.setMap(scWidth);
+				this.setMap(x, y);
 				drawPost();
 
 				GL11.glPopMatrix();
@@ -2314,12 +2503,12 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				try {
 					this.disp(this.img("/mamiyaotaru/minimap.png"));
 					drawPre();
-					this.setMap(scWidth);
+					this.setMap(x, y);
 					drawPost();
 				} catch (Exception localException) {
 					this.error = "error: minimap overlay not found!";
 				}
-				this.drawDirections(scWidth);
+				this.drawDirections(x, y);
 
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
@@ -2341,13 +2530,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								//this.disp(this.img("/marker.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + "2x.png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"));
-								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+								this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + "Small.png"));
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+								GL11.glTranslatef(x, y, 0.0F);
 								GL11.glRotatef(-locate + 90 - northRotate, 0.0F, 0.0F, 1.0F); // +90 w top, 0 N top
-								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+								GL11.glTranslatef(-x, -y, 0.0F);
 								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
 								drawPre();
-								this.setMap(scWidth, 16);
+								this.setMap(x, y, 16);
 								drawPost();
 							} catch (Exception localException) {
 								this.error = "Error: marker overlay not found!";
@@ -2363,19 +2554,23 @@ public class ZanMinimap implements Runnable { // implements Runnable
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								//this.disp(this.img("/waypoint.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "2x.png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"));
+								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
+								if (scScale%2 != 0) { // filter on odd zoom levels
+									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+								}
 							//	GL11.glTranslated(-wayX/(Math.pow(2,this.zoom)/2),-wayY/(Math.pow(2,this.zoom)/2),0.0D); //y -x W at top, -x -y N at top
 								// from here
-								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+								GL11.glTranslatef(x, y, 0.0F);
 								GL11.glRotatef(-locate + 90.0F - northRotate, 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
 								GL11.glTranslated(0.0D,-hypot,0.0D);
 								GL11.glRotatef(-(-locate + 90.0F - northRotate), 0.0F, 0.0F, 1.0F); // + 90 w top, 0 n top
 								GL11.glTranslated(0.0D,hypot,0.0D);
-								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+								GL11.glTranslatef(-x, -y, 0.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
 								// to here only necessary with variable north, and no if/else statements in mapcalc.  otherwise uncomment the translated above this block
 								drawPre();
-								this.setMap(scWidth, 16);
+								this.setMap(x, y, 16);
 								drawPost();
 							} catch (Exception localException) 
 							{
@@ -2393,12 +2588,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 					GL11.glPushMatrix();
-					this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow2x.png"):this.img("/mamiyaotaru/mmarrow.png"));
-					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); 
+					//this.disp(scScale>=3?this.img("/mamiyaotaru/mmarrow.png"):this.img("/mamiyaotaru/mmarrowSmall.png"));
+					this.disp(this.img("/mamiyaotaru/mmarrow.png"));
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+					GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+					GL11.glTranslatef(x, y, 0.0F); 
 					GL11.glRotatef(-this.direction -90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
-					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+					GL11.glTranslatef(-x, -y, 0.0F);
 					drawPre();
-					this.setMap(scWidth, 16);
+					this.setMap(x, y, 16);
 					drawPost();
 				} catch (Exception localException) {
 					this.error = "Error: minimap arrow not found!";
@@ -2494,7 +2692,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						// except when not all local chunks are loaded, then we get artifacts when turning.  It's only right at the start, but looks bad man.  back out
 					}
 					GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);  
-					this.disp(scScale>=3?this.img("/mamiyaotaru/circle2x.png"):this.img("/mamiyaotaru/circle.png")); 
+					//this.disp(scScale>=3?this.img("/mamiyaotaru/circle.png"):this.img("/mamiyaotaru/circleSmall.png")); 
+					this.disp(this.img("/mamiyaotaru/circle.png"));
 					drawPre();
 					ldrawthree(0, 256, 1.0D, 0.0D, 0.0D);
 					ldrawthree(256, 256, 1.0D, 1.0D, 0.0D);
@@ -2506,9 +2705,27 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					if (this.zoom == 3) {
 						GL11.glPushMatrix();
 						GL11.glScalef(0.5f, 0.5f, 1.0f);
-						this.q = this.tex(this.map[this.lZoom]);
+						if (imageChanged) {
+							if (this.q != 0) glah(this.q);
+							this.q = this.tex(this.map[this.zoom]);
+							imageChanged = false;
+						}
+						else if (this.q != 0)
+							this.disp(q);
 						GL11.glPopMatrix();
-					} else this.q = this.tex(this.map[this.lZoom]);
+					} else {
+						if (imageChanged) {	
+							if (this.q != 0) glah(this.q);
+							this.q = this.tex(this.map[this.zoom]);
+							imageChanged = false;
+						}
+						else if (this.q != 0)
+							this.disp(q);
+					}
+					if (filtering) {
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+					}
 					GL11.glTranslatef(128, 128, 0.0F); 
 					GL11.glRotatef(-this.direction + 180.0F, 0.0F, 0.0F, 1.0F); 
 					GL11.glTranslatef(-(128), -128F, 0.0F);
@@ -2564,16 +2781,34 @@ public class ZanMinimap implements Runnable { // implements Runnable
 					if (this.zoom == 3) {
 						GL11.glPushMatrix();
 						GL11.glScalef(0.5f, 0.5f, 1.0f);
-						this.q = this.tex(roundImage);
+						if (imageChanged) {
+							if (this.q != 0) glah(this.q);
+							this.q = this.tex(this.map[this.zoom]);
+							imageChanged = false;
+						}
+						else if (this.q != 0)
+							this.disp(q);
 						GL11.glPopMatrix();
-					} else this.q = this.tex(roundImage);
+					} else {
+						if (imageChanged) {	
+							if (this.q != 0) glah(this.q);
+							this.q = this.tex(this.map[this.zoom]);
+							imageChanged = false;
+						}
+						else if (this.q != 0)
+							this.disp(q);
+					}
+					if (filtering) {
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+						GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+					}
 					
 					// This is for rotating the whole map image.  Was fine when transparency stencil was drawn, then map and we rotated the map
 					// now we are drawing FBO, that has the transparency baked in.  Can't rotate that.  Instead rotate the map in the FBO.  Note the differences (in rotation, translation, and normal locations) due to Minecraft doing it backwards
 					GL11.glPushMatrix();
-			    	GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F); 
+			    	GL11.glTranslatef(x, y, 0.0F); 
 					GL11.glRotatef(this.direction + 180.0F, 0.0F, 0.0F, 1.0F); 
-					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+					GL11.glTranslatef(-x, -y, 0.0F);
 
 					if(this.zoom==0) 
 						GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
@@ -2584,7 +2819,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 
 		//		System.out.println("time: " + (System.nanoTime()-startTime));
 				drawPre();
-				this.setMap(scWidth);
+				this.setMap(x, y);
 				drawPost();
 				GL11.glPopMatrix();
 				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -2592,8 +2827,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 				//GL11.glEnable(GL11.GL_DEPTH_TEST); 
 
 				GL11.glColor3f(1.0F, 1.0F, 1.0F);
-				this.drawRound(scWidth, scScale);
-				this.drawDirections(scWidth);
+				this.drawRound(x, y, scScale);
+				this.drawDirections(x, y);
 				
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
@@ -2615,13 +2850,15 @@ public class ZanMinimap implements Runnable { // implements Runnable
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								//this.disp(this.img("/marker.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + "2x.png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"));
-								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+								this.disp(scScale>=3?this.img("/mamiyaotaru/marker" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/marker" + pt.imageSuffix + "Small.png"));
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+								GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+								GL11.glTranslatef(x, y, 0.0F);
 								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
-								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+								GL11.glTranslatef(-x, -y, 0.0F);
 								GL11.glTranslated(0.0D,-34.0D,0.0D);
 								drawPre();
-								this.setMap(scWidth, 16);
+								this.setMap(x, y, 16);
 								drawPost();
 							} catch (Exception localException) {
 								this.error = "Error: marker overlay not found!";
@@ -2635,16 +2872,20 @@ public class ZanMinimap implements Runnable { // implements Runnable
 								GL11.glPushMatrix();
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								//this.disp(this.img("/waypoint.png"));
-								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "2x.png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"));
-								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+								this.disp(scScale>=3?this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + ".png"):this.img("/mamiyaotaru/waypoint" + pt.imageSuffix + "Small.png"));
+								if (scScale%2 != 0) { // filter on odd zoom levels
+									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+									GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+								}
+								GL11.glTranslatef(x, y, 0.0F);
 								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
 								GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,hypot,0.0D);
-								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+								GL11.glTranslatef(-x, -y, 0.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
 								drawPre();
-								this.setMap(scWidth, 16);
+								this.setMap(x, y, 16);
 								drawPost();
 							} catch (Exception localException) 
 							{
@@ -2656,49 +2897,63 @@ public class ZanMinimap implements Runnable { // implements Runnable
 						}
 					}
 				} // end for waypoints
+				GL11.glColor3f(1,1,1);
 				if (radar != null && this.radarAllowed)
 					radar.OnTickInGame(game);
 			} // end roundmap
+			if (tf) {
+				this.disp(this.img("/mamiyaotaru/ContactGui.class"));
+				this.drawPre();
+				this.setMap(x, y);
+				this.drawPost();
+			}		
 		}
 	}
 
 	private void renderMapFull (int scWidth, int scHeight) {
-		if (this.game.thePlayer.username.equals("jacoboom100") || this.game.thePlayer.username.equals("laserpigofdoom")) {
-			this.error = "no map for you";
-			return;
+		if (imageChanged) {
+			if (this.q != 0) glah(this.q);
+			this.q = this.tex(this.map[this.zoom]);
+			imageChanged = false;
 		}
-		if (this.q != 0) glah(this.q);
-		this.q = this.tex(this.map[this.zoom]);
+		else if (this.q != 0)
+			this.disp(this.q);
+		if (filtering) {
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
+		}
 
 		// from here
 
 		GL11.glPushMatrix();
 		//GL11.glTranslatef(0f, 0f, -2f);
-		GL11.glTranslatef((scWidth + 5) / 2.0F, ((scHeight + 5) / 2.0F), 0.0F);
+		GL11.glTranslatef(scWidth / 2.0F, (scHeight / 2.0F), 0.0F);
 		GL11.glRotatef(90.0F - northRotate, 0.0F, 0.0F, 1.0F); // +90 west at top.  +0 north at top
-		GL11.glTranslatef(-((scWidth + 5) / 2.0F), -((scHeight + 5) / 2.0F), 0.0F);
+		GL11.glTranslatef(-(scWidth / 2.0F), -(scHeight / 2.0F), 0.0F);
 		// to here + the popmatrix below only necessary with variable north, and no if/else statements in mapcalc
 		drawPre();
-		ldrawone((scWidth+5)/2-128, (scHeight+5)/2+128, 1.0D, 0.0D, 1.0D);
-		ldrawone((scWidth+5)/2+128, (scHeight+5)/2+128, 1.0D, 1.0D, 1.0D);
-		ldrawone((scWidth+5)/2+128, (scHeight+5)/2-128, 1.0D, 1.0D, 0.0D);
-		ldrawone((scWidth+5)/2-128, (scHeight+5)/2-128, 1.0D, 0.0D, 0.0D);
+		ldrawone(scWidth/2-128, scHeight/2+128, 1.0D, 0.0D, 1.0D);
+		ldrawone(scWidth/2+128, scHeight/2+128, 1.0D, 1.0D, 1.0D);
+		ldrawone(scWidth/2+128, scHeight/2-128, 1.0D, 1.0D, 0.0D);
+		ldrawone(scWidth/2-128, scHeight/2-128, 1.0D, 0.0D, 0.0D);
 		drawPost();
 		GL11.glPopMatrix();
 
 		try {
 			GL11.glPushMatrix();
-			this.disp(this.img("/mamiyaotaru/mmarrow2x.png"));
+			this.disp(this.img("/mamiyaotaru/mmarrow.png"));
+			GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
+		    GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 		//	GL11.glTranslatef(0f, 0f, -2f);
-			GL11.glTranslatef((scWidth+5)/2, (scHeight+5)/2, 0.0F);
+			GL11.glTranslatef(scWidth/2, scHeight/2, 0.0F);
 			GL11.glRotatef(-this.direction - 90.0F - northRotate, 0.0F, 0.0F, 1.0F); // -dir-90 W top, -dir-180 N top
-			GL11.glTranslatef(-((scWidth+5)/2), -((scHeight+5)/2), 0.0F);
+			GL11.glTranslatef(-(scWidth/2), -(scHeight/2), 0.0F);
 			drawPre();
 			//ldrawone((scWidth+5)/2-32, (scHeight+5)/2+32, 1.0D, 0.0D, 1.0D); // the old, 128-ified arrow
-			ldrawone((scWidth+5)/2-4, (scHeight+5)/2+4, 1.0D, 0.0D, 1.0D);
-			ldrawone((scWidth+5)/2+4, (scHeight+5)/2+4, 1.0D, 1.0D, 1.0D);
-			ldrawone((scWidth+5)/2+4, (scHeight+5)/2-4, 1.0D, 1.0D, 0.0D);
-			ldrawone((scWidth+5)/2-4, (scHeight+5)/2-4, 1.0D, 0.0D, 0.0D);
+			ldrawone(scWidth/2-4, scHeight/2+4, 1.0D, 0.0D, 1.0D);
+			ldrawone(scWidth/2+4, scHeight/2+4, 1.0D, 1.0D, 1.0D);
+			ldrawone(scWidth/2+4, scHeight/2-4, 1.0D, 1.0D, 0.0D);
+			ldrawone(scWidth/2-4, scHeight/2-4, 1.0D, 0.0D, 0.0D);
 			drawPost();
 		} catch (Exception localException) {
 			this.error = "Error: minimap arrow not found!";
@@ -2720,7 +2975,7 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_WRAP_T, 10496 );
 	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_NEAREST);
 	     //GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_NEAREST); 
-	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); // TODO
+	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MIN_FILTER, GL11.GL_LINEAR); 
 	     GL11.glTexParameteri(GL11.GL_TEXTURE_2D, GL11.GL_TEXTURE_MAG_FILTER, GL11.GL_LINEAR);
 	     GL11.glTexImage2D(GL11.GL_TEXTURE_2D, 0, GL11.GL_RGBA, width, height, 0, GL11.GL_RGBA, GL11.GL_BYTE, byteBuffer); // Create the texture data
 
@@ -2728,7 +2983,205 @@ public class ZanMinimap implements Runnable { // implements Runnable
 	     
 	     EXTFramebufferObject.glBindFramebufferEXT(EXTFramebufferObject.GL_FRAMEBUFFER_EXT, 0); // Switch back to normal framebuffer rendering
 	}
+	
+	private void drawRound(int x, int y, int scScale) {
+		try {
+//			this.disp(scScale>=1?this.img("/mamiyaotaru/roundmap.png"):this.img("/mamiyaotaru/roundmapSmall.png"));
+			this.disp(this.img("/mamiyaotaru/roundmap.png"));
+			drawPre();
+			this.setMap(x, y);
+			drawPost();
+		} catch (Exception localException) {
+			this.error = "Error: minimap overlay not found!";
+		}
+	}
 
+	private void drawBox(double leftX, double rightX, double topY, double botY) {
+		drawPre();
+		ldrawtwo(leftX, botY, 0.0D);
+		ldrawtwo(rightX, botY, 0.0D);
+		ldrawtwo(rightX, topY, 0.0D);
+		ldrawtwo(leftX, topY, 0.0D);
+		drawPost();
+	}
+
+	private void setMap(int x, int y) {
+	//	ldrawthree(paramInt1 - 64.0D, 64.0D + 5.0D, 1.0D, 0.0D, 1.0D);
+	//	ldrawthree(paramInt1, 64.0D + 5.0D, 1.0D, 1.0D, 1.0D);
+	//	ldrawthree(paramInt1, 5.0D, 1.0D, 1.0D, 0.0D);
+	//	ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.0D, 0.0D);
+		setMap(x, y, 128); // do this with default image size of 128 (that everything was before I decided to stop padding 16px and 8px images out to 128)
+	}
+	
+	private void setMap(int x, int y, int imageSize) {
+		int scale = imageSize/4; // 128 image is drawn from center - 32 to center + 32, as in the old setMap
+		// 16 image is drawn from center - 4 to center + 4, quarter the size
+		ldrawthree(x-scale, y+scale, 1.0D, 0.0D, 1.0D);
+		ldrawthree(x+scale, y+scale, 1.0D, 1.0D, 1.0D);
+		ldrawthree(x+scale, y-scale, 1.0D, 1.0D, 0.0D);
+		ldrawthree(x-scale, y-scale, 1.0D, 0.0D, 0.0D);
+	}
+	
+	private int tex(BufferedImage paramImg) {
+		return this.renderEngine.allocateAndSetupTexture(paramImg);
+	}
+
+	private int img(String paramStr) { // returns index of texturemap(name) aka glBoundTexture.  If there isn't one, it glBindTexture's it in setupTexture
+		return this.renderEngine.getTexture(paramStr);
+	}
+
+	private void disp(int paramInt) { 
+		this.renderEngine.bindTexture(paramInt); // this func glBindTexture's GL_TEXTURE_2D, int paramInt
+	}
+	
+	public void drawPre()
+	{
+		tesselator.startDrawingQuads();
+	}
+	public void drawPost()
+	{
+		tesselator.draw();
+	}
+	public void glah(int g)
+	{
+		renderEngine.deleteTexture(g);
+	}
+	public void ldrawone(int a, int b, double c, double d, double e)
+	{
+		tesselator.addVertexWithUV(a, b, c, d, e);
+	}
+	public void ldrawtwo(double a, double b, double c)
+	{
+		tesselator.addVertex(a, b, c);
+	}
+	public void ldrawthree(double a, double b, double c, double d, double e)
+	{
+		tesselator.addVertexWithUV(a, b, c, d, e);
+	}
+	public int getMouseX(int scWidth)
+	{
+		return Mouse.getX()*(scWidth+5)/game.displayWidth;
+	}
+	public int getMouseY(int scHeight)
+	{
+		return (scHeight+5) - Mouse.getY() * (scHeight+5) / this.game.displayHeight - 1;
+	}
+
+	// text rendering stuff below
+	
+	private void drawDirections(int x, int y) {
+
+		/*// this looks to be a way to display an image with NSEW on it, overlaid over the top.  obsoleted, use text
+		int wayX = this.xCoord();
+		int wayY = this.yCoord();
+		float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+		double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
+
+
+			try 
+			{
+				GL11.glPushMatrix();
+				GL11.glColor3f(1.0f, 1.0f, 1.0f);
+				this.disp(this.img("/compass.png"));
+				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+				GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
+				GL11.glTranslated(0.0D,-hypot,0.0D);
+				GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
+				GL11.glTranslated(0.0D,hypot,0.0D);
+				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+				GL11.glTranslated(0.0D,-hypot,0.0D);
+				drawPre();
+				this.setMap(scWidth);
+				drawPost();
+			} catch (Exception localException) 
+			{
+				this.error = "Error: compass overlay not found!";
+			} finally 
+			{
+				GL11.glPopMatrix();
+			}*/
+		float rotate;
+		float distance;
+		if (this.squareMap) {
+			rotate = -90;
+			distance = 58;
+		}
+		else {
+			rotate = this.direction + northRotate;
+			distance = 64;
+		}
+
+		GL11.glPushMatrix();
+		GL11.glScalef(0.5f, 0.5f, 1.0f);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate - 90.0D)))),(distance * Math.cos(Math.toRadians(-(rotate - 90.0D)))),0.0D); // direction -90 w top.  0 n top.  in all cases n top means 90 more (or w top means 90 less)
+		this.write("N", x*2-2, y*2-4, 0xffffff);
+		GL11.glPopMatrix();
+		GL11.glPushMatrix();
+		GL11.glScalef(0.5f, 0.5f, 1.0f);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate)))),(distance * Math.cos(Math.toRadians(-(rotate)))),0.0D);
+		this.write("E", x*2-2, y*2-4, 0xffffff);
+		GL11.glPopMatrix();
+		GL11.glPushMatrix();
+		GL11.glScalef(0.5f, 0.5f, 1.0f);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate + 90.0D)))),(distance * Math.cos(Math.toRadians(-(rotate + 90.0D)))),0.0D);
+		this.write("S", x*2-2, y*2-4, 0xffffff);
+		GL11.glPopMatrix();
+		GL11.glPushMatrix();
+		GL11.glScalef(0.5f, 0.5f, 1.0f);
+		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate + 180.0D)))),(distance * Math.cos(Math.toRadians(-(rotate + 180.0D)))),0.0D);
+		this.write("W", x*2-2, y*2-4, 0xffffff);
+		GL11.glPopMatrix();
+	}
+	
+	private void showCoords (int x, int y) { // x and y for drawing are counted from top left, not from 0,0 origina at center
+		if(!this.hide) {
+			GL11.glPushMatrix();
+			GL11.glScalef(0.5f, 0.5f, 1.0f);
+			String xy ="";
+			if (this.game.thePlayer.dimension!=-1)
+				xy = this.dCoord(xCoord()) + ", " + this.dCoord(zCoord());
+			else
+				xy = this.dCoord(xCoord()*8) + ", " + this.dCoord(zCoord()*8);
+			int m = this.chkLen(xy)/2;
+			this.write(xy, x*2-m, y*2, 0xffffff);
+			xy = Integer.toString(this.yCoord());
+			m = this.chkLen(xy)/2;
+			//	xy="" + this.getWorld().skylightSubtracted + " " + this.getWorld().calculateSkylightSubtracted(1.0F) + " " + this.getWorld().func_35464_b(1.0F); // always 0 in SMP. method works, not value.  it's never updated, no world tick in SMP.  Fscks lightmap functionality
+			this.write(xy, x*2-m, y*2 + 10, 0xffffff);
+			GL11.glPopMatrix();
+		} else {
+			if (this.game.thePlayer.dimension!=-1) this.write("(" + this.dCoord(xCoord()) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+			else this.write("(" + this.dCoord(xCoord()*8) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()*8) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
+		}
+	}
+	
+	private String dCoord(int paramInt1) {
+		if(paramInt1 < 0)
+			return "-" + Math.abs(paramInt1+1);
+		else
+			return "+" + paramInt1;
+	}
+	
+	private int chkLen(String paramStr) {
+		return this.fontRenderer.getStringWidth(paramStr);
+	}
+
+	private void write(String paramStr, int paramInt1, int paramInt2, int paramInt3) {
+		this.fontRenderer.drawStringWithShadow(paramStr, paramInt1, paramInt2, paramInt3);
+	}
+
+	// menu from here
+	
+	// remnants of old menu, welcome screen only now
+	
+	public void setMenuNull()
+	{
+		game.currentScreen = null;
+	}
+	public Object getMenu()
+	{
+		return game.currentScreen;
+	}
 	private void showMenu (int scWidth, int scHeight) { 
 		//System.out.println("menu: " + this.iMenu);
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -2783,166 +3236,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
 			this.write(this.sMenu[n], centerX - maxSize/2, ((centerY - (height-1)*10/2) + (n * 10))-9, 0xffffff);
 		this.write(hide, centerX - footer/2, ((scHeight+5)/2 + (height-1)*10/2 + 11), 0xffffff);
 	}
-
-	private void showCoords (int scWidth, int scHeight) {
-		if(!this.hide) {
-			GL11.glPushMatrix();
-			GL11.glScalef(0.5f, 0.5f, 1.0f);
-			String xy ="";
-			if (this.game.thePlayer.dimension!=-1)
-				xy = this.dCoord(xCoord()) + ", " + this.dCoord(zCoord());
-			else
-				xy = this.dCoord(xCoord()*8) + ", " + this.dCoord(zCoord()*8);
-			int m = this.chkLen(xy)/2;
-			this.write(xy, scWidth*2-32*2-m, 146, 0xffffff);
-			xy = Integer.toString(this.yCoord());
-			m = this.chkLen(xy)/2;
-			//	xy="" + this.getWorld().skylightSubtracted + " " + this.getWorld().calculateSkylightSubtracted(1.0F) + " " + this.getWorld().func_35464_b(1.0F); // always 0 in SMP. method works, not value.  it's never updated, no world tick in SMP.  Fscks lightmap functionality
-			this.write(xy, scWidth*2-32*2-m, 156, 0xffffff);
-			GL11.glPopMatrix();
-		} else {
-			if (this.game.thePlayer.dimension!=-1) this.write("(" + this.dCoord(xCoord()) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
-			else this.write("(" + this.dCoord(xCoord()*8) + ", " + this.yCoord() + ", " + this.dCoord(zCoord()*8) + ") " + (int) this.direction + "'", 2, 10, 0xffffff);
-		}
-	}
-
-	private void drawRound(int paramInt1, int scScale) {
-		try {
-			this.disp(scScale>=3?this.img("/mamiyaotaru/roundmap2x.png"):this.img("/mamiyaotaru/roundmap.png"));
-			drawPre();
-			this.setMap(paramInt1);
-			drawPost();
-		} catch (Exception localException) {
-			this.error = "Error: minimap overlay not found!";
-		}
-	}
-
-	private void drawBox(double leftX, double rightX, double topY, double botY) {
-		drawPre();
-		ldrawtwo(leftX, botY, 0.0D);
-		ldrawtwo(rightX, botY, 0.0D);
-		ldrawtwo(rightX, topY, 0.0D);
-		ldrawtwo(leftX, topY, 0.0D);
-		drawPost();
-	}
-
-	private void setMap(int paramInt1) {
-	//	ldrawthree(paramInt1 - 64.0D, 64.0D + 5.0D, 1.0D, 0.0D, 1.0D);
-	//	ldrawthree(paramInt1, 64.0D + 5.0D, 1.0D, 1.0D, 1.0D);
-	//	ldrawthree(paramInt1, 5.0D, 1.0D, 1.0D, 0.0D);
-	//	ldrawthree(paramInt1 - 64.0D, 5.0D, 1.0D, 0.0D, 0.0D);
-		setMap(paramInt1, 128); // do this with default image size of 128 (that everything was before I decided to stop padding 16px and 8px images out to 128)
-	}
 	
-	private void setMap(int paramInt1, int imageSize) {
-		int scale = imageSize/4;
-		ldrawthree(paramInt1-32.0D-scale, 37.0D+scale, 1.0D, 0.0D, 1.0D);
-		ldrawthree(paramInt1-32.0D+scale, 37.0D+scale, 1.0D, 1.0D, 1.0D);
-		ldrawthree(paramInt1-32.0D+scale, 37.0D-scale, 1.0D, 1.0D, 0.0D);
-		ldrawthree(paramInt1-32.0D-scale, 37.0D-scale, 1.0D, 0.0D, 0.0D);
-	}
-
-	private void drawDirections(int scWidth) {
-
-		/*// this looks to be a way to display an image with NSEW on it, overlaid over the top.  obsoleted, use text
-		int wayX = this.xCoord();
-		int wayY = this.yCoord();
-		float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
-		double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
-
-
-			try 
-			{
-				GL11.glPushMatrix();
-				GL11.glColor3f(1.0f, 1.0f, 1.0f);
-				this.disp(this.img("/compass.png"));
-				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-				GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
-				GL11.glTranslated(0.0D,-hypot,0.0D);
-				GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
-				GL11.glTranslated(0.0D,hypot,0.0D);
-				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
-				GL11.glTranslated(0.0D,-hypot,0.0D);
-				drawPre();
-				this.setMap(scWidth);
-				drawPost();
-			} catch (Exception localException) 
-			{
-				this.error = "Error: compass overlay not found!";
-			} finally 
-			{
-				GL11.glPopMatrix();
-			}*/
-		float rotate;
-		float distance;
-		if (this.squareMap) {
-			rotate = -90;
-			distance = 58;
-		}
-		else {
-			rotate = this.direction + northRotate;
-			distance = 64;
-		}
-
-		GL11.glPushMatrix();
-		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate - 90.0D)))),(distance * Math.cos(Math.toRadians(-(rotate - 90.0D)))),0.0D); // direction -90 w top.  0 n top.  in all cases n top means 90 more (or w top means 90 less)
-		this.write("N", scWidth*2-66, 70, 0xffffff);
-		GL11.glPopMatrix();
-		GL11.glPushMatrix();
-		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate)))),(distance * Math.cos(Math.toRadians(-(rotate)))),0.0D);
-		this.write("E", scWidth*2-66, 70, 0xffffff);
-		GL11.glPopMatrix();
-		GL11.glPushMatrix();
-		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate + 90.0D)))),(distance * Math.cos(Math.toRadians(-(rotate + 90.0D)))),0.0D);
-		this.write("S", scWidth*2-66, 70, 0xffffff);
-		GL11.glPopMatrix();
-		GL11.glPushMatrix();
-		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((distance * Math.sin(Math.toRadians(-(rotate + 180.0D)))),(distance * Math.cos(Math.toRadians(-(rotate + 180.0D)))),0.0D);
-		this.write("W", scWidth*2-66, 70, 0xffffff);
-		GL11.glPopMatrix();
-	}
-
-	private void SetZoom() {
-		if (this.fudge > 0) return;
-
-		if (this.iMenu != 0) {
-			this.iMenu = 0;
-
-			if(getMenu()!=null) setMenuNull();
-		} else {
-			if (this.zoom == 3) {
-				if(!this.full) this.full = true;
-				else {
-					this.zoom = 2;
-					this.full = false;
-					this.error = "Zoom Level: (1.0x)";
-				}
-			} else if (this.zoom == 0) {
-				this.zoom = 3;
-				this.error = "Zoom Level: (0.5x)";
-			} else if (this.zoom==2) {
-				this.zoom = 1;
-				this.error = "Zoom Level: (2.0x)";
-			} else {
-				this.zoom = 0;
-				this.error = "Zoom Level: (4.0x)";
-			}
-			this.timer = 500;
-		}
-
-		this.fudge = 20;
-	}
-
-	//@Override
-	public String Version() {
-		return "1.3_01 - "+zmodver;
-	}
-	
-	// menu from here
+	// new in game style menu from here
 	
     /**
      * Gets a key binding. // aka the text on the button?
@@ -3026,13 +3321,13 @@ public class ZanMinimap implements Runnable { // implements Runnable
                 return this.showNether;
 
             case 3:
-                return this.showCaves;
+                return (this.cavesAllowed && this.showCaves);
 
             case 4:
                 return this.lightmap;
 
-            case 5:
-                return this.heightmap;
+            //case 5:
+            //    return this.heightmap;
 
             case 6:
                 return this.squareMap;
@@ -3040,8 +3335,8 @@ public class ZanMinimap implements Runnable { // implements Runnable
             case 7:
                 return this.oldNorth;
                 
-            case 8:
-                return this.showBeacons; 
+            //case 8:
+            //    return this.showBeacons; 
                 
             case 9:
                 return this.welcome;
@@ -3057,16 +3352,24 @@ public class ZanMinimap implements Runnable { // implements Runnable
     {
         if (par1EnumOptions == EnumOptionsMinimap.TERRAIN)
         {
-            if (this.heightmap) return "Height";
+        	if (this.slopemap && this.heightmap) return "Both";
+        	else if (this.heightmap) return "Height";
             else if (this.slopemap) return "Slope";
             else return "Off";
         }
-        if (par1EnumOptions == EnumOptionsMinimap.BEACONS)
+        else if (par1EnumOptions == EnumOptionsMinimap.BEACONS)
         {
             if (this.showBeacons && this.showWaypoints) return "Both";
             else if (this.showBeacons) return "Beacons";
             else if (this.showWaypoints) return "Signs"; 
             else return "Off";
+        }
+        else if (par1EnumOptions == EnumOptionsMinimap.LOCATION) {
+        	if (this.mapCorner == 0) return "Top Left";
+        	else if (this.mapCorner == 1) return "Top Right";
+        	else if (this.mapCorner == 2) return "Bottom Right";
+        	else if (this.mapCorner == 3) return "Bottom Left";
+        	else return "Error";
         }
         else
         {
@@ -3099,13 +3402,17 @@ public class ZanMinimap implements Runnable { // implements Runnable
                 break;
 
             case 5:
-    			if (this.slopemap) {
+            	if (this.slopemap && this.heightmap){
+            		this.slopemap = false;
+            		this.heightmap = false;
+            	}
+            	else if (this.slopemap) {
     				this.slopemap = false;
     				this.heightmap = true;
     			}
     			else if (this.heightmap) {
-    				this.slopemap = false;
-    				this.heightmap = false;
+    				this.slopemap = true;
+    				this.heightmap = true;
     			}
     			else {
     				this.slopemap = true;
@@ -3154,6 +3461,9 @@ public class ZanMinimap implements Runnable { // implements Runnable
     				this.game.displayGuiScreen((GuiScreen)null);
     			}
             	break;*/
+            
+            case 17:
+            	this.mapCorner = (mapCorner >= 3)?0:mapCorner+1;
         }
 		this.timer=500; // re-render immediately for new options
 	}

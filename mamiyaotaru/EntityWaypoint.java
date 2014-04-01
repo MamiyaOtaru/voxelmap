@@ -3,13 +3,14 @@ package net.minecraft.src.mamiyaotaru;
 import java.util.Iterator;
 import java.util.List;
 
-import net.minecraft.src.EntityWeatherEffect;
+import net.minecraft.client.Minecraft;
+import net.minecraft.src.Entity;
 import net.minecraft.src.MathHelper;
 import net.minecraft.src.NBTTagCompound;
 import net.minecraft.src.Vec3;
 import net.minecraft.src.World;
 
-public class EntityWaypoint extends EntityWeatherEffect
+public class EntityWaypoint extends Entity implements Comparable
 {
 	private Waypoint waypoint;
 	public boolean isActive = false;
@@ -33,6 +34,8 @@ public class EntityWaypoint extends EntityWeatherEffect
         this.lastTickPosX=posX;
         this.lastTickPosZ=posZ;
         this.lastTickPosY=posY;
+        //setPosition(posX, posY, posZ);
+        this.ignoreFrustumCheck = true; // only needed if we are a regular entity (not a weather effect) and if we don't set position to define the bounding box
    //     this.chunk = this.worldObj.getChunkFromBlockCoords(((int)(this.posX)), ((int)(this.posY)));
     }
 
@@ -102,4 +105,10 @@ public class EntityWaypoint extends EntityWeatherEffect
     {
         return 1.0F;
     }
+
+	@Override
+	public int compareTo(Object arg0) {
+		return (this.getDistanceSqToEntity(Minecraft.getMinecraft().thePlayer) > ((Entity)arg0).getDistanceSqToEntity(Minecraft.getMinecraft().thePlayer))? -1:1;
+	}
+    
 }

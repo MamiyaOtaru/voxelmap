@@ -62,7 +62,7 @@ public class GuiWaypoints extends GuiScreen
     private GuiButton buttonTeleport;
     
     /** The 'Add' button was clicked */
-    protected boolean addClicked = false;
+    private boolean addClicked = false;
     
     /** This GUI's tooltip text or null if no slot is being hovered. */
     private String tooltip = null;
@@ -81,7 +81,6 @@ public class GuiWaypoints extends GuiScreen
     	this.parentScreen = parentScreen;
         this.minimap = minimap;
     //    this.fontRenderer = super.fontRenderer;
-   //     this.mc = super.mc;
     }
 
     /**
@@ -97,28 +96,15 @@ public class GuiWaypoints extends GuiScreen
         this.waypointList = new GuiSlotWaypoints(this);
         this.waypointList.registerScrollButtons(this.controlList, 7, 8);
         
-  /*      for (int t = 0; t < minimap.wayPts.size(); ++t)
-        {
-                GuiSmallButtonMinimap waypointButton = new GuiSmallButtonMinimap(t, this.width / 2 - 155 + var2 % 2 * 160, this.height / 6 + 24 * (var2 >> 1), this.minimap.wayPts.get(t).name);
-
-                this.controlList.add(waypointButton);
-      //      }
-
-            ++var2;
-        }*/
-
-//      this.controlList.add(new GuiButton(101, this.width / 2 - 152, this.height / 6 + 136 - 6, 150, 20, stringTranslate.translateKey("options.radar"))); // use if I ever get translate going
-        
-        
-        buttonEdit = new GuiButton(-1, this.width / 2 - 154, this.height - 52, 100, 20, "Edit");
-        this.controlList.add(buttonEdit);
-        buttonDelete = new GuiButton(-2, this.width / 2 - 50, this.height - 52, 100, 20, "Remove");
-        this.controlList.add(buttonDelete);
-        buttonTeleport = new GuiButton(-3, this.width / 2 + 4 + 50, this.height - 52, 100, 20, "Teleport to");
-        this.controlList.add(buttonTeleport);
+        this.controlList.add(buttonEdit = new GuiButton(-1, this.width / 2 - 154, this.height - 52, 100, 20, stringTranslate.translateKey("selectServer.edit")));
+        this.controlList.add(buttonDelete = new GuiButton(-2, this.width / 2 - 50, this.height - 52, 100, 20, stringTranslate.translateKey("selectServer.delete")));
+        this.controlList.add(buttonTeleport = new GuiButton(-3, this.width / 2 + 4 + 50, this.height - 52, 100, 20, "Teleport to"));
         
         this.controlList.add(new GuiButton(-4, this.width / 2 - 154, this.height - 28, 152, 20, "New Waypoint"));
         this.controlList.add(new GuiButton(-200, this.width / 2 + 2, this.height - 28, 152, 20, stringTranslate.translateKey("gui.done")));
+        
+        // GUI is inited every time it comes up including after leaving another GUI - like the "really delete?" screen.
+        // if we answer yes there, WP is deleted, selectedWaypoint is set to null and appropriate buttons are thus disabled here
         boolean isSomethingSelected = this.selectedWaypoint != null;
         this.buttonEdit.enabled = isSomethingSelected;
         this.buttonDelete.enabled = isSomethingSelected;
@@ -134,24 +120,20 @@ public class GuiWaypoints extends GuiScreen
         {
             if (par1GuiButton.id >= 0 && par1GuiButton instanceof GuiSmallButtonMinimap) //waypoint button
             {
-                //this.minimap.setOptionValue(((GuiSmallButtonMinimap)par1GuiButton).returnEnumOptions(), 1);
+                //when is this called? herp
                 par1GuiButton.displayString = this.minimap.getKeyText(EnumOptionsMinimap.getEnumOptions(par1GuiButton.id));
             }
 
             if (par1GuiButton.id == -1)
             {
-                this.editClicked = true;
-                newWaypoint = new Waypoint(selectedWaypoint.name, selectedWaypoint.x, selectedWaypoint.z, selectedWaypoint.y, selectedWaypoint.enabled, selectedWaypoint.red, selectedWaypoint.green, selectedWaypoint.blue, selectedWaypoint.imageSuffix);
-                this.mc.displayGuiScreen(new GuiScreenAddWaypoint(this, this.newWaypoint)); // = new ServerData(var9.serverName, var9.serverIP)));
+            	editWaypoint(selectedWaypoint);
                 //edit shit
             }
             
             if (par1GuiButton.id == -4)
             {
-                this.addClicked = true;
-                newWaypoint = new Waypoint("", (minimap.game.thePlayer.dimension != -1)?minimap.xCoord():minimap.xCoord()*8, (minimap.game.thePlayer.dimension != -1)?minimap.zCoord():minimap.zCoord()*8, minimap.yCoord()-1, true, 0, 1, 0, "");
-                this.mc.displayGuiScreen(new GuiScreenAddWaypoint(this, this.newWaypoint)); // = new ServerData(var9.serverName, var9.serverIP)));
-                //edit shit
+            	addWaypoint();
+                //edit new waypoint
             }
             
             if (par1GuiButton.id == -3) 
@@ -220,8 +202,13 @@ public class GuiWaypoints extends GuiScreen
 
             if (par1)
             {
-            	//waypoint indo already changed in waypoint edit gui, just save it
-                selectedWaypoint.name = newWaypoint.name;
+            	//waypoint info already changed in waypoint edit gui, just save it.  actually no it isn't.  
+            	//We work on a copy, so we can cancel.  If we don't cancel, don't discard and copy it over from the temp to selected
+            	//Only necessary because of color.  Other info (X, Y, Name etc) is not applied unless one presses OK.  Cancel discards
+            	//but selecting a color immediately applies it to the worked on waypoint (so it renders correctly) so we need to work on a copy
+            	//could fix if I store the color value in the edit screen and not apply until OK and get the color to render from the local value
+            	//done
+                /*selectedWaypoint.name = newWaypoint.name;
                 selectedWaypoint.x = newWaypoint.x;
                 selectedWaypoint.z = newWaypoint.z;
                 selectedWaypoint.y = newWaypoint.y;
@@ -229,7 +216,7 @@ public class GuiWaypoints extends GuiScreen
                 selectedWaypoint.red = newWaypoint.red;
                 selectedWaypoint.green = newWaypoint.green;
                 selectedWaypoint.blue = newWaypoint.blue;
-                selectedWaypoint.imageSuffix = newWaypoint.imageSuffix;
+                selectedWaypoint.imageSuffix = newWaypoint.imageSuffix;*/
             	minimap.saveWaypoints();
             }
 
@@ -243,7 +230,11 @@ public class GuiWaypoints extends GuiScreen
             {
             	//save waypoint
                 minimap.addWaypoint(newWaypoint);
+                this.setSelectedWaypoint(newWaypoint);
             }
+            //else { // if I want to deselect any previously selected waypoint on cancelling new
+            // 	this.setSelectedWaypoint(null);
+            //}
 
             this.mc.displayGuiScreen(this);
         }
@@ -251,7 +242,33 @@ public class GuiWaypoints extends GuiScreen
     
 	protected void setSelectedWaypoint(Waypoint waypoint) {
 		this.selectedWaypoint = waypoint;
+        boolean isSomethingSelected = this.selectedWaypoint != null;
+        buttonEdit.enabled = isSomethingSelected;
+        buttonDelete.enabled = isSomethingSelected;
+        buttonTeleport.enabled = isSomethingSelected && canTeleport();
 	}
+	
+    protected void editWaypoint(Waypoint waypoint) {
+        this.editClicked = true;
+        this.mc.displayGuiScreen(new GuiScreenAddWaypoint(this, waypoint));
+    }
+    
+    protected void addWaypoint() {
+        this.addClicked = true;
+        float r, g, b;
+		if (this.minimap.wayPts.size() == 0) { // green for the first one
+			r = 0;
+			g = 1;
+			b = 0;
+		}
+		else { // random for later ones
+			r = minimap.generator.nextFloat();
+			g = minimap.generator.nextFloat();
+			b = minimap.generator.nextFloat();
+		}
+        newWaypoint = new Waypoint("", (minimap.game.thePlayer.dimension != -1)?minimap.xCoord():minimap.xCoord()*8, (minimap.game.thePlayer.dimension != -1)?minimap.zCoord():minimap.zCoord()*8, minimap.yCoord()-1, true, r, g, b, "");
+        this.mc.displayGuiScreen(new GuiScreenAddWaypoint(this, this.newWaypoint));
+    }
 	
 	protected void toggleWaypointVisibility() {
 		selectedWaypoint.enabled = !selectedWaypoint.enabled;
@@ -272,7 +289,6 @@ public class GuiWaypoints extends GuiScreen
         {
         	drawTooltip(tooltip, par1, par2);
         }
-       // ((GuiButton)this.controlList.get(1)).enabled = this.waypointList.
     }
 
  /*   public void drawDefaultBackground()

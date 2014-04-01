@@ -158,5 +158,14 @@ public class EnumOptionsHelperMinimap
         {
             ;
         }
+        
+        try
+        {
+            enumOptionsMappingHelperArray[EnumOptionsMinimap.LOCATION.ordinal()] = 17;
+        }
+        catch (NoSuchFieldError var4)
+        {
+            ;
+        }
     }
 }

@@ -49,7 +49,6 @@ class GuiSlotWaypoints extends GuiSlot
     {
     	
         this.parentGui.setSelectedWaypoint(this.waypoints.get(par1));
-        // enable add/delete?  or do in waypointGUI if something (anything) is selected..
         
         // actual position in pixels in window (varies with size of window)
         //System.out.println("*****Mousex: " + Mouse.getX() + ", Mousey: " + Mouse.getY());
@@ -64,11 +63,6 @@ class GuiSlotWaypoints extends GuiSlot
         
         System.out.println("*****aMousex: " + var11 + ", aMousey: " + var13);
         */
-        
-        GuiWaypoints.getButtonEdit(this.parentGui).enabled = true;
-        GuiWaypoints.getButtonDelete(this.parentGui).enabled = true;
-        GuiWaypoints.getButtonTeleport(this.parentGui).enabled = parentGui.canTeleport();
-        
         int leftEdge = this.parentGui.width / 2 - 92 - 16;
         byte var10 = 4;
         //System.out.println("width: " + parentGui.width + " leftedge: " + leftEdge);
@@ -77,7 +71,11 @@ class GuiSlotWaypoints extends GuiSlot
     	{
     		this.parentGui.toggleWaypointVisibility();
     	}
-
+    	else if (par2) { // don't accept doubleclick if it was for some reason on the enable/disable button.  IE accept if it wasn't
+    		Mouse.next(); // so mouse click doesn't carry through to edit screen (can disable waypoint if cursor ends up above that button in new screen for instance)
+        	this.parentGui.editWaypoint(this.parentGui.selectedWaypoint);
+        	return;
+        }        
     }
 
     /**
@@ -108,15 +106,21 @@ class GuiSlotWaypoints extends GuiSlot
     	Waypoint waypoint = this.waypoints.get(par1);
         this.parentGui.drawCenteredString(this.parentGui.getFontRenderer(), waypoint.name, this.parentGui.width / 2, par3 + 3, waypoint.getUnified());
         
-        // tooltip(s? maybe have different ones when moused over display or not icon)
-        //System.out.println("par1: " + par1 + " x: " + this.mouseX + " par2: " + par2 + " y: " + this.mouseY + " par3: " + par3 + " par4: " + par4);
+        // tooltip
         byte var10 = 4;
     	if (this.mouseX >= par2 + var10 && this.mouseY >= par3 - var10 && this.mouseX <= par2 + 215 + var10 && this.mouseY <= par3 + 8 + var10)
     	{
-    		String tooltip = "X: " + waypoint.x + " Z: " + waypoint.z;
-    		if (waypoint.y > 0) 
-    			tooltip += " Y: " + waypoint.y;
-    		GuiWaypoints.setTooltip(this.parentGui, tooltip);
+    		String tooltip;
+        	if (this.mouseX >= par2 + 215 - 16 - var10 && this.mouseX <= par2 + 215 + var10)
+        	{
+        		tooltip = waypoint.enabled?"Disable Waypoint":"Enable Waypoint";
+        	}
+        	else {
+        		tooltip = "X: " + waypoint.x + " Z: " + waypoint.z;
+        		if (waypoint.y > 0) 
+        			tooltip += " Y: " + waypoint.y;
+        	}
+        	GuiWaypoints.setTooltip(this.parentGui, tooltip);
     	}
     	// draw enabled or not icon
         GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
@@ -127,6 +131,7 @@ class GuiSlotWaypoints extends GuiSlot
         this.drawTexturedModalRect(par2 + 205, par3, offset, 0, 16, 16);
          x, y, u, v, w, h  (u and v are eventually made into fractions.  either have to know the image dimensions in destination function, or put in as fractions here)
          */ 
+        // or grab icons from game/texture pack (hope they exist!  haha.  the image does, no no loading error.  Might not be an icon there in old packs though.  so blank.  Oh well)
         this.parentGui.minimap.game.renderEngine.bindTexture(this.parentGui.minimap.game.renderEngine.getTexture("/gui/inventory.png"));
         int xOffset = waypoint.enabled?72:90;
         int yOffset = 216;
@@ -136,7 +141,7 @@ class GuiSlotWaypoints extends GuiSlot
     /**
      * Draws a textured rectangle at the stored z-value. Args: x, y, u, v, width, height
      */
-    // can use for drawing my own icons if I don't want to get from inventory.png
+    // can use for drawing my own icons (from non 256 image) if I don't want to get from inventory.png
     /*
     public void drawTexturedModalRect(int par1, int par2, int par3, int par4, int par5, int par6)
     {
@@ -151,5 +156,4 @@ class GuiSlotWaypoints extends GuiSlot
         var9.draw();
     }
     */
-      
 }

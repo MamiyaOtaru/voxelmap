@@ -36,7 +36,8 @@ public enum EnumOptionsMinimap
 	HIDERADAR("Hide Radar", false, true, false),
 	SHOWHOSTILES("Show Hostiles", false, true, false),
 	SHOWPLAYERS("Show Players", false, true, false),
-	SHOWNEUTRALS("Show Neutrals", false, true, false); // TODO
+	SHOWNEUTRALS("Show Neutrals", false, true, false), 
+	LOCATION("Location", false, false, true);
 	
     private final boolean enumFloat;
     private final boolean enumBoolean;

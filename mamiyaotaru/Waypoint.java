@@ -10,6 +10,7 @@ public class Waypoint {
     public float red = 0.0F;
     public float green = 1.0F;
     public float blue = 0.0F;
+    //public EntityWaypoint entity = null;
   
     public Waypoint(String name, int x, int z, int y, boolean enabled, float red, float green, float blue, String suffix) {
         this.name = name;

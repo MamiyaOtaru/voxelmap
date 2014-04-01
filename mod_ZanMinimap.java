@@ -17,7 +17,7 @@ public class mod_ZanMinimap extends BaseMod {
 	
     public String getVersion()
     {
-        return "3.0";
+        return "3.1.4.2.0";
     }
     
     public void load() {
@@ -60,7 +60,7 @@ public class mod_ZanMinimap extends BaseMod {
     		fakeGui.realGui = realGui;
     		var1.ingameGUI = fakeGui;
     	}
-
+    	//if (ModLoader.getMinecraftInstance().currentScreen == null) // if we give up on controlling ingamegui
     	//	minimap.onTickInGame(var1);    	return true;    }
 
 	public Object getPrivateFieldByType (Object o, Class classtype) {   

@@ -6,6 +6,8 @@ import net.minecraft.src.GuiButton;
 import net.minecraft.src.GuiScreen;
 import net.minecraft.src.GuiTextField;
 import net.minecraft.src.StringTranslate;
+import net.minecraft.src.Tessellator;
+import net.minecraft.src.ZanMinimap;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
@@ -14,6 +16,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
 {
     /** This GUI's parent GUI. */
     private GuiWaypoints parentGui;
+    private ZanMinimap minimap;
     private GuiTextField waypointName;
     private GuiTextField waypointX;
     private GuiTextField waypointZ;
@@ -21,15 +24,26 @@ public class GuiScreenAddWaypoint extends GuiScreen
     private GuiButton buttonEnabled;
     private Waypoint waypoint;
     private boolean choosingColor = false;
+    private float red;
+    private float green;
+    private float blue;
+    private boolean enabled;
     
 	private Random generator = new Random();
 
     public GuiScreenAddWaypoint(GuiWaypoints par1GuiScreen, Waypoint par2Waypoint)
     {
         this.parentGui = par1GuiScreen;
+        this.minimap = ZanMinimap.getInstance();
         this.waypoint = par2Waypoint;
+        // get colors of waypoint to display and act on (applied when accepted)
+        // actually applying them directly now.  store here to restore to waypoint on cancel (or escape)
+        red = waypoint.red;
+        green = waypoint.green;
+        blue = waypoint.blue;
+        enabled = waypoint.enabled;
     }
-
+    
     /**
      * Called from the main game loop to update the screen.
      */
@@ -52,7 +66,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
         this.controlList.add(new GuiButton(1, this.width / 2 + 5, this.height / 6 + 168, 150, 20, var1.translateKey("gui.cancel")));
         this.waypointName = new GuiTextField(this.fontRenderer, this.width / 2 - 100, this.height / 6 + 41 * 0 + 13, 200, 20);
         this.waypointName.setFocused(true);
-        if (this.waypoint == null) System.out.println("fail");
+        //if (this.waypoint == null) System.out.println("fail");
         this.waypointName.setText(this.waypoint.name);
         this.waypointX = new GuiTextField(this.fontRenderer, this.width / 2 - 100, this.height / 6 + 41 * 1 + 13, 56, 20);
         this.waypointX.setMaxStringLength(128);
@@ -63,9 +77,8 @@ public class GuiScreenAddWaypoint extends GuiScreen
         this.waypointY = new GuiTextField(this.fontRenderer, this.width / 2 + 44, this.height / 6 + 41 * 1 + 13, 56, 20);
         this.waypointY.setMaxStringLength(128);
         this.waypointY.setText("" + this.waypoint.y);
-        buttonEnabled = new GuiButton(2, this.width / 2 - 50, this.height / 6 + 41 * 2 + 6, 100, 20, "Enabled: " + ((waypoint.enabled)?"On":"Off"));
-        this.controlList.add(buttonEnabled);
-        ((GuiButton)this.controlList.get(0)).enabled = this.waypointX.getText().length() > 0 && this.waypointX.getText().split(":").length > 0 && this.waypointName.getText().length() > 0;
+        this.controlList.add(buttonEnabled = new GuiButton(2, this.width / 2 - 50, this.height / 6 + 41 * 2 + 6, 100, 20, "Enabled: " + ((waypoint.enabled)?"On":"Off")));
+        ((GuiButton)this.controlList.get(0)).enabled = this.waypointName.getText().length() > 0; // && this.waypointX.getText().length() > 0 && this.waypointX.getText().split(":").length > 0; // what's this stuff..  
     }
 
     /**
@@ -89,7 +102,14 @@ public class GuiScreenAddWaypoint extends GuiScreen
         	}
             if (par1GuiButton.id == 1)
             {
-                this.parentGui.confirmClicked(false, 0);
+    			waypoint.red = red;
+    			waypoint.green = green;
+    			waypoint.blue = blue;
+    			waypoint.enabled = enabled; 
+            	if (parentGui != null) // called from WaypointGUI
+            		this.parentGui.confirmClicked(false, 0);
+            	else // called from elsewhere, like the minimap class itself
+            		minimap.game.displayGuiScreen(null);
             }
             else if (par1GuiButton.id == 0)
             {
@@ -98,7 +118,12 @@ public class GuiScreenAddWaypoint extends GuiScreen
             	this.waypoint.x = Integer.parseInt(this.waypointX.getText());
             	this.waypoint.z = Integer.parseInt(this.waypointZ.getText());
             	this.waypoint.y = Integer.parseInt(this.waypointY.getText());
-                this.parentGui.confirmClicked(true, 0);
+            	if (parentGui != null) // called from WaypointGUI
+            		this.parentGui.confirmClicked(true, 0);
+            	else { // called from elsewhere, like ZanMinimap
+            		minimap.addWaypoint(waypoint);
+            		minimap.game.displayGuiScreen(null);
+            	}
             }
         }
     }
@@ -175,6 +200,13 @@ public class GuiScreenAddWaypoint extends GuiScreen
         	acceptable = false;
         }
         ((GuiButton)this.controlList.get(0)).enabled = acceptable;
+        if (par2 == Keyboard.KEY_ESCAPE) { // undo changes.  still deciding if I do this or store changes locally and apply on accept
+			waypoint.red = red;
+			waypoint.green = green;
+			waypoint.blue = blue;
+			waypoint.enabled = enabled; 
+        }
+        super.keyTyped(par1, par2); // allows us to escape close.  Needed line since we are overriding GuiScreen's keyTyped with this one, so that method's handling of escape never runs unless we call super's version of the method here
 
     }
 
@@ -189,7 +221,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
     		this.waypointX.mouseClicked(par1, par2, par3);
     		this.waypointZ.mouseClicked(par1, par2, par3);
     		this.waypointY.mouseClicked(par1, par2, par3);
-    		if (par1 >= this.width / 2 + 29 && par1 <= this.width / 2 + 45 && par2 >= this.height / 6 + 41 * 3 - 4 && par2 <= this.height / 6 + 41 * 3 + 6)
+    		if (par1 >= this.width / 2 + 29 && par1 <= this.width / 2 + 45 && par2 >= this.height / 6 + 41 * 3 - 5 && par2 <= this.height / 6 + 41 * 3 + 5)
     		{
     			this.choosingColor = true;
     			//waypoint.red = generator.nextFloat();
@@ -200,7 +232,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
     	else {
     		if (par1 >= this.width / 2 -128 && par1 <= this.width / 2 + 128 && par2 >= this.height / 2 - 128 && par2 <= this.height / 2 + 128) { // clicked on the color picker
     			// check if color is chosen.  check x, y, get color of pixel at corresponding spot on color picker image
-    			int color = this.parentGui.minimap.colorPicker.getRGB(par1 - (this.width / 2 - 128), par2 - (this.height / 2 - 128));
+    			int color = this.minimap.colorPicker.getRGB(par1 - (this.width / 2 - 128), par2 - (this.height / 2 - 128));
     			waypoint.red = (float)(color >> 16 & 255)/255;
     			waypoint.green = (float)(color >> 8 & 255)/255;
     			waypoint.blue = (float)(color >> 0 & 255)/255;
@@ -217,7 +249,7 @@ public class GuiScreenAddWaypoint extends GuiScreen
     	buttonEnabled.displayString = "Enabled: " + ((waypoint.enabled)?"On":"Off");
         StringTranslate var4 = StringTranslate.getInstance();
         this.drawDefaultBackground();
-        this.drawCenteredString(this.fontRenderer, (this.parentGui.editClicked)?"Edit Waypoint":"New Waypoint", this.width / 2, 20, 16777215);
+        this.drawCenteredString(this.fontRenderer, ((this.parentGui != null) && this.parentGui.editClicked)?"Edit Waypoint":"New Waypoint", this.width / 2, 20, 16777215);
         //  this.height / 6 + 24 * 
         this.drawString(this.fontRenderer, var4.translateKey("Waypoint Name"), this.width / 2 - 100, this.height / 6 + 41 * 0, 10526880);
         this.drawString(this.fontRenderer, var4.translateKey("X"), this.width / 2 - 100, this.height / 6 + 41 * 1, 10526880);
@@ -229,14 +261,15 @@ public class GuiScreenAddWaypoint extends GuiScreen
         this.waypointX.drawTextBox();
         this.waypointZ.drawTextBox();
         this.waypointY.drawTextBox();
-        GL11.glColor4f(waypoint.red, waypoint.green, waypoint.blue, 1.0F);
-        this.parentGui.minimap.game.renderEngine.bindTexture(this.parentGui.minimap.game.renderEngine.getTexture("/mamiyaotaru/color.png"));
-        parentGui.drawTexturedModalRect(this.width / 2 + 29, this.height / 6 + 41 * 3 - 4, 0, 0, 16, 10);
+   		GL11.glColor4f(waypoint.red, waypoint.green, waypoint.blue, 1.0F);
+        this.minimap.game.renderEngine.bindTexture(this.minimap.game.renderEngine.getTexture("/mamiyaotaru/color.png"));
+        drawTexturedModalRect(this.width / 2 + 29, this.height / 6 + 41 * 3 - 5, 0, 0, 16, 10);
         super.drawScreen(par1, par2, par3);
         if (choosingColor) {
         	GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
-        	this.parentGui.minimap.game.renderEngine.bindTexture(this.parentGui.minimap.game.renderEngine.getTexture("/mamiyaotaru/colorPicker.png"));
-        	parentGui.drawTexturedModalRect(this.width / 2 -128, this.height / 2 - 128, 0, 0, 256, 256);
+        	this.minimap.game.renderEngine.bindTexture(this.minimap.game.renderEngine.getTexture("/mamiyaotaru/colorPicker.png"));
+        	drawTexturedModalRect(this.width / 2 -128, this.height / 2 - 128, 0, 0, 256, 256);
         }
     }
+    
 }
