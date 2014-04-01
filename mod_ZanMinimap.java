@@ -12,6 +12,8 @@ import net.minecraft.client.Minecraft;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
+import java.util.Iterator;
+import java.util.Map;
 
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.GL11;
@@ -21,13 +23,15 @@ import java.util.Random;
 //TODO: remodloaderize
 public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private Minecraft game; 
+	
+	private World world;
 
 	/*motion tracker, may or may not exist*/
 	private mod_MotionTracker motionTracker = null;
-
+	
 	/*whether motion tracker exists*/
 	private Boolean motionTrackerExists = false;
-
+	
 	/*Textures for each zoom level*/
 	private BufferedImage[] map = new BufferedImage[4];
 
@@ -41,15 +45,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Display anything at all, menu, etc..*/
 	private boolean enabled = true;
-
-	/*Hide just the minimap*/
-	private boolean hide = false;
-
-	/*Show the minimap when in the Nether*/
-	private boolean showNether = true;
-
-	/*Experimental cave mode (only applicable to overworld)*/
-	private boolean showCaves = true;
 
 	/*Was mouse down last render?*/
 	private boolean lfclick = false;
@@ -85,7 +80,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private String error = "";
 
 	/*Strings to show for menu*/
-	private String[][] sMenu = new String[2][13]; // bump up options here
+	private String[][] sMenu = new String[2][14]; // bump up options here
 
 	/*Time remaining to show error thrown for*/
 	private int ztimer = 0;
@@ -149,6 +144,24 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 	/*Menu key index*/
 	private int menuKey = Keyboard.KEY_M;
+	
+	/*Hide just the minimap*/
+	private boolean hide = false;
+	
+	/*Show coordinates toggle*/
+	private boolean coords = true;
+
+	/*Show the minimap when in the Nether*/
+	private boolean showNether = true;
+
+	/*Experimental cave mode (only applicable to overworld)*/
+	private boolean showCaves = true;
+	
+	/*Dynamic lighting toggle*/
+	private boolean lightmap = true;
+
+	/*Terrain depth toggle*/
+	private boolean heightmap = true;
 
 	/*Square map toggle*/
 	private boolean squareMap = false;
@@ -157,15 +170,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	public boolean oldNorth = false;
 
 	private int northRotate = 0;
-
-	/*Show coordinates toggle*/
-	private boolean coords = true;
-
-	/*Dynamic lighting toggle*/
-	private boolean lightmap = true;
-
-	/*Terrain depth toggle*/
-	private boolean heightmap = true;
+	
+	/*Waypoint in world beacon toggle*/
+	private boolean showBeacons = true;
 
 	/*Show welcome message toggle*/
 	private boolean welcome = true;
@@ -179,8 +186,6 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	//should we be running the calc thread?
 	public static boolean threading = true;
 
-	private boolean haveLoadedBefore;
-
 	/*Polygon creation class*/
 	private Tessellator lDraw = Tessellator.instance;
 
@@ -188,7 +193,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	private FontRenderer lang;
 
 	/*Render texture*/
-	private RenderEngine renderEngine;
+	public RenderEngine renderEngine;
 
 
 	public static File getAppDir(String app)
@@ -408,109 +413,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				if(coords) showCoords(scWidth, scHeight);
 		}
 		
-
-	/*	try {
-		RenderManager.instance.renderEntity(new EntityLightningBolt(this.getWorld(),10,75,280),0);
-		}
-		catch (Exception e){
-			System.out.println(e.getMessage());
-		}*/
-	//	this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(),-3,75,280));
-
-		float par3 = .01F;//0.9813967F;
-	    this.game.entityRenderer.setupCameraTransform(par3, 0); // or 1
-	    int x = this.xCoord();
-	    int y = this.yCoord();
-	    int z = this.zCoord();
-		for(Waypoint pt:wayPts) {
-			if(pt.enabled) {
-				renderBeacon(pt.x - x, this.getBlockHeight(false, this.getWorld(), pt.x, pt.z, y) - y - 1, pt.z - z, pt.red, pt.green, pt.blue);
-			}
-		}
-
+		//this.getWorld().addWeatherEffect(new EntityLightningBolt(this.getWorld(), -88, 64, 275));
 		
-
 		//while (active) try {
 		//		Thread.currentThread().sleep(1);
 		//	} catch (Exception local) {}
 		//TODO: what the fuck is this for? :P
+
 	}
-	
-	private void renderBeacon(double baseX, double baseY, double baseZ, float r, float g, float b)
-    {
-        Tessellator tesselator = Tessellator.instance;
-        GL11.glDisable(GL11.GL_TEXTURE_2D);
-        GL11.glDisable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_BLEND);
-        GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE);
-        int height = 128;
-        double topWidthFactor = 1.0D;
-        double bottomWidthFactor = 1.0D;
-     
-
-
-
-        for (int width = 0; width < 4; ++width)
-        {
-         
-              
-
-
-                    tesselator.startDrawing(5);
-                    float brightness = 0.5F;
-                    tesselator.setColorRGBA_F(r * 0.9F * brightness, g * 0.9F * brightness, b * 1.0F * brightness, 0.3F);
-                    double var32 = 0.1D + (double)width * 0.2D;
-
-                        var32 *= topWidthFactor;
-
-
-                    double var34 = 0.1D + (double)width * 0.2D;
-
-
-                        var34 *= bottomWidthFactor;
- 
-
-                    for (int side = 0; side < 5; ++side)
-                    {
-                        double vertX2 = baseX /*+ 0.5D*/ - var32;
-                        double vertZ2 = baseZ /*+ 0.5D*/ - var32;
-
-                        if (side == 1 || side == 2)
-                        {
-                            vertX2 += var32 * 2.0D;
-                        }
-
-                        if (side == 2 || side == 3)
-                        {
-                            vertZ2 += var32 * 2.0D;
-                        }
-
-                        double vertX1 = baseX /*+ 0.5D*/ - var34;
-                        double vertZ1 = baseZ /*+ 0.5D*/ - var34;
-
-                        if (side == 1 || side == 2)
-                        {
-                            vertX1 += var34 * 2.0D;
-                        }
-
-                        if (side == 2 || side == 3)
-                        {
-                            vertZ1 += var34 * 2.0D;
-                        }
-
-                        tesselator.addVertex(vertX1, baseY + (double)(0), vertZ1);
-                        tesselator.addVertex(vertX2, baseY + (double)(height), vertZ2);
-                    }
-
-                    tesselator.draw();
-             
-           // }
-        }
-
-        GL11.glDisable(GL11.GL_BLEND);
-        GL11.glEnable(GL11.GL_LIGHTING);
-        GL11.glEnable(GL11.GL_TEXTURE_2D);
-    }
 
 	private void checkForChanges() {
 		String j;
@@ -530,6 +440,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			iMenu = 1;
 			loadWaypoints();
 			timer=500; // fullrender for new world
+		}
+		
+		if (!(this.getWorld().equals(world))) {
+			this.world = this.getWorld();
+			injectWaypointsEntities();
 		}
 		
 		if ((pack == null) || !(pack.equals(game.texturePackList.getSelectedTexturePack()))) {
@@ -792,6 +707,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		//System.out.println("time: " + (System.nanoTime()-startTime));
 	}
 
+
 	public void run() {
 		if (this.game == null)
 			return;
@@ -841,7 +757,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.map[3] = new BufferedImage(256,256,2);
 
 		for (int m = 0; m<2; m++)
-			for(int n = 0; n<13; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
+			for(int n = 0; n<14; n++) // bump this up with additional options so there is an "" option to hit (WTF is this shit)
 				this.sMenu[m][n] = "";
 
 		this.sMenu[0][0] = "§4Zan's§F Mod! " + this.zmodver;
@@ -857,9 +773,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		this.sMenu[1][6] = "Terrain Depth:";
 		this.sMenu[1][7] = "Square Map:";
 		this.sMenu[1][8] = "Old North:";
-		this.sMenu[1][9] = "Welcome Screen:";
-		this.sMenu[1][10] = "Threading:";
-		if (motionTrackerExists) this.sMenu[1][11] = "Radar Mode:";
+		this.sMenu[1][9] = "Waypoint Beacons:";
+		this.sMenu[1][10] = "Welcome Screen:";
+		this.sMenu[1][11] = "Threading:";
+		if (motionTrackerExists) this.sMenu[1][12] = "Radar Mode:";
 
 		settingsFile = new File(getAppDir("minecraft"), "zan.settings");
 
@@ -867,24 +784,25 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			if(settingsFile.exists()) {
 				BufferedReader in = new BufferedReader(new FileReader(settingsFile));
 				String sCurrentLine;
-				haveLoadedBefore=false;
 				while ((sCurrentLine = in.readLine()) != null) {
 					String[] curLine = sCurrentLine.split(":");
 
-					if(curLine[0].equals("Show Minimap"))
-						squareMap = Boolean.parseBoolean(curLine[1]);
-					if(curLine[0].equals("Old North"))
-						oldNorth = Boolean.parseBoolean(curLine[1]);
+					if(curLine[0].equals("Show Coordinates"))
+						coords = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Show Map in Nether"))
 						showNether = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Enable Cave Mode"))
 						showCaves = Boolean.parseBoolean(curLine[1]);
-					else if(curLine[0].equals("Show Coordinates"))
-						coords = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Dynamic Lighting"))
 						lightmap = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Terrain Depth"))
 						heightmap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Square Map"))
+						squareMap = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Old North"))
+						oldNorth = Boolean.parseBoolean(curLine[1]);
+					else if(curLine[0].equals("Waypoint Beacons"))
+						showBeacons = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Welcome Message"))
 						welcome = Boolean.parseBoolean(curLine[1]);
 					else if(curLine[0].equals("Zoom Key"))
@@ -892,23 +810,305 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					else if(curLine[0].equals("Menu Key"))
 						menuKey = Keyboard.getKeyIndex(curLine[1]);
 					else if(curLine[0].equals("Threading"))
-					{
-						haveLoadedBefore=true;
 						threading=Boolean.parseBoolean(curLine[1]);
-					}
 
 				}
 				in.close();
 			}
+			else
+				saveAll();
 		} catch (Exception e) {}
 
-		if (!haveLoadedBefore)
-		{
-			saveAll();
-		}
 		for(int i = 0; i<blockColors.length; i++)
 			blockColors[i] = 0xff01ff;
+		getDefaultBlockColors();
+		
+		Object renderManager = RenderManager.instance; // NetClientHandler
+		if (renderManager == null) {
+			System.out.println("failed to get render manager");
+			return;
+		}
 
+		Object entityRenderMap = getPrivateField(renderManager, "o" /*"entityRenderMap"*/); // Map - fieldname needs to be obfuscated name
+		if (entityRenderMap == null) {
+			System.out.println("could not get entityRenderMap");
+			return;
+		}
+
+		RenderWaypoint renderWaypoint = new RenderWaypoint();
+		((java.util.HashMap)entityRenderMap).put(EntityWaypoint.class, renderWaypoint);
+		renderWaypoint.setRenderManager(RenderManager.instance);
+		
+		//this does the same, clunkier than the above though
+     /*   ((java.util.HashMap)entityRenderMap).put(EntityWaypoint.class, new RenderWaypoint());
+        Iterator iterator = ((java.util.HashMap)entityRenderMap).values().iterator();
+        
+        Render render = null;
+        while (iterator.hasNext())
+        {
+            render = (Render)iterator.next();
+            if (render.getClass() == RenderWaypoint.class)
+            	render.setRenderManager(RenderManager.instance); 
+        }*/
+
+	}
+	
+	public Object getPrivateField (Object o, String fieldName) {   
+
+		// Go and find the private field... 
+		final java.lang.reflect.Field fields[] = o.getClass().getDeclaredFields();
+		for (int i = 0; i < fields.length; ++i) {
+			if (fieldName.equals(fields[i].getName())) {
+				try {
+					fields[i].setAccessible(true);
+					return fields[i].get(o);
+				} 
+				catch (IllegalAccessException ex) {
+					//Assert.fail ("IllegalAccessException accessing " + fieldName);
+				}
+			}
+		}
+		//Assert.fail ("Field '" + fieldName +"' not found");
+		return null;
+
+		/*java.lang.reflect.Field privateField = null;
+		  try {
+			  privateField = o.getClass().getDeclaredField(fieldName);
+		  }
+		  catch (NoSuchFieldException e){}
+		  privateField.setAccessible(true);
+		  Object obj = null;
+		  try {
+			  obj = privateField.get(o);
+		  }
+		  catch (IllegalAccessException e){}
+		  return obj;*/
+	}
+	
+	private void getDefaultBlockColors() {
+		blockColors[blockColorID(1, 0)] = 0x686868;
+		blockColors[blockColorID(2, 0)] = 0x74b44a;
+		blockColors[blockColorID(3, 0)] = 0x79553a;
+		blockColors[blockColorID(4, 0)] = 0x959595;
+		blockColors[blockColorID(5, 0)] = 0xbc9862; // oak wood planks
+		blockColors[blockColorID(5, 1)] = 0x805e36; // spruce wood planks
+		blockColors[blockColorID(5, 2)] = 0xd7c185; // birch planks
+		blockColors[blockColorID(5, 3)] = 0x9f714a; // jungle planks
+		blockColors[blockColorID(6, 0)] = 0x946428;
+		blockColors[blockColorID(7, 0)] = 0x333333;
+		blockColors[blockColorID(8, 0)] = 0x3256ff;
+		blockColors[blockColorID(8, 1)] = 0x3256ff;
+		blockColors[blockColorID(8, 2)] = 0x3256ff;
+		blockColors[blockColorID(8, 3)] = 0x3256ff;
+		blockColors[blockColorID(8, 4)] = 0x3256ff;
+		blockColors[blockColorID(8, 5)] = 0x3256ff;
+		blockColors[blockColorID(8, 6)] = 0x3256ff;
+		blockColors[blockColorID(8, 7)] = 0x3256ff;
+		blockColors[blockColorID(9, 0)] = 0x3256ff;
+		blockColors[blockColorID(10, 0)] = 0xd86514;
+		blockColors[blockColorID(10, 1)] = 0xd76514;
+		blockColors[blockColorID(10, 2)] = 0xd66414;
+		blockColors[blockColorID(10, 3)] = 0xd56414;
+		blockColors[blockColorID(10, 4)] = 0xd46314;
+		blockColors[blockColorID(10, 5)] = 0xd36314;
+		blockColors[blockColorID(10, 6)] = 0xd26214;
+		blockColors[blockColorID(11, 0)] = 0xd96514;
+		blockColors[blockColorID(12, 0)] = 0xddd7a0;
+		blockColors[blockColorID(13, 0)] = 0x747474;
+		blockColors[blockColorID(14, 0)] = 0x747474;
+		blockColors[blockColorID(15, 0)] = 0x747474;
+		blockColors[blockColorID(16, 0)] = 0x747474;
+		blockColors[blockColorID(17, 0)] = 0x342919; // logs right side up
+		blockColors[blockColorID(17, 1)] = 0x342919;
+		blockColors[blockColorID(17, 2)] = 0x342919;
+		blockColors[blockColorID(17, 3)] = 0x584519;
+		blockColors[blockColorID(17, 4)] = 0x342919; // logs on side
+		blockColors[blockColorID(17, 5)] = 0x342919;
+		blockColors[blockColorID(17, 6)] = 0x342919;
+		blockColors[blockColorID(17, 7)] = 0x584519;
+		blockColors[blockColorID(17, 8)] = 0x342919; 
+		blockColors[blockColorID(17, 9)] = 0x342919;
+		blockColors[blockColorID(17, 10)] = 0x342919;
+		blockColors[blockColorID(17, 11)] = 0x584519;
+		blockColors[blockColorID(17, 12)] = 0x342919; // logs all bark?
+		blockColors[blockColorID(17, 13)] = 0x342919;
+		blockColors[blockColorID(17, 14)] = 0x342919;
+		blockColors[blockColorID(17, 15)] = 0x584519;
+		blockColors[blockColorID(18, 0)] = 0x164d0c;
+		blockColors[blockColorID(18, 1)] = 0x164d0c;
+		blockColors[blockColorID(18, 2)] = 0x164d0c;
+		blockColors[blockColorID(18, 3)] = 0x164d0c;
+		blockColors[blockColorID(19, 0)] = 0xe5e54e;
+		blockColors[blockColorID(20, 0)] = 0xffffff;
+		blockColors[blockColorID(21, 0)] = 0x677087;
+		blockColors[blockColorID(22, 0)] = 0xd2eb2;
+		blockColors[blockColorID(23, 0)] = 0x747474;
+		blockColors[blockColorID(24, 0)] = 0xc6bd6d; // sandstone
+		blockColors[blockColorID(25, 0)] = 0x8f691d; // note block
+		blockColors[blockColorID(35, 0)] = 0xf4f4f4;
+		blockColors[blockColorID(35, 1)] = 0xeb843e;
+		blockColors[blockColorID(35, 2)] = 0xc55ccf;
+		blockColors[blockColorID(35, 3)] = 0x7d9cda;
+		blockColors[blockColorID(35, 4)] = 0xddd13a;
+		blockColors[blockColorID(35, 5)] = 0x3ecb31;
+		blockColors[blockColorID(35, 6)] = 0xe09aad;
+		blockColors[blockColorID(35, 7)] = 0x434343;
+		blockColors[blockColorID(35, 8)] = 0xafafaf;
+		blockColors[blockColorID(35, 9)] = 0x2f8286;
+		blockColors[blockColorID(35, 10)] = 0x9045d1;
+		blockColors[blockColorID(35, 11)] = 0x2d3ba7;
+		blockColors[blockColorID(35, 12)] = 0x573016;
+		blockColors[blockColorID(35, 13)] = 0x41581f;
+		blockColors[blockColorID(35, 14)] = 0xb22c27;
+		blockColors[blockColorID(35, 15)] = 0x1b1717;
+		blockColors[blockColorID(37, 0)] = 0xf1f902;
+		blockColors[blockColorID(38, 0)] = 0xf7070f;
+		blockColors[blockColorID(39, 0)] = 0x916d55;
+		blockColors[blockColorID(40, 0)] = 0x9a171c;
+		blockColors[blockColorID(41, 0)] = 0xfefb5d;
+		blockColors[blockColorID(42, 0)] = 0xe9e9e9;
+		blockColors[blockColorID(43, 0)] = 0xa8a8a8;
+		blockColors[blockColorID(43, 1)] = 0xc6bd6d;
+		blockColors[blockColorID(43, 2)] = 0xbc9862;
+		blockColors[blockColorID(43, 3)] = 0x959595;
+		blockColors[blockColorID(43, 4)] = 0xaa543b;
+		blockColors[blockColorID(43, 5)] = 0x7a7a7a;
+		blockColors[blockColorID(43, 6)] = 0xa8a8a8;
+		blockColors[blockColorID(44, 0)] = 0xa8a8a8; // slabs
+		blockColors[blockColorID(44, 1)] = 0xc6bd6d;
+		blockColors[blockColorID(44, 2)] = 0xbc9862;
+		blockColors[blockColorID(44, 3)] = 0x959595;
+		blockColors[blockColorID(44, 4)] = 0xaa543b;
+		blockColors[blockColorID(44, 5)] = 0x7a7a7a;
+		blockColors[blockColorID(44, 6)] = 0xa8a8a8;
+		blockColors[blockColorID(44, 8)] = 0xa8a8a8; // slabs upside down
+		blockColors[blockColorID(44, 9)] = 0xc6bd6d;
+		blockColors[blockColorID(44, 10)] = 0xbc9862;
+		blockColors[blockColorID(44, 11)] = 0x959595;
+		blockColors[blockColorID(44, 12)] = 0xaa543b;
+		blockColors[blockColorID(44, 13)] = 0x7a7a7a;
+		blockColors[blockColorID(45, 0)] = 0xaa543b;
+		blockColors[blockColorID(46, 0)] = 0xdb441a;
+		blockColors[blockColorID(47, 0)] = 0xb4905a;
+		blockColors[blockColorID(48, 0)] = 0x1f471f;
+		blockColors[blockColorID(49, 0)] = 0x101018;
+		blockColors[blockColorID(50, 0)] = 0xffd800;
+		blockColors[blockColorID(51, 0)] = 0xc05a01;
+		blockColors[blockColorID(52, 0)] = 0x265f87;
+		blockColors[blockColorID(53, 0)] = 0xbc9862;
+		blockColors[blockColorID(53, 1)] = 0xbc9862;
+		blockColors[blockColorID(53, 2)] = 0xbc9862;
+		blockColors[blockColorID(53, 3)] = 0xbc9862;
+		blockColors[blockColorID(54, 0)] = 0x8f691d; // chest
+		blockColors[blockColorID(55, 0)] = 0x480000;
+		blockColors[blockColorID(56, 0)] = 0x747474;
+		blockColors[blockColorID(57, 0)] = 0x82e4e0;
+		blockColors[blockColorID(58, 0)] = 0xa26b3e;
+		blockColors[blockColorID(59, 0)] = 57872;
+		blockColors[blockColorID(60, 0)] = 0x633f24;
+		blockColors[blockColorID(61, 0)] = 0x747474;
+		blockColors[blockColorID(62, 0)] = 0x747474;
+		blockColors[blockColorID(63, 0)] = 0xb4905a;
+		blockColors[blockColorID(64, 0)] = 0x7a5b2b;
+		blockColors[blockColorID(65, 0)] = 0xac8852;
+		blockColors[blockColorID(66, 0)] = 0xa4a4a4;
+		blockColors[blockColorID(67, 0)] = 0x9e9e9e;
+		blockColors[blockColorID(67, 1)] = 0x9e9e9e;
+		blockColors[blockColorID(67, 2)] = 0x9e9e9e;
+		blockColors[blockColorID(67, 3)] = 0x9e9e9e;
+		blockColors[blockColorID(68, 0)] = 0x9f844d;
+		blockColors[blockColorID(69, 0)] = 0x695433;
+		blockColors[blockColorID(70, 0)] = 0x8f8f8f;
+		blockColors[blockColorID(71, 0)] = 0xc1c1c1;
+		blockColors[blockColorID(72, 0)] = 0xbc9862;
+		blockColors[blockColorID(73, 0)] = 0x747474;
+		blockColors[blockColorID(74, 0)] = 0x747474;
+		blockColors[blockColorID(75, 0)] = 0x290000;
+		blockColors[blockColorID(76, 0)] = 0xfd0000;
+		blockColors[blockColorID(77, 0)] = 0x747474;
+		blockColors[blockColorID(78, 0)] = 0xfbffff;
+		blockColors[blockColorID(79, 0)] = 0x8ebfff;
+		blockColors[blockColorID(80, 0)] = 0xffffff;
+		blockColors[blockColorID(81, 0)] = 0x11801e;
+		blockColors[blockColorID(82, 0)] = 0xffffff;
+		blockColors[blockColorID(83, 0)] = 0xa1a7b2;
+		blockColors[blockColorID(84, 0)] = 0x8f691d; // jukebox
+		blockColors[blockColorID(85, 0)] = 0x9b664b;
+		blockColors[blockColorID(86, 0)] = 0xbc9862;
+		blockColors[blockColorID(87, 0)] = 0x582218;
+		blockColors[blockColorID(88, 0)] = 0x996731;
+		blockColors[blockColorID(89, 0)] = 0xcda838;
+		blockColors[blockColorID(90, 0)] = 0x732486;
+		blockColors[blockColorID(91, 0)] = 0xffc88d;
+		blockColors[blockColorID(92, 0)] = 0xe3cccd;
+		blockColors[blockColorID(93, 0)] = 0x979393;
+		blockColors[blockColorID(94, 0)] = 0xc09393;
+		blockColors[blockColorID(95, 0)] = 0x8f691d;
+		blockColors[blockColorID(96, 0)] = 0x7e5d2d;
+		blockColors[blockColorID(97, 0)] = 0x686868;
+		blockColors[blockColorID(98, 0)] = 0x7a7a7a;
+		blockColors[blockColorID(98, 1)] = 0x1f471f;
+		blockColors[blockColorID(98, 2)] = 0x7a7a7a;
+		blockColors[blockColorID(99, 0)] = 0xcaab78;
+		blockColors[blockColorID(100, 0)] = 0xcaab78;
+		blockColors[blockColorID(101, 0)] = 0x6d6c6a;
+		blockColors[blockColorID(102, 0)] = 0xffffff;
+		blockColors[blockColorID(103, 0)] = 0x979924;
+		blockColors[blockColorID(104, 0)] = 39168;
+		blockColors[blockColorID(105, 0)] = 39168;
+		blockColors[blockColorID(106, 0)] = 0x1f4e0a;
+		blockColors[blockColorID(107, 0)] = 0xbc9862;
+		blockColors[blockColorID(108, 0)] = 0xaa543b;
+		blockColors[blockColorID(108, 1)] = 0xaa543b;
+		blockColors[blockColorID(108, 2)] = 0xaa543b;
+		blockColors[blockColorID(108, 3)] = 0xaa543b;
+		blockColors[blockColorID(109, 0)] = 0x7a7a7a;
+		blockColors[blockColorID(109, 1)] = 0x7a7a7a;
+		blockColors[blockColorID(109, 2)] = 0x7a7a7a;
+		blockColors[blockColorID(109, 3)] = 0x7a7a7a;
+		blockColors[blockColorID(110, 0)] = 0x6e646a; // mycelium
+		blockColors[blockColorID(112, 0)] = 0x43262f; // netherbrick
+		blockColors[blockColorID(114, 0)] = 0x43262f; // netherbrick stairs
+		blockColors[blockColorID(114, 1)] = 0x43262f; // netherbrick stairs
+		blockColors[blockColorID(114, 2)] = 0x43262f; // netherbrick stairs
+		blockColors[blockColorID(114, 3)] = 0x43262f; // netherbrick stairs
+		blockColors[blockColorID(121, 0)] = 0xd3dca4; // endstone
+		blockColors[blockColorID(123, 0)] = 0x8f691d; // inactive glowstone lamp
+		blockColors[blockColorID(124, 0)] = 0xcda838; // active glowstone lamp
+		blockColors[blockColorID(125, 0)] = 0xbc9862; // wooden double slab
+		blockColors[blockColorID(125, 1)] = 0x805e36;  
+		blockColors[blockColorID(125, 2)] = 0xd7c185; 
+		blockColors[blockColorID(125, 3)] = 0x9f714a; 
+		blockColors[blockColorID(126, 0)] = 0xbc9862; // wooden slab
+		blockColors[blockColorID(126, 1)] = 0x805e36;  
+		blockColors[blockColorID(126, 2)] = 0xd7c185; 
+		blockColors[blockColorID(126, 3)] = 0x9f714a;
+		blockColors[blockColorID(126, 8)] = 0xbc9862; // wooden slab upside down
+		blockColors[blockColorID(126, 9)] = 0x805e36;  
+		blockColors[blockColorID(126, 10)] = 0xd7c185; 
+		blockColors[blockColorID(126, 11)] = 0x9f714a;
+		blockColors[blockColorID(127, 0)] = 0xae682a;  // cocoa plant
+		blockColors[blockColorID(128, 0)] = 0xc6bd6d;  // sandstone stairs
+		blockColors[blockColorID(128, 1)] = 0xc6bd6d;
+		blockColors[blockColorID(128, 2)] = 0xc6bd6d;
+		blockColors[blockColorID(128, 3)] = 0xc6bd6d;
+		blockColors[blockColorID(129, 0)] = 0x747474; // emerald ore
+		blockColors[blockColorID(130, 0)] = 0x2d0133; // ender chest (using side of enchanting table)
+		blockColors[blockColorID(131, 0)] = 0x7a7a7a; // tripwire hook
+		blockColors[blockColorID(132, 0)] = 0x767676; // tripwire
+		blockColors[blockColorID(133, 0)] = 0x45d56a; // emerald block
+		blockColors[blockColorID(134, 0)] = 0x805e36;  // spruce stairs
+		blockColors[blockColorID(134, 1)] = 0x805e36;
+		blockColors[blockColorID(134, 2)] = 0x805e36;
+		blockColors[blockColorID(134, 3)] = 0x805e36;
+		blockColors[blockColorID(135, 0)] = 0xd7c185;  // birch stairs
+		blockColors[blockColorID(135, 1)] = 0xd7c185;
+		blockColors[blockColorID(135, 2)] = 0xd7c185;
+		blockColors[blockColorID(135, 3)] = 0xd7c185;
+		blockColors[blockColorID(136, 0)] = 0x9f714a;  // jungle stairs
+		blockColors[blockColorID(136, 1)] = 0x9f714a;
+		blockColors[blockColorID(136, 2)] = 0x9f714a;
+		blockColors[blockColorID(136, 3)] = 0x9f714a;
 	}
 
 	private final int blockColorID(int blockid, int meta) {
@@ -950,17 +1150,18 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 		try {
 			PrintWriter out = new PrintWriter(new FileWriter(settingsFile));
-			out.println("Show Minimap:" + Boolean.toString(squareMap));
-			out.println("Old North:" + Boolean.toString(oldNorth));
+			out.println("Show Coordinates:" + Boolean.toString(coords));
 			out.println("Show Map in Nether:" + Boolean.toString(showNether));
 			out.println("Enable Cave Mode:" + Boolean.toString(showCaves));
-			out.println("Show Coordinates:" + Boolean.toString(coords));
 			out.println("Dynamic Lighting:" + Boolean.toString(lightmap));
 			out.println("Terrain Depth:" + Boolean.toString(heightmap));
+			out.println("Square Map:" + Boolean.toString(squareMap));
+			out.println("Old North:" + Boolean.toString(oldNorth));
+			out.println("Waypoint Beacons:" + Boolean.toString(showBeacons));
 			out.println("Welcome Message:" + Boolean.toString(welcome));
+			out.println("Threading:" + Boolean.toString(threading));
 			out.println("Zoom Key:" + Keyboard.getKeyName(zoomKey));
 			out.println("Menu Key:" + Keyboard.getKeyName(menuKey));
-			out.println("Threading:" + Boolean.toString(threading));
 			out.close();
 		} catch (Exception local) {
 			chatInfo("§EError Saving Settings");
@@ -995,21 +1196,44 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 
 				while ((sCurrentLine = in.readLine()) != null) {
 					String[] curLine = sCurrentLine.split(":");
-
-					if(curLine.length==4)
-						wayPts.add(new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3])));
+					
+					Waypoint wpt = null;
+					if(curLine.length==4) {
+						wpt = new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3]));
+					}
 					else
-						wayPts.add(new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3]),
-								Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6])));
+						wpt = new Waypoint(curLine[0],Integer.parseInt(curLine[1]),Integer.parseInt(curLine[2]),Boolean.parseBoolean(curLine[3]),
+								Float.parseFloat(curLine[4]), Float.parseFloat(curLine[5]), Float.parseFloat(curLine[6]));
+					if (wpt != null) {
+						wayPts.add(wpt);
+						wpt.setDisplayInWorld(this.showBeacons);
+					}
+					// do in checkChanges instead.  load them any time we are in a new world (bring them back after return from nether.  Initial load is also a world change; would double up with this
+					//EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), wpt);
+					//this.getWorld().addWeatherEffect(ewpt);
 				}
-
+								
 				in.close();
 				chatInfo("§EWaypoints loaded for " + worldName);
 			} else chatInfo("§EError: No waypoints exist for this world/server.");
 		} catch (Exception local) {
 			chatInfo("§EError Loading Waypoints");
 		}
-
+	}
+	
+	private void injectWaypointsEntities() {
+		if (!(this.game.thePlayer.dimension==-1) || this.showNether) { // check if nether
+			for(Waypoint wpt:wayPts) {
+				EntityWaypoint ewpt = new EntityWaypoint(world, wpt, (this.game.thePlayer.dimension==-1));
+				this.world.addWeatherEffect(ewpt);
+			}
+		}
+	}
+	
+	private void displayWaypointEntities(boolean show) {
+		for(Waypoint wpt:wayPts) {
+			wpt.setDisplayInWorld(show);
+		}
 	}
 	
 	private void loadTexturePackColors() {
@@ -1032,7 +1256,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			InputStream is = pack.getResourceAsStream("/terrain.png");
 			java.awt.Image terrain = ImageIO.read(is);
 			is.close();
-			System.out.println("WIDTH: " + terrain.getWidth(null));
+			//System.out.println("WIDTH: " + terrain.getWidth(null));
 			terrain = terrain.getScaledInstance(16,16, java.awt.Image.SCALE_SMOOTH);
 			BufferedImage terrainBuff = new BufferedImage(terrain.getWidth(null), terrain.getHeight(null), BufferedImage.TYPE_INT_RGB);
 			java.awt.Graphics gfx = terrainBuff.createGraphics();
@@ -1286,10 +1510,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	}
 	
 	private int getColor(BufferedImage image, int textureID) {
-//		int texX = (textureID & 15) << 4; // 0 based horizontal offset in pixels from left of terrain.png (assumes 16px)
-//		int texY = textureID & 240; // 0 based vertical offset in pixels from top of terrain.png (assumes 16px)
+//		int texX = (textureID & 15) << 4; // 0 based horizontal offset in pixels from left of terrain.png (assumes each block is 16px)
+//		int texY = textureID & 240; // 0 based vertical offset in pixels from top of terrain.png (assumes each block is 16px)
 		int texX = textureID & 15; // 0 based column in terrain.png 
-		int texY = (textureID & 240) >> 4; // 0 based row in terrain.png 
+		int texY = (textureID & 240) >> 4; // 0 based row in terrain.png
 //		System.out.println("int: " + image.getRGB(texX, texY));
 //		System.out.println("as hex: " +  java.lang.Integer.toHexString(image.getRGB(texX, texY)));
 //		System.out.println("22 int: " + (image.getRGB(texX, texY) & 0x00FFFFFF));
@@ -1454,6 +1678,21 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				
 				// do with opengl.  Faster.  Uses alpha channel, have to set lighting in actual RGB instead of alpha.
 				GL11.glColorMask(false,false,false,true); // draw to alpha (from circle.png) - used to make square map round with GL
+				
+				// clear alpha before drawing circle to it to get rid of the alpha the f3 text put in
+				GL11.glBindTexture(GL11.GL_TEXTURE_2D, 0);
+				GL11.glBlendFunc(GL11.GL_ZERO, GL11.GL_ZERO);
+				GL11.glColor3f(0, 0, 255);
+				//Begin drawing the square with the assigned coordinates and size
+				GL11.glBegin(GL11.GL_QUADS); // TODO get working
+				GL11.glVertex2f(scWidth-80, 80);//bottom left of the square
+				GL11.glVertex2f(scWidth+5, 840);//bottom right of the square
+				GL11.glVertex2f(scWidth+5, 0);//top right of the square
+				GL11.glVertex2f(scWidth-80, 0);//top left of the square
+				GL11.glEnd();
+				GL11.glColor4f(1, 1, 1, 1);
+				
+				GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
 				this.disp(this.img("/circle.png")); // does weird things to f3 text.  deal with it!  Also fux dynamic lighting.  Deal with it :(  (can do if we don't usee alpha channel for lighting info, just darken actual RGB
 				drawPre();
 				this.setMap(scWidth);
@@ -1775,7 +2014,11 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 							}
 
 							if(!this.inStr.equals("")) {
-								wayPts.add(new Waypoint(this.way, wayX, wayZ, true));
+								Waypoint wpt = new Waypoint(this.way, wayX, wayZ, true);
+								wayPts.add(wpt);
+								wpt.setDisplayInWorld(this.showBeacons);
+								EntityWaypoint ewpt = new EntityWaypoint(this.getWorld(), wpt, (this.game.thePlayer.dimension==-1));
+								this.getWorld().addWeatherEffect(ewpt);
 								this.saveWaypoints();
 
 								if(wayPts.size()>9) min = wayPts.size()-9;
@@ -1977,8 +2220,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			leftCl = rightCl - 9;
 		} else {
 			min = 0;
-			if (motionTrackerExists) max = 11;
-			else max = 10; // number of menu options, only affects if they can be clicked
+			if (motionTrackerExists) max = 12;
+			else max = 11; // number of menu options, only affects if they can be clicked
 		}
 
 		for(int i = min; i<max; i++) {
@@ -2031,7 +2274,8 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		}
 	}
 
-	private void delWay(int i) {
+	private void delWay(int i) { // TODO let entity know it is dead
+		wayPts.get(i).kill();
 		wayPts.remove(i);
 		this.saveWaypoints();
 	}
@@ -2117,9 +2361,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (i==5) return heightmap;
 		else if (i==6) return squareMap;
 		else if (i==7) return oldNorth;
-		else if (i==8) return welcome;
-		else if (i==9) return threading;
-		else if (i==10 && motionTrackerExists) return false;
+		else if (i==8) return showBeacons;
+		else if (i==9) return welcome;
+		else if (i==10) return threading;
+		else if (i==11 && motionTrackerExists) return false;
 		throw new IllegalArgumentException("bad option number "+i);
 	}
 
@@ -2132,9 +2377,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		else if (i==5) heightmap = !heightmap;
 		else if (i==6) squareMap = !squareMap;
 		else if (i==7) oldNorth = !oldNorth;
-		else if (i==8) welcome = !welcome;
-		else if (i==9) threading = !threading;
-		else if (i==10 && motionTrackerExists) motionTracker.activated = true;
+		else if (i==8) { showBeacons = !showBeacons; this.displayWaypointEntities(showBeacons); }
+		else if (i==9) welcome = !welcome;
+		else if (i==10) threading = !threading;
+		else if (i==11 && motionTrackerExists) motionTracker.activated = true;
 		else throw new IllegalArgumentException("bad option number "+i);
 		this.saveAll();
 		this.timer=500;
