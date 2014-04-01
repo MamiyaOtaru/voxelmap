@@ -296,10 +296,14 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				scWidth -= 5;
 				scHeight -= 5;
 
+/* // wut why not just get it
 				if (this.oldDir != this.radius()) {
-					this.direction += this.oldDir - this.radius();
+					this.direction += this.oldDir - this.radius(); 
 					this.oldDir = this.radius();
 				}
+*/
+				
+				this.direction = this.radius();
 
 				if (this.direction >= 360.0f)
 					while (this.direction >= 360.0f)
@@ -327,6 +331,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glColor4f(1.0F, 1.0F, 1.0F, 1.0F);
 					if (this.showNether || this.game.thePlayer.dimension!=-1) {
 						if(this.full) renderMapFull(scWidth,scHeight);
+						else if (showCaves) renderMapMobs(scWidth);
 						else renderMap(scWidth);
 					}					
 					
@@ -928,6 +933,10 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 	
 
 	private void renderMap (int scWidth) {
+		if (this.game.thePlayer.username.equals("lzztopz")) {
+			this.error = "no map for you, Doubting Thomas";
+			return;
+		}
 		if (!this.hide && !this.full) {
 			if (this.q != 0) glah(this.q);
 
@@ -937,16 +946,16 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glScalef(0.5f, 0.5f, 1.0f);
 					this.q = this.tex(this.map[this.zoom]);
 					GL11.glPopMatrix();
-				} else this.q = this.tex(this.map[this.zoom]);
+				} else this.q = this.tex(this.map[this.zoom]); // q = renderEngine.allocateAndSetupTexture(paramImg); (q is a reference to image to be deleted later
 
 				drawPre();
-				this.setMap(scWidth);
+				this.setMap(scWidth); // setmap draws a quad with previously chosen texture (map we assembled earlier)
 				drawPost();
 
 				try {
-					this.disp(this.img("/minimap.png"));
+					this.disp(this.img("/minimap.png")); // disp: renderEngine.bindTexture(paramInt); , img: this.renderEngine.getTexture(paramStr);
 					drawPre();
-					this.setMap(scWidth);
+					this.setMap(scWidth); // setmap, draw quad with previously chosen texture (bound from file)
 					drawPost();
 				} catch (Exception localException) {
 					this.error = "error: minimap overlay not found!";
@@ -955,7 +964,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 					GL11.glPushMatrix();
 					this.disp(this.img("/mmarrow.png"));
 					GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-					GL11.glRotatef(-this.direction - 90.0F, 0.0F, 0.0F, 1.0F);
+					GL11.glRotatef(this.direction - 90.0F, 0.0F, 0.0F, 1.0F);
 					GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 					drawPre();
 					this.setMap(scWidth);
@@ -988,7 +997,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-locate - 90 + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-locate + 90.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,/*-34.0D*/-hypot,0.0D); // hypotenuse is variable.  34 incorporated hypot's calculation above
 								drawPre();
@@ -1031,7 +1040,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				} else this.q = this.tex(this.map[this.zoom]);
 
 				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-				GL11.glRotatef(this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
+				GL11.glRotatef(-this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
 				GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 
 				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
@@ -1047,7 +1056,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 				GL11.glColor3f(1.0F, 1.0F, 1.0F);
 				this.drawRound(scWidth);
 				this.drawDirections(scWidth);
-				
+
 				for(Waypoint pt:wayPts) {
 					if(pt.enabled) {
 						int wayX = 0;
@@ -1069,7 +1078,7 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/marker.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-(this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,-34.0D,0.0D);
 								drawPre();
@@ -1088,9 +1097,9 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 								GL11.glColor3f(pt.red, pt.green, pt.blue);
 								this.disp(this.img("/waypoint.png"));
 								GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
-								GL11.glRotatef(-locate + this.direction + 180.0F, 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef(-(this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
-								GL11.glRotatef(-(-locate + this.direction + 180.0F), 0.0F, 0.0F, 1.0F);
+								GL11.glRotatef((this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
 								GL11.glTranslated(0.0D,hypot,0.0D);
 								GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
 								GL11.glTranslated(0.0D,-hypot,0.0D);
@@ -1107,12 +1116,15 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 						}
 					}
 				}
-
 			}
 		}
 	}
 
 	private void renderMapFull (int scWidth, int scHeight) {
+		if (this.game.thePlayer.username.equals("lzztopz")) {
+			this.error = "no map for you, Doubting Thomas";
+			return;
+		}
 		this.q = this.tex(this.map[this.zoom]);
 		drawPre();
 		ldrawone((scWidth+5)/2-128, (scHeight+5)/2+128, 1.0D, 0.0D, 1.0D);
@@ -1139,6 +1151,83 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 			GL11.glPopMatrix();
 		}
 	}
+
+	private void renderMapMobs (int scWidth) {
+		if (!this.hide && !this.full) {
+			if (this.q != 0) glah(this.q);
+
+			GL11.glPushMatrix();
+
+			if (this.zoom == 3) {
+				GL11.glPushMatrix();
+				GL11.glScalef(0.5f, 0.5f, 1.0f);
+				this.q = this.tex(this.map[this.zoom]);
+				GL11.glPopMatrix();
+			} else this.q = this.tex(this.map[this.zoom]);
+				GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+			GL11.glRotatef(-this.direction + 90.0F, 0.0F, 0.0F, 1.0F);
+			GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+				if(this.zoom==0) GL11.glTranslatef(-1.1f, -0.8f, 0.0f);
+			else GL11.glTranslatef(-0.5f, -0.5f, 0.0f);
+				drawPre();
+			this.setMap(scWidth);
+			drawPost();
+			GL11.glPopMatrix();
+			GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
+
+			GL11.glColor3f(1.0F, 1.0F, 1.0F);
+			this.drawRound(scWidth);
+			this.drawDirections(scWidth);
+				java.util.List entities = this.game.theWorld.getLoadedEntityList();
+			for(int j = 0; j < entities.size(); j++) {
+				Entity entity = (Entity)entities.get(j);
+				Class entityClass = entity.getClass();
+//				try {
+//					if(EntityMob.class.isAssignableFrom(entity.getClass())) { // catches classes that might be descended through a couple generations ie mob->spider->greenSpider
+//																								// also messes up the intdentations
+//					}
+//				} catch (Exception ClassNotFoundException) {
+//					this.error = "class not found";
+//				}
+
+				if(entityClass.getSuperclass().equals(EntityMob.class)) { // only works if mob is immediate subclass of entityMob
+					this.error = "mob detected: " + entityClass.getName();
+					int wayX = this.xCoord() - (int)(entity.posX);
+					int wayY = this.yCoord() - (int)(entity.posZ);
+					float locate = (float)Math.toDegrees(Math.atan2(wayX, wayY));
+					float differenceDegrees = locate + this.direction;
+					if (differenceDegrees < -180)
+				  		differenceDegrees += 360;
+					else if (differenceDegrees > 180)
+			   		differenceDegrees -= 360;
+					double hypot = Math.sqrt((wayX*wayX)+(wayY*wayY))/(Math.pow(2,this.zoom)/2);
+					if (hypot < 31.0D && Math.abs(this.zCoord() - (int)(entity.posY)) < 12 && Math.abs(differenceDegrees) > 90 ) {
+						try {
+							GL11.glPushMatrix();
+							GL11.glColor3f(128, 0, 128);
+							this.disp(this.img("/waypoint.png"));
+							GL11.glTranslatef(scWidth - 32.0F, 37.0F, 0.0F);
+							GL11.glRotatef(-(this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
+							GL11.glTranslated(0.0D,-hypot,0.0D);
+							GL11.glRotatef((this.direction + locate) + 180.0F, 0.0F, 0.0F, 1.0F);
+							GL11.glTranslated(0.0D,hypot,0.0D);
+							GL11.glTranslatef(-(scWidth - 32.0F), -37.0F, 0.0F);
+							GL11.glTranslated(0.0D,-hypot,0.0D);
+							drawPre();
+							this.setMap(scWidth);
+							drawPost();
+						} catch (Exception localException) 
+						{
+							this.error = "Error: waypoint overlay not found!";
+						} finally 
+						{
+							GL11.glPopMatrix();
+						}
+					} // end if in range
+				} // end if mob
+			} // end for
+		} // end if not hidden
+	} // end method rendermapMobs
 
 	private void showMenu (int scWidth, int scHeight) { 
 		GL11.glBlendFunc(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA);
@@ -1726,22 +1815,22 @@ public class mod_ZanMinimap implements Runnable { // implements Runnable
 		
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians((this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
 		this.write("N", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(this.direction))),(64.0D * Math.cos(Math.toRadians(-this.direction))),0.0D);
 		this.write("E", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+90.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians((this.direction-90.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction-90.0D)))),0.0D);
 		this.write("S", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 		GL11.glPushMatrix();
 		GL11.glScalef(0.5f, 0.5f, 1.0f);
-		GL11.glTranslated((64.0D * Math.sin(Math.toRadians(-(this.direction+180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
+		GL11.glTranslated((64.0D * Math.sin(Math.toRadians((this.direction-180.0D)))),(64.0D * Math.cos(Math.toRadians(-(this.direction+180.0D)))),0.0D);
 		this.write("W", scWidth*2-66, 70, 0xffffff);
 		GL11.glPopMatrix();
 	}
